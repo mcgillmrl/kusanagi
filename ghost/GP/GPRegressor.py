@@ -221,8 +221,8 @@ class GP(object):
         print self.nlml()
 
     def load(self):
-        print '[%f] %s > Loading compiled GP with %d inputs and %d outputs'%(time(),self.name,self.idims,self.odims)
         with open(self.filename,'rb') as f:
+            print '[%f] %s > Loading compiled GP with %d inputs and %d outputs'%(time(),self.name,self.idims,self.odims)
             state = t_load(f)
             self.X = state[0]
             self.Y = state[1]
@@ -235,8 +235,8 @@ class GP(object):
             self.predict_d_ = state[9]
 
     def save(self):
-        print '[%f] %s > Saving compiled GP with %d inputs and %d outputs'%(time(),self.name,self.idims,self.odims)
         with open(self.filename,'wb') as f:
+            print '[%f] %s > Saving compiled GP with %d inputs and %d outputs'%(time(),self.name,self.idims,self.odims)
             state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
             t_dump(state,f,2)
 
