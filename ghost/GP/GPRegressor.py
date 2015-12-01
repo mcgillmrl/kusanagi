@@ -1,5 +1,6 @@
 import os,sys
 from functools import partial
+from time import time
 
 import numpy as np
 import theano
@@ -60,10 +61,11 @@ class GP(object):
         self.idims = X_dataset.shape[1]
         self.odims = Y_dataset.shape[1]
         self.filename = '%s_%d_%d.zip'%(self.name,idims,odims)
+        self.should_save = False
+
         try:
             # try loading from pickled file, to avoid recompiling
             self.load()
-            self.set_dataset(X_dataset,Y_dataset)
         
         except IOError:
             # initialize the class if no pickled version is available
@@ -72,7 +74,7 @@ class GP(object):
             self.init_log_likelihood()
             self.init_predict()
             self.save()
-
+        
         print '[%f] %s > Finished initialising GP'%(time(),self.name)
     
     def set_dataset(self,X_dataset,Y_dataset):
@@ -114,6 +116,9 @@ class GP(object):
         else:
             for i in xrange(odims):
                 self.loghyp[i].set_value(self.loghyp_[i,:], borrow = True)
+
+        # we should be saving, since we updated the trianing dataset
+        self.should_save = True
 
     def set_loghyp(self, loghyp):
         np.copyto(self.loghyp_,loghyp)
@@ -177,9 +182,10 @@ class GP(object):
         if len(x_mean.shape) == 1:
             # convert to row vector
             x_mean = x_mean[None,:]
-
         res = None
-        if x_cov is None:
+
+        if x_cov is None or self.name == 'GP':
+            print x_mean,x_cov
             res = self.predict_(x_mean)
         else:
             res = self.predict_(x_mean, x_cov)
@@ -192,7 +198,8 @@ class GP(object):
             # convert to row vector
             x_mean = x_mean[None,:]
         res = None
-        if x_cov is None:
+
+        if x_cov is None or self.name == 'GP':
             res = self.predict_d_(x_mean)
         else:
             res = self.predict_d_(x_mean, x_cov)
@@ -208,11 +215,13 @@ class GP(object):
 
     def train(self):
         print '[%f] %s > Current hyperparameters:'%(time(),self.name)
+        init_hyp = self.loghyp_.copy()
         print np.exp(self.loghyp_)
         print '[%f] %s > nlml:'%(time(),self.name)
         print self.nlml()
         opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-12, options={'maxiter': 500})
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
+        self.should_save = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
         np.copyto(self.loghyp_,loghyp)
         self.save()
         print '[%f] %s > New hyperparameters:'%(time(),self.name)
@@ -233,12 +242,14 @@ class GP(object):
             self.dnlml = state[7]
             self.predict_ = state[8]
             self.predict_d_ = state[9]
+        self.should_save = False
 
     def save(self):
-        with open(self.filename,'wb') as f:
-            print '[%f] %s > Saving compiled GP with %d inputs and %d outputs'%(time(),self.name,self.idims,self.odims)
-            state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
-            t_dump(state,f,2)
+        if self.should_save:
+            with open(self.filename,'wb') as f:
+                print '[%f] %s > Saving compiled GP with %d inputs and %d outputs'%(time(),self.name,self.idims,self.odims)
+                state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
+                t_dump(state,f,2)
 
 class GPUncertainInputs(GP):
     def __init__(self, X_dataset, Y_dataset, name = 'GPUncertainInputs'):
@@ -329,15 +340,15 @@ class GPUncertainInputs(GP):
         self.predict_d_ = F([x_mean,x_cov], (dMdm,dVdm,dSdm,dMds,dVds,dSds))
 
 if __name__=='__main__':
-    from time import time
+    # test function
     def f(X):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-500*(np.sum(0.001*(X**2),1)))
 
-    n_samples = 100
+    n_samples = 50
     n_test = 10
-    idims = 2
-    odims = 3
+    idims = 7
+    odims = 10
 
     np.set_printoptions(linewidth=500)
     np.random.seed(31337)
