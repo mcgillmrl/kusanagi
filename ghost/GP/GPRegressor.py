@@ -10,7 +10,7 @@ from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.sandbox.linalg import psd
 from theano.tensor.nlinalg import matrix_inverse,det
 
-sys.setrecursionlimit(10000)
+sys.setrecursionlimit(100000)
 theano.config.reoptimize_unpickled_function = False
 
 def maha(X1,X2=None,M=None):
@@ -57,8 +57,8 @@ class GP(object):
         self.X_ = None; self.Y_ = None
         self.X = None; self.Y = None; self.loghyp = None
         self.name = name
-        idims = X_dataset.shape[1]
-        odims = Y_dataset.shape[1]
+        self.idims = X_dataset.shape[1]
+        self.odims = Y_dataset.shape[1]
         self.filename = '%s_%d_%d.zip'%(self.name,idims,odims)
         try:
             # try loading from pickled file, to avoid recompiling
@@ -68,14 +68,15 @@ class GP(object):
         except IOError:
             # initialize the class if no pickled version is available
             assert X_dataset.shape[0] == Y_dataset.shape[0], "X_dataset and Y_dataset must have the same number of rows"
-            print '[%f] %s > Initializing GP expression graphs'%(time(),self.name)
             self.set_dataset(X_dataset,Y_dataset)
             self.init_log_likelihood()
             self.init_predict()
-            print '[%f] %s > Finished initialising GP'%(time(),self.name)
             self.save()
+
+        print '[%f] %s > Finished initialising GP'%(time(),self.name)
     
     def set_dataset(self,X_dataset,Y_dataset):
+        print '[%f] %s > Updating GP dataset'%(time(),self.name)
         # ensure we don't change the number of input and output dimensions ( the number of samples can change)
         if self.X_ is not None:
             assert self.X_.shape[1] == X_dataset.shape[1]
@@ -118,6 +119,7 @@ class GP(object):
         np.copyto(self.loghyp_,loghyp)
 
     def init_log_likelihood(self):
+        print '[%f] %s > Initialising expression graph for log likelihood'%(time(),self.name)
         idims = self.idims
         odims = self.odims
         # initialize the (before compilation) kernel function
@@ -146,6 +148,7 @@ class GP(object):
         #self.dnlml_i = [ F((),dnlml[i]) for i in xrange(odims)]
     
     def init_predict(self):
+        print '[%f] %s > Initialising expression graph for prediction'%(time(),self.name)
         odims = self.odims
         # and a expresion to evaluate the kernel vector at a new evaluation point
         x_mean = T.dmatrix('x')
@@ -218,6 +221,7 @@ class GP(object):
         print self.nlml()
 
     def load(self):
+        print '[%f] %s > Loading compiled GP with %d inputs and %d outputs'%(time(),self.name,self.idims,self.odims)
         with open(self.filename,'rb') as f:
             state = t_load(f)
             self.X = state[0]
@@ -231,6 +235,7 @@ class GP(object):
             self.predict_d_ = state[9]
 
     def save(self):
+        print '[%f] %s > Saving compiled GP with %d inputs and %d outputs'%(time(),self.name,self.idims,self.odims)
         with open(self.filename,'wb') as f:
             state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
             t_dump(state,f,2)
@@ -240,6 +245,7 @@ class GPUncertainInputs(GP):
         super(GPUncertainInputs, self).__init__(X_dataset,Y_dataset,name=name)
 
     def init_predict(self):
+        print '[%f] %s > Initialising expression graph for prediction'%(time(),self.name)
         idims = self.idims
         odims = self.odims
 
