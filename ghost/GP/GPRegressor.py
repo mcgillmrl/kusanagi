@@ -167,14 +167,19 @@ class GP(object):
         dSdm = T.jacobian(S.flatten(),x_mean)
 
         print '[%f] %s > Compiling derivatives of mean and variance of prediction'%(time(),self.name)
-        self.predict_d = F([x_mean], (dMdm,dSdm))
+        self.predict_d_ = F([x_mean], (dMdm,dSdm))
     
     def predict(self,x_mean,x_cov = None):
         odims = self.odims
         if len(x_mean.shape) == 1:
             # convert to row vector
             x_mean = x_mean[None,:]
-        res = self.predict_(x_mean)
+
+        res = None
+        if x_cov is None:
+            res = self.predict_(x_mean)
+        else:
+            res = self.predict_(x_mean, x_cov)
 
         return res
 
@@ -183,7 +188,11 @@ class GP(object):
         if len(x_mean.shape) == 1:
             # convert to row vector
             x_mean = x_mean[None,:]
-        res = self.predict_d(x_mean)
+        res = None
+        if x_cov is None:
+            res = self.predict_d_(x_mean)
+        else:
+            res = self.predict_d_(x_mean, x_cov)
         return res
     
     def loss(self,loghyp):
@@ -219,30 +228,12 @@ class GP(object):
             self.nlml = state[6]
             self.dnlml = state[7]
             self.predict_ = state[8]
-            self.predict_ = state[9]
+            self.predict_d_ = state[9]
 
     def save(self):
         with open(self.filename,'wb') as f:
-            state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d)
+            state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
             t_dump(state,f,2)
-
-    def __setstate__(self,state):
-        self.X_ = state[0]
-        self.Y_ = state[1]
-        self.loghyp_ = state[2]
-        self.idims = state[3]
-        self.odims = state[4]
-        self.X = state[5]
-        self.Y = state[6]
-        self.loghyp = state[7]
-        self.kernel_func = state[8]
-        self.K = state[9]
-        self.iK = state[10]
-        self.beta = state[11]
-        self.nlml = state[12]
-        self.dnlml = state[13]
-        self.predict_ = state[14]
-        self.predict_d = state[15]
 
 class GPUncertainInputs(GP):
     def __init__(self, X_dataset, Y_dataset, name = 'GPUncertainInputs'):
@@ -318,9 +309,7 @@ class GPUncertainInputs(GP):
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
 
         print '[%f] %s > Compiling mean and variance of prediction'%(time(),self.name)
-        self.predict_M = F([x_mean,x_cov],M)
-        self.predict_V = F([x_mean, x_cov],V)
-        self.predict_S = F([x_mean,x_cov],S)
+        self.predict_ = F([x_mean,x_cov],(M,V,S))
 
         # compile the derivatives wrt the evaluation point
         dMdm = T.jacobian(M.flatten(),x_mean)
@@ -331,42 +320,7 @@ class GPUncertainInputs(GP):
         dSds = T.jacobian(S.flatten(),x_cov)
 
         print '[%f] %s > Compiling derivatives of mean and variance of prediction'%(time(),self.name)
-        self.predict_dMdm = F([x_mean,x_cov], dMdm)
-        self.predict_dVdm = F([x_mean,x_cov], dVdm)
-        self.predict_dSdm = F([x_mean,x_cov], dSdm)
-        self.predict_dMds = F([x_mean,x_cov], dMds)
-        self.predict_dVds = F([x_mean,x_cov], dVds)
-        self.predict_dSds = F([x_mean,x_cov], dSds)
-
-    def predict(self,x_mean,x_cov):
-        odims = self.odims
-        if len(x_mean.shape) == 1:
-            # convert to row vector
-            x_mean = x_mean[None,:]
-        n = x_mean.shape[0]
-
-        #M = np.array(self.predict_M(x_mean,x_cov))
-        M = self.predict_M(x_mean,x_cov)
-        V = self.predict_V(x_mean,x_cov)
-        S = self.predict_S(x_mean,x_cov).reshape(n,odims,odims)
-        
-        return (M,V,S)
-
-    def predict_d(self,x_mean,x_cov):
-        odims = self.odims
-        if len(x_mean.shape) == 1:
-            # convert to row vector
-            x_mean = x_mean[None,:]
-        n = x_mean.shape[0]
-
-        dMdm = self.predict_dMdm(x_mean,x_cov)
-        dVdm = self.predict_dVdm(x_mean,x_cov)
-        dSdm = self.predict_dSdm(x_mean,x_cov)
-        dMds = self.predict_dMds(x_mean,x_cov)
-        dVds = self.predict_dVds(x_mean,x_cov)
-        dSds = self.predict_dSds(x_mean,x_cov)
-
-        return (dMdm,dVdm,dSdm,dMds,dVds,dSds)
+        self.predict_d_ = F([x_mean,x_cov], (dMdm,dVdm,dSdm,dMds,dVds,dSds))
 
 if __name__=='__main__':
     from time import time
