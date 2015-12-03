@@ -421,14 +421,14 @@ def test_sonar():
     gp.train()
     print '[%s] %s > done training'%(str(datetime.now()),'main')
     
-    n_test=500
+    n_test=100
     xg,yg = np.meshgrid ( np.linspace(Xd[:,0].min(),Xd[:,0].max(),n_test) , np.linspace(Xd[:,1].min(),Xd[:,1].max(),n_test) )
     X_test= np.vstack((xg.flatten(),yg.flatten())).T
     n = X_test.shape[0]
     print '[%s] %s > predicting'%(str(datetime.now()),'main')
 
     M = []; S = []
-    batch_size=5000
+    batch_size=5
     for i in xrange(0,n,batch_size):
         next_i = min(i+batch_size,n)
         print 'batch %d , %d'%(i,next_i)
