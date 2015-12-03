@@ -415,11 +415,11 @@ def test_sonar():
     Xd += 1e-2*np.random.rand(*(Xd.shape))
     Yd = np.array(dataset['mat'][:,2])[:,None]
 
-    gp = GP(Xd,Yd)
-    #gp = GPUncertainInputs(Xd,Yd)
-    #print '[%s] %s > training'%(str(datetime.now()),'main')
-    #gp.train()
-    #print '[%s] %s > done training'%(str(datetime.now()),'main')
+    #gp = GP(Xd,Yd)
+    gp = GPUncertainInputs(Xd,Yd)
+    print '[%s] %s > training'%(str(datetime.now()),'main')
+    gp.train()
+    print '[%s] %s > done training'%(str(datetime.now()),'main')
     
     n_test=500
     xg,yg = np.meshgrid ( np.linspace(Xd[:,0].min(),Xd[:,0].max(),n_test) , np.linspace(Xd[:,1].min(),Xd[:,1].max(),n_test) )
