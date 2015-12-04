@@ -14,16 +14,25 @@ from theano.tensor.nlinalg import matrix_inverse,det
 sys.setrecursionlimit(100000)
 theano.config.reoptimize_unpickled_function = False
 
-def maha(X1,X2=None,M=None):
+def maha(X1,X2=None,M_sqrt=None):
     ''' Returns the squared Mahalanobis distance'''
-    X2 = X1 if X2 is None else X2
-    D = []
-    if M is None:
-        D = T.sum(X1**2,1)[:,None] + T.sum(X2**2,1) - 2*X1.dot(X2.T);
+    X1M = []
+    X2M = []
+    if M_sqrt is None:
+        if X2 is None:
+            X1M = X1
+            X2M = X1
+        else:
+            X1M = X1
+            X2M = X2
     else:
-        X1M = X1.dot(M)
-        X2M = X2.dot(M)
-        D = T.sum(X1M*X1,1)[:,None] + T.sum(X2M*X2,1) - 2*X1M.dot(X2.T)
+        if X2 is None:
+            X1M = X1.dot(M_sqrt)
+            X2M = X1M
+        else:
+            X1M = X1.dot(M_sqrt)
+            X2M = X2.dot(M_sqrt)
+    D, updts = theano.scan( lambda x1,x2: T.sum((x1-x2)**2,axis=1), sequences=[X1M],non_sequences=[X2M] )
     return D
 
 def covSEard(loghyp,X1,X2=None):
@@ -35,13 +44,11 @@ def covSEard(loghyp,X1,X2=None):
         n,idims = X2.shape
     else:
         idims = X1.shape[0]
-    X2 = X1 if X2 is None else X2
-    D = maha(X1,X2,T.diag(T.exp(-2*loghyp[:idims])))
-    #print theano.printing.debugprint(D)
-    #raw_input()
-
+    D = maha(X1,X2,T.diag(T.exp(-loghyp[:idims])))
     K = T.exp(2*loghyp[idims] - 0.5*D)
-    return K + 1e-4*T.log(n)*T.eye(n) if X1 is X2 else K
+    nf = T.cast(n, theano.config.floatX)
+    eps = 5e-4 if theano.config.floatX == 'float32' else 1e-4
+    return K + eps*T.log(nf)*T.eye(n) if (X1 is X2 or X2 is None) else K
 
 def covNoise(loghyp,X1,X2=None,D=None):
     ''' Noise kernel. Takes as an input a distance matrix D and creates a new matrix 
@@ -58,13 +65,16 @@ def covSum(loghyp_l, cov_l, X1, X2=None):
     return K
 
 class GP(object):
-    def __init__(self, X_dataset, Y_dataset, name='GP'):
+    def __init__(self, X_dataset, Y_dataset, name='GP', should_profile=False):
+        self.profile= should_profile
+        self.compile_mode = theano.compile.get_default_mode().excluding('scanOp_pushout_seqs_ops')
+
         self.X_ = None; self.Y_ = None
         self.X = None; self.Y = None; self.loghyp = None
         self.name = name
         self.idims = X_dataset.shape[1]
         self.odims = Y_dataset.shape[1]
-        self.filename = '%s_%d_%d_%s.zip'%(self.name,self.idims,self.odims,theano.config.device)
+        self.filename = '%s_%d_%d_%s_%s.zip'%(self.name,self.idims,self.odims,theano.config.device,theano.config.floatX)
         self.should_save = False
 
         try:
@@ -90,9 +100,15 @@ class GP(object):
             assert self.X_.shape[1] == X_dataset.shape[1]
         if self.Y_ is not None:
             assert self.Y_.shape[1] == Y_dataset.shape[1]
+
+
         # first, assign the numpy arrays to class members
-        self.X_ = X_dataset
-        self.Y_ = Y_dataset
+        if theano.config.floatX == 'float32':
+            self.X_ = X_dataset.astype(np.float32)
+            self.Y_ = Y_dataset.astype(np.float32)
+        else:
+            self.X_ = X_dataset
+            self.Y_ = Y_dataset
         idims = self.X_.shape[1]
         odims = self.Y_.shape[1]
         N = self.X_.shape[0]
@@ -102,6 +118,8 @@ class GP(object):
 
         # and initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
         self.loghyp_ = np.zeros((odims,idims+2))
+        if theano.config.floatX == 'float32':
+            self.loghyp_ = self.loghyp_.astype(np.float32)
         self.loghyp_[:,:idims] = self.X_.std(0)
         self.loghyp_[:,idims] = self.Y_.std(0)
         self.loghyp_[:,idims+1] = 0.1*self.loghyp_[:,idims]
@@ -127,57 +145,45 @@ class GP(object):
         self.should_save = True
 
     def set_loghyp(self, loghyp):
+        loghyp = loghyp.reshape(self.loghyp_.shape)
+        if theano.config.floatX == 'float32':
+            loghyp = loghyp.astype(np.float32)
         np.copyto(self.loghyp_,loghyp)
 
     def init_log_likelihood(self):
         print '[%s] %s > Initialising expression graph for log likelihood'%(str(datetime.now()),self.name)
         idims = self.idims
         odims = self.odims
-        # initialize the (before compilation) kernel function
+        # initialise the (before compilation) kernel function
         covs = (covSEard, covNoise)
         loghyps = [ (self.loghyp[i][:idims+1],self.loghyp[i][idims+1]) for i in xrange(odims) ]
         self.kernel_func = [ partial(covSum, loghyps[i], covs) for i in xrange(odims) ]
-        #for i in xrange(odims):
-            #print theano.printing.debugprint(loghyps[i][0])
-            #print theano.printing.debugprint(loghyps[i][1])
-            #raw_input()
 
-        # We initialize the kernel matrices (one for each output dimension)
+        # We initialise the kernel matrices (one for each output dimension)
         self.K = [ self.kernel_func[i](self.X) for i in xrange(odims) ]
         self.iK = [ matrix_inverse(psd(self.K[i])) for i in xrange(odims) ]
-        self.iK = [ matrix_inverse(self.K[i]) for i in xrange(odims) ]
         self.beta = [ self.iK[i].dot(self.Y[:,i]) for i in xrange(odims) ]
 
-        #for i in xrange(odims):
-            #print theano.printing.debugprint(self.K[i])
-            #raw_input()
-        self.K_ = F((),self.K)
         # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
         # the loghyperparameters across all output dimensions and train the GPs jointly)
         nlml = [ 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + self.N*T.log(2*np.pi) )/self.N  for i in xrange(odims) ]
-
-        #for i in xrange(odims):
-            #print theano.printing.debugprint(nlml[i])
-            #raw_input()
-
         # Compute the gradients for each output dimension independently
         dnlml = [ T.jacobian(nlml[i].flatten(),self.loghyp[i]) for i in xrange(odims)]
 
         # Compile the theano functions
         print '[%s] %s > Compiling log likelihood'%(str(datetime.now()),self.name)
-        self.nlml = F((),nlml)
-        #print theano.printing.debugprint(self.nlml)
-        #raw_input()
-        #self.nlml_i = [ F((),nlml[i]) for i in xrange(odims)]
+        self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode)
         print '[%s] %s > Compiling jacobian of log likelihood'%(str(datetime.now()),self.name)
-        self.dnlml = F((),dnlml)
-        #self.dnlml_i = [ F((),dnlml[i]) for i in xrange(odims)]
+        self.dnlml = F((),dnlml,name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode)
     
     def init_predict(self):
         print '[%s] %s > Initialising expression graph for prediction'%(str(datetime.now()),self.name)
         odims = self.odims
         # and a expresion to evaluate the kernel vector at a new evaluation point
-        x_mean = T.dmatrix('x')
+        if theano.config.floatX == 'float32':
+            x_mean = T.fmatrix('x')
+        else:
+            x_mean = T.dmatrix('x')
         self.k = [ self.kernel_func[i](x_mean,self.X) for i in xrange(odims) ]
 
         # compute the mean and variance for each output dimension
@@ -189,16 +195,20 @@ class GP(object):
         M = T.stacklists(mean).T
         S = T.stacklists(variance).T
         print '[%s] %s > Compiling mean and variance of prediction'%(str(datetime.now()),self.name)
-        self.predict_ = F([x_mean],(M,S))
+        self.predict_ = F([x_mean],(M,S),name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
         # compile the derivatives wrt the evaluation point
         dMdm = T.jacobian(M.flatten(),x_mean)
         dSdm = T.jacobian(S.flatten(),x_mean)
 
         print '[%s] %s > Compiling derivatives of mean and variance of prediction'%(str(datetime.now()),self.name)
-        self.predict_d_ = F([x_mean], (dMdm,dSdm))
+        self.predict_d_ = F([x_mean], (dMdm,dSdm),name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
     
     def predict(self,x_mean,x_cov = None):
+        # cast to float 32 if necessary
+        if theano.config.floatX == 'float32':
+            x_mean = x_mean.astype(np.float32)
+
         odims = self.odims
         idims = self.idims
         n = x_mean.shape[0]
@@ -212,10 +222,17 @@ class GP(object):
         else:
             if x_cov is None:
                 x_cov = np.zeros((n,idims,idims))
+            if theano.config.floatX == 'float32':
+                x_cov = x_cov.astype(np.float32)
             res = self.predict_(x_mean, x_cov)
         return res
 
     def predict_d(self,x_mean,x_cov=None):
+        # cast to float 32 if necessary
+        if theano.config.floatX == 'float32':
+            x_mean = x_mean.astype(np.float32)
+            if x_cov is not None:
+                x_cov = x_cov.astype(np.float32)
         odims = self.odims
         idims = self.idims
         n = x_mean.shape[0]
@@ -234,20 +251,21 @@ class GP(object):
         return res
     
     def loss(self,loghyp):
-        loghyp = loghyp.reshape(self.loghyp_.shape)
-        np.copyto(self.loghyp_,loghyp)
-        nlml = sum(self.nlml())
+        print np.exp(loghyp),
+        self.set_loghyp(loghyp)
+        nlml = np.array(self.nlml()).sum()
         dnlml = np.array(self.dnlml()).flatten()
-        #print nlml
-        #print np.exp(loghyp)
-        return nlml,dnlml
+        # on a 64bit system, scipy optimize complains if we pass a 32 bit float
+        res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
+        #print res
+        return res
 
     def train(self):
         init_hyp = self.loghyp_.copy()
         print '[%s] %s > Current hyperparameters:'%(str(datetime.now()),self.name)
         print np.exp(self.loghyp_)
         print '[%s] %s > nlml: %s'%(str(datetime.now()),self.name, np.array(self.nlml()))
-        opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-12, options={'maxiter': 500})
+        opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-6, options={'maxiter': 100})
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.should_save = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
         np.copyto(self.loghyp_,loghyp)
@@ -279,8 +297,8 @@ class GP(object):
                 t_dump(state,f,2)
 
 class GPUncertainInputs(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'GPUncertainInputs'):
-        super(GPUncertainInputs, self).__init__(X_dataset,Y_dataset,name=name)
+    def __init__(self, X_dataset, Y_dataset, name = 'GPUncertainInputs',should_profile=False):
+        super(GPUncertainInputs, self).__init__(X_dataset,Y_dataset,name=name,should_profile=should_profile)
 
     def init_predict(self):
         print '[%s] %s > Initialising expression graph for prediction'%(str(datetime.now()),self.name)
@@ -288,8 +306,12 @@ class GPUncertainInputs(GP):
         odims = self.odims
 
         # Note that this handles n_samples inputs
-        x_mean = T.dmatrix('x')      # n_samples x idims
-        x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
+        if theano.config.floatX == 'float32':
+            x_mean = T.fmatrix('x')      # n_samples x idims
+            x_cov = T.ftensor3('x_cov')  # n_samples x idims x idims
+        else:
+            x_mean = T.dmatrix('x')      # n_samples x idims
+            x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
 
         #centralize inputs 
         zeta, updts = theano.scan(fn=lambda x_mean_i,X: X - x_mean_i, sequences=[x_mean], non_sequences=[self.X], strict=True)
@@ -352,7 +374,7 @@ class GPUncertainInputs(GP):
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
 
         print '[%s] %s > Compiling mean and variance of prediction'%(str(datetime.now()),self.name)
-        self.predict_ = F([x_mean,x_cov],(M,S,V))
+        self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
         # compile the derivatives wrt the evaluation point
         dMdm = T.jacobian(M.flatten(),x_mean)
@@ -363,7 +385,7 @@ class GPUncertainInputs(GP):
         dSds = T.jacobian(S.flatten(),x_cov)
 
         print '[%s] %s > Compiling derivatives of mean and variance of prediction'%(str(datetime.now()),self.name)
-        self.predict_d_ = F([x_mean,x_cov], (dMdm,dMds,dSdm,dSds,dVdm,dVds))
+        self.predict_d_ = F([x_mean,x_cov], (dMdm,dMds,dSdm,dSds,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
 def test_random():
     # test function
@@ -407,6 +429,30 @@ def test_random():
         print r2[1][i],','
         print '---'
 
+def write_profile_files(gp):
+    from theano import d3viz
+    root_path = '/localdata/juan/theano/'
+    formatter = d3viz.formatting.PyDotFormatter()
+    d3viz.d3viz(gp.K[0],root_path+'html/K'+theano.config.device+'.html')
+    d3viz.d3viz(gp.iK[0],root_path+'html/iK'+theano.config.device+'.html')
+    d3viz.d3viz(gp.beta[0],root_path+'html/beta'+theano.config.device+'.html')
+
+    d3viz.d3viz(gp.nlml,root_path+'html/nlml'+theano.config.device+'.html')
+    nlml_graph = formatter(gp.nlml)
+    nlml_graph.write_png(root_path+'png/nlml'+theano.config.device+'.png')
+
+    d3viz.d3viz(gp.dnlml,root_path+'html/dnlml'+theano.config.device+'.html')
+    dnlml_graph = formatter(gp.nlml)
+    dnlml_graph.write_png(root_path+'png/dnlml'+theano.config.device+'.png')
+
+    d3viz.d3viz(gp.predict_,root_path+'html/predict_'+theano.config.device+'.html')
+    predict_graph =  formatter(gp.predict_)
+    predict_graph.write_png(root_path+'png/predict_'+theano.config.device+'.png')
+
+    d3viz.d3viz(gp.predict_d_,root_path+'html/predict_d_'+theano.config.device+'.html')
+    predict_d_graph = formatter(gp.predict_d_)
+    predict_d_graph.write_png(root_path+'png/predict_d_'+theano.config.device+'.png')
+
 def test_sonar():
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
@@ -416,19 +462,21 @@ def test_sonar():
     Yd = np.array(dataset['mat'][:,2])[:,None]
 
     #gp = GP(Xd,Yd)
-    gp = GPUncertainInputs(Xd,Yd)
+    gp = GPUncertainInputs(Xd,Yd,should_profile=False)
     print '[%s] %s > training'%(str(datetime.now()),'main')
     gp.train()
     print '[%s] %s > done training'%(str(datetime.now()),'main')
+
+    #write_profile_files(gp)
     
-    n_test=100
+    n_test=20
     xg,yg = np.meshgrid ( np.linspace(Xd[:,0].min(),Xd[:,0].max(),n_test) , np.linspace(Xd[:,1].min(),Xd[:,1].max(),n_test) )
     X_test= np.vstack((xg.flatten(),yg.flatten())).T
     n = X_test.shape[0]
     print '[%s] %s > predicting'%(str(datetime.now()),'main')
 
     M = []; S = []
-    batch_size=5
+    batch_size=200
     for i in xrange(0,n,batch_size):
         next_i = min(i+batch_size,n)
         print 'batch %d , %d'%(i,next_i)
