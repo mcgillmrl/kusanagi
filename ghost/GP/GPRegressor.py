@@ -14,8 +14,8 @@ import cov
 import utils
 
 class GP(object):
-    def __init__(self, X_dataset, Y_dataset, name='GP', should_profile=False):
-        self.profile= should_profile
+    def __init__(self, X_dataset, Y_dataset, name='GP', profile=False):
+        self.profile= profile
         self.compile_mode = theano.compile.get_default_mode().excluding('scanOp_pushout_seqs_ops')
 
         self.X_ = None; self.Y_ = None
@@ -200,7 +200,6 @@ class GP(object):
         return res
     
     def loss(self,loghyp):
-        print np.exp(loghyp),
         self.set_loghyp(loghyp)
         nlml = np.array(self.nlml()).sum()
         dnlml = np.array(self.dnlml()).flatten()
@@ -247,8 +246,8 @@ class GP(object):
                 t_dump(state,f,2)
 
 class GPUncertainInputs(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'GPUncertainInputs',should_profile=False):
-        super(GPUncertainInputs, self).__init__(X_dataset,Y_dataset,name=name,should_profile=should_profile)
+    def __init__(self, X_dataset, Y_dataset, name = 'GPUncertainInputs',profile=False):
+        super(GPUncertainInputs, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
 
     def init_predict(self):
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
