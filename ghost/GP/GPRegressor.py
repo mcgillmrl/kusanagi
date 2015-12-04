@@ -269,16 +269,22 @@ class GPUncertainInputs(GP):
         M = [] # mean
         V = [] # inv(x_cov).dot(input_output_cov)
         M2 = [] # second moment
+
+        def M_helper(inp_,B_k,log_sf2):
+            t_k = inp_k.dot(matrix_inverse(psd(B_k)))
+            c_k = T.exp(log_sf2)/T.sqrt(det(psd(B_k)))
+
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
             iL = T.diag(T.exp(-self.loghyp[i][:idims]))
             inp = zeta.dot(iL)
             # predictive mean ( which depends on input covariance )
             B = iL.dot(x_cov.T).transpose(2,0,1).dot(iL) + T.eye(idims)
-            t, updts = theano.scan(fn=lambda inp_k,B_k: inp_k.dot(matrix_inverse(B_k)),sequences=[inp,B])
+            #t, updts = theano.scan(fn=lambda inp_k,B_k: inp_k.dot(matrix_inverse(B_k)),sequences=[inp,B])
+            t,c, updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[self.loghyp[i][idims]], strict=True)
             l = T.exp(-0.5*T.sum(inp*t,2))
             lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
-            c, updts = theano.scan(fn=lambda B_k,log_sf: T.exp(2*log_sf)/T.sqrt(det(B_k)), sequences=[B], non_sequences=[self.loghyp[i][idims]], strict=True);
+            #c, updts = theano.scan(fn=lambda B_k,log_sf: T.exp(2*log_sf)/T.sqrt(det(B_k)), sequences=[B], non_sequences=[self.loghyp[i][idims]], strict=True);
             mean = T.sum(lb,1)*c;
             M.append(mean)
 

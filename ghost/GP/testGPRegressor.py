@@ -88,7 +88,7 @@ def test_sonar():
     utils.print_with_stamp('predicting','main')
 
     M = []; S = []
-    batch_size=100
+    batch_size=50
     for i in xrange(0,n,batch_size):
         next_i = min(i+batch_size,n)
         print 'batch %d , %d'%(i,next_i)
@@ -108,8 +108,8 @@ def test_sonar():
     plt.imshow(S.reshape(n_test,n_test), origin='lower')
     plt.show()
 
-    if gp.profile:
-        write_profile_files(gp)
+    #if gp.profile:
+    #    write_profile_files(gp)
 
 if __name__=='__main__':
     #test_random()
