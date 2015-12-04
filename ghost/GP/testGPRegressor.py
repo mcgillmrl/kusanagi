@@ -74,22 +74,21 @@ def test_sonar():
     Xd += 1e-2*np.random.rand(*(Xd.shape))
     Yd = np.array(dataset['mat'][:,2])[:,None]
 
-    gp = GP(Xd,Yd, profile=True)
-    #gp = GPUncertainInputs(Xd,Yd, profile=False)
+    #gp = GP(Xd,Yd, profile=True)
+    gp = GPUncertainInputs(Xd,Yd, profile=True)
     utils.print_with_stamp('training','main')
     gp.train()
     utils.print_with_stamp('done training','main')
 
-    #write_profile_files(gp)
     
-    n_test=200
+    n_test=50
     xg,yg = np.meshgrid ( np.linspace(Xd[:,0].min(),Xd[:,0].max(),n_test) , np.linspace(Xd[:,1].min(),Xd[:,1].max(),n_test) )
     X_test= np.vstack((xg.flatten(),yg.flatten())).T
     n = X_test.shape[0]
     utils.print_with_stamp('predicting','main')
 
     M = []; S = []
-    batch_size=2000
+    batch_size=100
     for i in xrange(0,n,batch_size):
         next_i = min(i+batch_size,n)
         print 'batch %d , %d'%(i,next_i)
@@ -109,6 +108,8 @@ def test_sonar():
     plt.imshow(S.reshape(n_test,n_test), origin='lower')
     plt.show()
 
+    if gp.profile:
+        write_profile_files(gp)
 
 if __name__=='__main__':
     #test_random()

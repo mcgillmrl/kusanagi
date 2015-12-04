@@ -289,7 +289,7 @@ class GPUncertainInputs(GP):
             
             #predictive second moment ( only the lower triangular part, including the diagonal)
             def M2_helper(zeta_k,zeta_i_k, zeta_j_k, z_ij_k, R_k, x_cov_k, log_sf2_ij):
-                n_k = 0.5*(T.diag(zeta_k.dot(zeta_i_k.T))[:,None] + T.diag(zeta_k.dot(zeta_j_k.T))[None,:] - maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k)))
+                n_k = 0.5*(T.diag(zeta_k.dot(zeta_i_k.T))[:,None] + T.diag(zeta_k.dot(zeta_j_k.T))[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k)))
                 t_k = 1.0/T.sqrt(det(psd(R_k)))
                 Q_k = t_k*T.exp( log_sf2_ij - n_k )
 
