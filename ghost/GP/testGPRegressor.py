@@ -71,12 +71,14 @@ def test_sonar():
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
-    idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1000)
-    Xd = np.array(dataset['mat'][idx,0:2])
-    Yd = np.array(dataset['mat'][idx,2])[:,None]
+    #idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1000)
+    #Xd = np.array(dataset['mat'][idx,0:2])
+    #Yd = np.array(dataset['mat'][idx,2])[:,None]
+    Xd = np.array(dataset['mat'][:,0:2])
+    Yd = np.array(dataset['mat'][:,2])[:,None]
 
     #gp = GP(Xd,Yd, profile=True)
-    gp = GPUncertainInputs(Xd,Yd, profile=True)
+    gp = GPUncertainInputs(Xd,Yd, profile=False)
     utils.print_with_stamp('training','main')
     gp.train()
     utils.print_with_stamp('done training','main')
@@ -91,7 +93,7 @@ def test_sonar():
     batch_size=25
     for i in xrange(0,n,batch_size):
         next_i = min(i+batch_size,n)
-        print 'batch %d , %d'%(i,next_i)
+        utils.print_with_stamp('batch %d , %d'%(i,next_i))
         r = gp.predict(X_test[i:next_i])
         M.append(r[0])
         S.append(r[1])

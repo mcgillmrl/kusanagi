@@ -117,8 +117,11 @@ class GP(object):
 
             # We initialise the kernel matrices (one for each output dimension)
             self.K[i] = self.kernel_func[i](self.X)
+            self.K[i].name = 'K_%d'%(i)
             self.iK[i] = matrix_inverse(psd(self.K[i]))
+            self.iK[i].name = 'iK_%d'%(i)
             self.beta[i] = self.iK[i].dot(self.Y[:,i])
+            self.beta[i].name = 'beta_%d'%(i)
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
@@ -161,7 +164,7 @@ class GP(object):
         dSdm = T.jacobian(S.flatten(),x_mean)
 
         utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
-        self.predict_d_ = F([x_mean], (dMdm,dSdm),name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+        self.predict_d_ = F([x_mean], (M,dMdm,S,dSdm),name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
     
     def predict(self,x_mean,x_cov = None):
         # cast to float 32 if necessary
@@ -216,8 +219,7 @@ class GP(object):
         dnlml = np.array(res[1]).flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
-        sys.stdout.write('\r'+str(res[0])+", "+str(np.exp(loghyp)))
-        sys.stdout.flush()
+        utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
         return res
 
     def train(self):
@@ -331,7 +333,8 @@ class GPUncertainInputs(GP):
                 # Eq 2.55
                 m2 = matrix_dot(self.beta[i],Q,self.beta[j])
                 if i == j:
-                    m2 =  m2 - T.sum(self.iK[i]*Q,(1,2)) + T.exp(2*self.loghyp[i][idims])
+                    iKi = self.iK[i].dot(T.eye(self.N))
+                    m2 =  m2 - T.sum(iKi*Q,(1,2)) + T.exp(2*self.loghyp[i][idims])
                 else:
                     M2[j*odims+i] = m2
                 m2.name = 'M2_%d%d'%(i,j)
@@ -354,4 +357,4 @@ class GPUncertainInputs(GP):
         dSds = T.jacobian(S.flatten(),x_cov)
 
         utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
-        self.predict_d_ = F([x_mean,x_cov], (dMdm,dMds,dSdm,dSds,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+        self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)

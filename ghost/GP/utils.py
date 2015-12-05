@@ -1,4 +1,6 @@
+import os,sys
 from datetime import datetime
+
 import theano
 import theano.tensor as T
 
@@ -30,8 +32,16 @@ def maha(X1,X2=None,M_sqrt=None, all_pairs=True):
         
     return D
 
-def print_with_stamp(message, name=None):
+def print_with_stamp(message, name=None, same_line=False):
+    out_str = ''
     if name is None:
-        print '[%s] %s'%(str(datetime.now()),message)
+        out_str = '[%s] %s'%(str(datetime.now()),message)
     else:
-        print '[%s] %s > %s'%(str(datetime.now()),name,message)
+        out_str = '[%s] %s > %s'%(str(datetime.now()),name,message)
+    
+    if same_line:
+        sys.stdout.write('\r'+out_str)
+    else:
+        sys.stdout.write(out_str)
+        print ''
+    sys.stdout.flush()
