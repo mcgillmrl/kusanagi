@@ -6,12 +6,10 @@ def test_random():
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-500*(np.sum(0.001*(X**2),1)))
 
-    n_samples = 500
-    n_test = 10
-    idims = 2
-    odims = 1
-
-    np.set_printoptions(linewidth=500)
+    n_samples = 1000
+    n_test = 1000
+    idims = 5
+    odims = 5
     np.random.seed(31337)
     
     X_ = 10*(np.random.rand(n_samples,idims) - 0.5)
@@ -22,7 +20,7 @@ def test_random():
     #gp = GP(X_,Y_)
     #gp.train()
 
-    gpu = GPUncertainInputs(X_,Y_)
+    gpu = GPUncertainInputs(X_,Y_,profile=True)
     gpu.train()
 
     X_ = 10*(np.random.rand(n_test,idims) - 0.5)
@@ -42,13 +40,16 @@ def test_random():
         print r2[1][i],','
         print '---'
 
+    if gpu.profile:
+        write_profile_files(gpu)
+
 def write_profile_files(gp):
     from theano import d3viz
     root_path = '/localdata/juan/theano/'
     formatter = d3viz.formatting.PyDotFormatter()
-    d3viz.d3viz(gp.K[0],root_path+'html/K'+theano.config.device+'.html')
-    d3viz.d3viz(gp.iK[0],root_path+'html/iK'+theano.config.device+'.html')
-    d3viz.d3viz(gp.beta[0],root_path+'html/beta'+theano.config.device+'.html')
+    #d3viz.d3viz(gp.K[0],root_path+'html/K'+theano.config.device+'.html')
+    #d3viz.d3viz(gp.iK[0],root_path+'html/iK'+theano.config.device+'.html')
+    #d3viz.d3viz(gp.beta[0],root_path+'html/beta'+theano.config.device+'.html')
 
     d3viz.d3viz(gp.nlml,root_path+'html/nlml'+theano.config.device+'.html')
     nlml_graph = formatter(gp.nlml)
@@ -62,33 +63,31 @@ def write_profile_files(gp):
     predict_graph =  formatter(gp.predict_)
     predict_graph.write_png(root_path+'png/predict_'+theano.config.device+'.png')
 
-    d3viz.d3viz(gp.predict_d_,root_path+'html/predict_d_'+theano.config.device+'.html')
-    predict_d_graph = formatter(gp.predict_d_)
-    predict_d_graph.write_png(root_path+'png/predict_d_'+theano.config.device+'.png')
+    #d3viz.d3viz(gp.predict_d_,root_path+'html/predict_d_'+theano.config.device+'.html')
+    #predict_d_graph = formatter(gp.predict_d_)
+    #predict_d_graph.write_png(root_path+'png/predict_d_'+theano.config.device+'.png')
 
 def test_sonar():
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
     Xd = np.array(dataset['mat'][:,0:2])
-    Xd += 1e-2*np.random.rand(*(Xd.shape))
     Yd = np.array(dataset['mat'][:,2])[:,None]
 
-    #gp = GP(Xd,Yd, profile=True)
+    #gp = GP(Xd,Yd, profile=False)
     gp = GPUncertainInputs(Xd,Yd, profile=True)
     utils.print_with_stamp('training','main')
     gp.train()
     utils.print_with_stamp('done training','main')
-
     
-    n_test=50
+    n_test=100
     xg,yg = np.meshgrid ( np.linspace(Xd[:,0].min(),Xd[:,0].max(),n_test) , np.linspace(Xd[:,1].min(),Xd[:,1].max(),n_test) )
     X_test= np.vstack((xg.flatten(),yg.flatten())).T
     n = X_test.shape[0]
     utils.print_with_stamp('predicting','main')
 
     M = []; S = []
-    batch_size=50
+    batch_size=100
     for i in xrange(0,n,batch_size):
         next_i = min(i+batch_size,n)
         print 'batch %d , %d'%(i,next_i)
@@ -108,9 +107,62 @@ def test_sonar():
     plt.imshow(S.reshape(n_test,n_test), origin='lower')
     plt.show()
 
-    #if gp.profile:
-    #    write_profile_files(gp)
+    if gp.profile:
+        write_profile_files(gp)
+
+def test_K():
+    import cov
+    from scipy.io import loadmat
+    dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
+    
+    X_ = np.array(dataset['mat'][:,0:2])
+    Y_ = np.array(dataset['mat'][:,2])[:,None]
+    if theano.config.floatX == 'float32':
+        X_ = X_.astype(np.float32)
+        Y_ = Y_.astype(np.float32)
+
+    idims = X_.shape[1]
+    odims = Y_.shape[1]
+    N = X_.shape[0]
+
+    # and initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
+    loghyp_ = np.zeros((odims,idims+2))
+    if theano.config.floatX == 'float32':
+        loghyp_ = loghyp_.astype(np.float32)
+    loghyp_[:,:idims] = X_.std(0)
+    loghyp_[:,idims] = Y_.std(0)
+    loghyp_[:,idims+1] = 0.1*loghyp_[:,idims]
+    loghyp_ = np.log(loghyp_)
+
+    X = S(X_,name='X', borrow=False)
+    Y = S(Y_,name='Y', borrow=False)
+    loghyp = [S(loghyp_[i,:],name='loghyp', borrow=False) for i in xrange(odims)]
+
+    
+
+    # We initialise the kernel matrices (one for each output dimension)
+    K = [ kernel_func[i](X) for i in xrange(odims) ]
+    iK = [ matrix_inverse(psd(K[i])) for i in xrange(odims) ]
+    beta = [ iK[i].dot(Y[:,i]) for i in xrange(odims) ]
+
+    # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
+    # the loghyperparameters across all output dimensions and train the GPs jointly)
+    nlml = [ 0.5*(Y[:,i].T.dot(beta[i]) + T.log(det(psd(K[i]))) + N*T.log(2*np.pi) )/N for i in xrange(odims) ]
+
+    fK = F((),beta)
+    from time import time
+    utils.print_with_stamp('evaluating','main')
+    for i in xrange(10):
+        fK()
+    print fK()
+    print time()-start
+    utils.print_with_stamp('done predicting','main')
 
 if __name__=='__main__':
-    #test_random()
-    test_sonar()
+    np.set_printoptions(linewidth=500)
+    test_random()
+    #test_sonar()
+    #test_K()
+
+
+

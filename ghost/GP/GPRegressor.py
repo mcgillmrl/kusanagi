@@ -23,7 +23,7 @@ class GP(object):
         self.name = name
         self.idims = X_dataset.shape[1]
         self.odims = Y_dataset.shape[1]
-        self.filename = '%s_%d_%d_%s_%s.zip'%(self.name,self.idims,self.odims,theano.config.device,theano.config.floatX)
+        self.filename = '%s_%d_%d_%s_%s'%(self.name,self.idims,self.odims,theano.config.device,theano.config.floatX)
         self.should_save = False
 
         try:
@@ -205,7 +205,8 @@ class GP(object):
         dnlml = np.array(self.dnlml()).flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
-        #print res
+        sys.stdout.write('\r'+str(res[0])+", "+str(np.exp(loghyp)))
+        sys.stdout.flush()
         return res
 
     def train(self):
@@ -218,12 +219,12 @@ class GP(object):
         self.should_save = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
         np.copyto(self.loghyp_,loghyp)
         self.save()
-        utils.print_with_stamp('New hyperparameters:',self.name)
+        utils.print_with_stamp('\nNew hyperparameters:',self.name)
         print np.exp(self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
 
     def load(self):
-        with open(self.filename,'rb') as f:
+        with open(self.filename+'.zip','rb') as f:
             utils.print_with_stamp('Loading compiled GP with %d inputs and %d outputs'%(self.idims,self.odims),self.name)
             state = t_load(f)
             self.X = state[0]
@@ -240,7 +241,7 @@ class GP(object):
     def save(self):
         sys.setrecursionlimit(100000)
         if self.should_save:
-            with open(self.filename,'wb') as f:
+            with open(self.filename+'.zip','wb') as f:
                 utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs'%(self.idims,self.odims),self.name)
                 state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
                 t_dump(state,f,2)
@@ -268,20 +269,29 @@ class GPUncertainInputs(GP):
         # predictive mean and covariance (for each output dimension)
         M = [] # mean
         V = [] # inv(x_cov).dot(input_output_cov)
-        M2 = [] # second moment
+        M2 = [[]]*(odims**2) # second moment
 
-        def M_helper(inp_,B_k,log_sf2):
+        def M_helper(inp_k,B_k,sf2):
             t_k = inp_k.dot(matrix_inverse(psd(B_k)))
-            c_k = T.exp(log_sf2)/T.sqrt(det(psd(B_k)))
+            c_k = sf2/T.sqrt(det(psd(B_k)))
+            return (t_k,c_k)
+            
+        #predictive second moment ( only the lower triangular part, including the diagonal)
+        def M2_helper(zeta_k,zeta_i_k, zeta_j_k, z_ij_k, R_k, x_cov_k, log_sf2_ij):
+            n_k = 0.5*(T.diag(zeta_k.dot(zeta_i_k.T))[:,None] + T.diag(zeta_k.dot(zeta_j_k.T))[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k)))
+            t_k = 1.0/T.sqrt(det(psd(R_k)))
+            Q_k = t_k*T.exp( log_sf2_ij - n_k )
+            return Q_k
 
         for i in xrange(odims):
+            print i
             # rescale input dimensions by inverse lengthscales
             iL = T.diag(T.exp(-self.loghyp[i][:idims]))
             inp = zeta.dot(iL)
             # predictive mean ( which depends on input covariance )
             B = iL.dot(x_cov.T).transpose(2,0,1).dot(iL) + T.eye(idims)
             #t, updts = theano.scan(fn=lambda inp_k,B_k: inp_k.dot(matrix_inverse(B_k)),sequences=[inp,B])
-            t,c, updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[self.loghyp[i][idims]], strict=True)
+            (t,c), updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[T.exp(2*self.loghyp[i][idims])], strict=True)
             l = T.exp(-0.5*T.sum(inp*t,2))
             lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
             #c, updts = theano.scan(fn=lambda B_k,log_sf: T.exp(2*log_sf)/T.sqrt(det(B_k)), sequences=[B], non_sequences=[self.loghyp[i][idims]], strict=True);
@@ -292,27 +302,18 @@ class GPUncertainInputs(GP):
             tiL = t.dot(iL)
             v, updts = theano.scan(fn=lambda tiL_k,lb_k,c_k: tiL_k.T.dot(lb_k)*c_k,sequences=[tiL,lb,c])
             V.append(v)
-            
-            #predictive second moment ( only the lower triangular part, including the diagonal)
-            def M2_helper(zeta_k,zeta_i_k, zeta_j_k, z_ij_k, R_k, x_cov_k, log_sf2_ij):
-                n_k = 0.5*(T.diag(zeta_k.dot(zeta_i_k.T))[:,None] + T.diag(zeta_k.dot(zeta_j_k.T))[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k)))
-                t_k = 1.0/T.sqrt(det(psd(R_k)))
-                Q_k = t_k*T.exp( log_sf2_ij - n_k )
-
-                return Q_k
         
             Lambda_i = T.diag(T.exp(-2*self.loghyp[i][:idims]))
-            for j in xrange(odims):
+            zeta_i = zeta.dot(Lambda_i)
+            for j in xrange(i+1):
+                print i,j
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 Lambda_j = T.diag(T.exp(-2*self.loghyp[j][:idims]))
-
-                zeta_i = zeta.dot(Lambda_i)
                 zeta_j = zeta.dot(Lambda_j)
                 
                 Lambda = Lambda_i + Lambda_j
 
                 z_ij = zeta_i + zeta_j
-
                 R = x_cov.dot(Lambda) + T.eye(idims)
     
                 Q,updts = theano.scan(fn=M2_helper, sequences=(zeta,zeta_i,zeta_j,z_ij,R,x_cov), non_sequences=[2*(self.loghyp[i][idims] + self.loghyp[j][idims])], strict=True)
@@ -321,7 +322,9 @@ class GPUncertainInputs(GP):
                 m2 = self.beta[i].dot(Q.T).T.dot(self.beta[j])
                 if i == j:
                     m2 =  m2 - T.sum(self.iK[i]*Q,(1,2)) + T.exp(2*self.loghyp[i][idims])
-                M2.append(m2)
+                else:
+                    M2[j*odims+i] = m2
+                M2[i*odims+j] = m2
 
         M = T.stacklists(M).T
         V = T.stacklists(V).transpose(1,2,0)
