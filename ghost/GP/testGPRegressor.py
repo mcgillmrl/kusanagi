@@ -6,10 +6,10 @@ def test_random():
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-500*(np.sum(0.001*(X**2),1)))
 
-    n_samples = 1000
-    n_test = 1000
-    idims = 5
-    odims = 5
+    n_samples = 100
+    n_test = 10
+    idims = 7
+    odims = 3
     np.random.seed(31337)
     
     X_ = 10*(np.random.rand(n_samples,idims) - 0.5)
@@ -71,23 +71,24 @@ def test_sonar():
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
-    Xd = np.array(dataset['mat'][:,0:2])
-    Yd = np.array(dataset['mat'][:,2])[:,None]
+    idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1000)
+    Xd = np.array(dataset['mat'][idx,0:2])
+    Yd = np.array(dataset['mat'][idx,2])[:,None]
 
-    #gp = GP(Xd,Yd, profile=False)
+    #gp = GP(Xd,Yd, profile=True)
     gp = GPUncertainInputs(Xd,Yd, profile=True)
     utils.print_with_stamp('training','main')
     gp.train()
     utils.print_with_stamp('done training','main')
     
-    n_test=100
+    n_test=25
     xg,yg = np.meshgrid ( np.linspace(Xd[:,0].min(),Xd[:,0].max(),n_test) , np.linspace(Xd[:,1].min(),Xd[:,1].max(),n_test) )
     X_test= np.vstack((xg.flatten(),yg.flatten())).T
     n = X_test.shape[0]
     utils.print_with_stamp('predicting','main')
 
     M = []; S = []
-    batch_size=100
+    batch_size=25
     for i in xrange(0,n,batch_size):
         next_i = min(i+batch_size,n)
         print 'batch %d , %d'%(i,next_i)
@@ -160,8 +161,8 @@ def test_K():
 
 if __name__=='__main__':
     np.set_printoptions(linewidth=500)
-    test_random()
-    #test_sonar()
+    #test_random()
+    test_sonar()
     #test_K()
 
 

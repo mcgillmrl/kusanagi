@@ -7,8 +7,8 @@ import theano.tensor as T
 from scipy.optimize import minimize
 from theano import function as F, shared as S
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
-from theano.sandbox.linalg import psd
-from theano.tensor.nlinalg import matrix_inverse,det
+from theano.tensor.nlinalg import matrix_dot
+from theano.sandbox.linalg import psd,matrix_inverse,det
 
 import cov
 import utils
@@ -16,7 +16,7 @@ import utils
 class GP(object):
     def __init__(self, X_dataset, Y_dataset, name='GP', profile=False):
         self.profile= profile
-        self.compile_mode = theano.compile.get_default_mode().excluding('scanOp_pushout_seqs_ops')
+        self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
 
         self.X_ = None; self.Y_ = None
         self.X = None; self.Y = None; self.loghyp = None
@@ -49,7 +49,6 @@ class GP(object):
             assert self.X_.shape[1] == X_dataset.shape[1]
         if self.Y_ is not None:
             assert self.Y_.shape[1] == Y_dataset.shape[1]
-
 
         # first, assign the numpy arrays to class members
         if theano.config.floatX == 'float32':
@@ -103,27 +102,36 @@ class GP(object):
         utils.print_with_stamp('Initialising expression graph for log likelihood',self.name)
         idims = self.idims
         odims = self.odims
-        # initialise the (before compilation) kernel function
+
+        self.kernel_func = [[]]*odims
+        self.K = [[]]*odims
+        self.iK = [[]]*odims
+        self.beta = [[]]*odims
+        nlml = [[]]*odims
+        dnlml = [[]]*odims
         covs = (cov.SEard, cov.Noise)
-        loghyps = [ (self.loghyp[i][:idims+1],self.loghyp[i][idims+1]) for i in xrange(odims) ]
-        self.kernel_func = [ partial(cov.Sum, loghyps[i], covs) for i in xrange(odims) ]
+        for i in xrange(odims):
+            # initialise the (before compilation) kernel function
+            loghyps = (self.loghyp[i][:idims+1],self.loghyp[i][idims+1])
+            self.kernel_func[i] = partial(cov.Sum, loghyps, covs)
 
-        # We initialise the kernel matrices (one for each output dimension)
-        self.K = [ self.kernel_func[i](self.X) for i in xrange(odims) ]
-        self.iK = [ matrix_inverse(psd(self.K[i])) for i in xrange(odims) ]
-        self.beta = [ self.iK[i].dot(self.Y[:,i]) for i in xrange(odims) ]
+            # We initialise the kernel matrices (one for each output dimension)
+            self.K[i] = self.kernel_func[i](self.X)
+            self.iK[i] = matrix_inverse(psd(self.K[i]))
+            self.beta[i] = self.iK[i].dot(self.Y[:,i])
 
-        # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
-        # the loghyperparameters across all output dimensions and train the GPs jointly)
-        nlml = [ 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + self.N*T.log(2*np.pi) )/self.N  for i in xrange(odims) ]
-        # Compute the gradients for each output dimension independently
-        dnlml = [ T.jacobian(nlml[i].flatten(),self.loghyp[i]) for i in xrange(odims)]
-
+            # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
+            # the loghyperparameters across all output dimensions and train the GPs jointly)
+            nlml[i] = 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + self.N*T.log(2*np.pi) )/self.N
+            # Compute the gradients for each output dimension independently
+            dnlml[i] = T.jacobian(nlml[i].flatten(),self.loghyp[i])
+        nlml = T.stacklists(nlml)
+        dnlml = T.stacklists(dnlml)
         # Compile the theano functions
         utils.print_with_stamp('Compiling log likelihood',self.name)
         self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode)
         utils.print_with_stamp('Compiling jacobian of log likelihood',self.name)
-        self.dnlml = F((),dnlml,name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode)
+        self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode)
     
     def init_predict(self):
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
@@ -133,12 +141,14 @@ class GP(object):
             x_mean = T.fmatrix('x')
         else:
             x_mean = T.dmatrix('x')
-        self.k = [ self.kernel_func[i](x_mean,self.X) for i in xrange(odims) ]
 
         # compute the mean and variance for each output dimension
-        mean = [ self.k[i].dot(self.beta[i]) for i in xrange(odims)]
-        #variance = [ - (self.k[i] * (self.k[i].dot( self.iK[i] )) ).sum(axis=1)  for i in xrange(odims) ]
-        variance = [ T.diag(self.kernel_func[i](x_mean,x_mean)) - (self.k[i] * (self.k[i].dot( self.iK[i] )) ).sum(axis=1)  for i in xrange(odims) ]
+        mean = [[]]*odims
+        variance = [[]]*odims
+        for i in xrange(odims):
+            k = self.kernel_func[i](x_mean,self.X)
+            mean = k.dot(self.beta[i])
+            variance = self.kernel_func[i](x_mean,all_pairs=False) - (k*(k.dot( self.iK[i] )) ).sum(axis=1)
 
         # compile the prediction function
         M = T.stacklists(mean).T
@@ -201,8 +211,9 @@ class GP(object):
     
     def loss(self,loghyp):
         self.set_loghyp(loghyp)
-        nlml = np.array(self.nlml()).sum()
-        dnlml = np.array(self.dnlml()).flatten()
+        res = self.dnlml()
+        nlml = np.array(res[0]).sum()
+        dnlml = np.array(res[1]).flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
         sys.stdout.write('\r'+str(res[0])+", "+str(np.exp(loghyp)))
@@ -215,13 +226,14 @@ class GP(object):
         print np.exp(self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-6, options={'maxiter': 100})
+        print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.should_save = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
         np.copyto(self.loghyp_,loghyp)
-        self.save()
-        utils.print_with_stamp('\nNew hyperparameters:',self.name)
+        utils.print_with_stamp('New hyperparameters:',self.name)
         print np.exp(self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
+        self.save()
 
     def load(self):
         with open(self.filename+'.zip','rb') as f:
@@ -264,7 +276,7 @@ class GPUncertainInputs(GP):
             x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
 
         #centralize inputs 
-        zeta, updts = theano.scan(fn=lambda x_mean_i,X: X - x_mean_i, sequences=[x_mean], non_sequences=[self.X], strict=True)
+        zeta = self.X[None,:,:] - x_mean[:,None,:]
         
         # predictive mean and covariance (for each output dimension)
         M = [] # mean
@@ -278,50 +290,51 @@ class GPUncertainInputs(GP):
             
         #predictive second moment ( only the lower triangular part, including the diagonal)
         def M2_helper(zeta_k,zeta_i_k, zeta_j_k, z_ij_k, R_k, x_cov_k, log_sf2_ij):
-            n_k = 0.5*(T.diag(zeta_k.dot(zeta_i_k.T))[:,None] + T.diag(zeta_k.dot(zeta_j_k.T))[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k)))
-            t_k = 1.0/T.sqrt(det(psd(R_k)))
-            Q_k = t_k*T.exp( log_sf2_ij - n_k )
-            return Q_k
-
+            nk2 = (T.sum(zeta_k*zeta_i_k,axis=1))[:,None] + (T.sum(zeta_k*zeta_j_k,axis=1))[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k))
+            tk = 1.0/T.sqrt(det(psd(R_k)))
+            Qk = tk*T.exp( log_sf2_ij - 0.5*nk2 )
+            
+            return Qk
+        
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
-            iL = T.diag(T.exp(-self.loghyp[i][:idims]))
-            inp = zeta.dot(iL)
+            iL = T.exp(-self.loghyp[i][:idims])
+            inp = zeta*iL  # Note this is assuming a diagonal scaling matrix on the kernel
             # predictive mean ( which depends on input covariance )
-            B = iL.dot(x_cov.T).transpose(2,0,1).dot(iL) + T.eye(idims)
-            #t, updts = theano.scan(fn=lambda inp_k,B_k: inp_k.dot(matrix_inverse(B_k)),sequences=[inp,B])
+            B = iL[:,None]*x_cov*iL + T.eye(idims)
             (t,c), updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[T.exp(2*self.loghyp[i][idims])], strict=True)
             l = T.exp(-0.5*T.sum(inp*t,2))
             lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
-            #c, updts = theano.scan(fn=lambda B_k,log_sf: T.exp(2*log_sf)/T.sqrt(det(B_k)), sequences=[B], non_sequences=[self.loghyp[i][idims]], strict=True);
             mean = T.sum(lb,1)*c;
+            mean.name = 'M_%d'%(i)
             M.append(mean)
 
             # inv(x_cov) times input output covariance
-            tiL = t.dot(iL)
+            tiL = t*iL
             v, updts = theano.scan(fn=lambda tiL_k,lb_k,c_k: tiL_k.T.dot(lb_k)*c_k,sequences=[tiL,lb,c])
             V.append(v)
         
-            Lambda_i = T.diag(T.exp(-2*self.loghyp[i][:idims]))
-            zeta_i = zeta.dot(Lambda_i)
+            Lambda_i = iL*iL
+            zeta_i = zeta*Lambda_i
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                Lambda_j = T.diag(T.exp(-2*self.loghyp[j][:idims]))
-                zeta_j = zeta.dot(Lambda_j)
+                Lambda_j = T.exp(-2*self.loghyp[j][:idims])
+                zeta_j = zeta*Lambda_j
                 
                 Lambda = Lambda_i + Lambda_j
 
                 z_ij = zeta_i + zeta_j
-                R = x_cov.dot(Lambda) + T.eye(idims)
+                R = x_cov*Lambda + T.eye(idims)
     
                 Q,updts = theano.scan(fn=M2_helper, sequences=(zeta,zeta_i,zeta_j,z_ij,R,x_cov), non_sequences=[2*(self.loghyp[i][idims] + self.loghyp[j][idims])], strict=True)
                 
                 # Eq 2.55
-                m2 = self.beta[i].dot(Q.T).T.dot(self.beta[j])
+                m2 = matrix_dot(self.beta[i],Q,self.beta[j])
                 if i == j:
                     m2 =  m2 - T.sum(self.iK[i]*Q,(1,2)) + T.exp(2*self.loghyp[i][idims])
                 else:
                     M2[j*odims+i] = m2
+                m2.name = 'M2_%d%d'%(i,j)
                 M2[i*odims+j] = m2
 
         M = T.stacklists(M).T
