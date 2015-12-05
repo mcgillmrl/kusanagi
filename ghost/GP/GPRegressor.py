@@ -284,7 +284,6 @@ class GPUncertainInputs(GP):
             return Q_k
 
         for i in xrange(odims):
-            print i
             # rescale input dimensions by inverse lengthscales
             iL = T.diag(T.exp(-self.loghyp[i][:idims]))
             inp = zeta.dot(iL)
@@ -306,7 +305,6 @@ class GPUncertainInputs(GP):
             Lambda_i = T.diag(T.exp(-2*self.loghyp[i][:idims]))
             zeta_i = zeta.dot(Lambda_i)
             for j in xrange(i+1):
-                print i,j
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 Lambda_j = T.diag(T.exp(-2*self.loghyp[j][:idims]))
                 zeta_j = zeta.dot(Lambda_j)
