@@ -291,17 +291,20 @@ class GPUncertainInputs(GP):
             return (t_k,c_k)
             
         #predictive second moment ( only the lower triangular part, including the diagonal)
-        def M2_helper(zeta_k,zeta_i_k, zeta_j_k, z_ij_k, R_k, x_cov_k, log_sf2_ij):
-            nk2 = (T.sum(zeta_k*zeta_i_k,axis=1))[:,None] + (T.sum(zeta_k*zeta_j_k,axis=1))[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k))
+        def M2_helper(logk_i_k, logk_j_k, z_ij_k, R_k, x_cov_k):
+            nk2 = logk_i_k[:,None] + logk_j_k[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k))
             tk = 1.0/T.sqrt(det(psd(R_k)))
-            Qk = tk*T.exp( log_sf2_ij - 0.5*nk2 )
+            Qk = tk*T.exp( nk2 )
             
             return Qk
-        
+
+        logk=[[]]*odims
+        Lambda=[[]]*odims
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
             iL = T.exp(-self.loghyp[i][:idims])
             inp = zeta*iL  # Note this is assuming a diagonal scaling matrix on the kernel
+
             # predictive mean ( which depends on input covariance )
             B = iL[:,None]*x_cov*iL + T.eye(idims)
             (t,c), updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[T.exp(2*self.loghyp[i][idims])], strict=True)
@@ -315,21 +318,18 @@ class GPUncertainInputs(GP):
             tiL = t*iL
             v, updts = theano.scan(fn=lambda tiL_k,lb_k,c_k: tiL_k.T.dot(lb_k)*c_k,sequences=[tiL,lb,c])
             V.append(v)
-        
-            Lambda_i = iL*iL
-            zeta_i = zeta*Lambda_i
+            
+            # predictive covariance
+            logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,2)
+            Lambda[i] = iL*iL
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                Lambda_j = T.exp(-2*self.loghyp[j][:idims])
-                zeta_j = zeta*Lambda_j
-                
-                Lambda = Lambda_i + Lambda_j
-
-                z_ij = zeta_i + zeta_j
-                R = x_cov*Lambda + T.eye(idims)
+                z_ij = zeta*Lambda[i] + zeta*Lambda[j]
+                R = x_cov*(Lambda[i] + Lambda[j]) + T.eye(idims)
     
-                Q,updts = theano.scan(fn=M2_helper, sequences=(zeta,zeta_i,zeta_j,z_ij,R,x_cov), non_sequences=[2*(self.loghyp[i][idims] + self.loghyp[j][idims])], strict=True)
-                
+                Q,updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_ij,R,x_cov))
+                Q.name = 'Q_%d%d'%(i,j)
+
                 # Eq 2.55
                 m2 = matrix_dot(self.beta[i],Q,self.beta[j])
                 if i == j:
