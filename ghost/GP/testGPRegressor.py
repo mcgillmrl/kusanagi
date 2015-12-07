@@ -20,7 +20,7 @@ def test_random():
     #gp = GP(X_,Y_)
     #gp.train()
 
-    gpu = GPUncertainInputs(X_,Y_,profile=True)
+    gpu = GP_UI(X_,Y_,profile=True)
     gpu.train()
 
     X_ = 10*(np.random.rand(n_test,idims) - 0.5)
@@ -71,14 +71,15 @@ def test_sonar():
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
-    #idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1000)
-    #Xd = np.array(dataset['mat'][idx,0:2])
-    #Yd = np.array(dataset['mat'][idx,2])[:,None]
-    Xd = np.array(dataset['mat'][:,0:2])
-    Yd = np.array(dataset['mat'][:,2])[:,None]
+    idx = np.random.choice(np.arange(dataset['mat'].shape[0]),100)
+    Xd = np.array(dataset['mat'][idx,0:2])
+    Yd = np.array(dataset['mat'][idx,2])[:,None]
+    #Xd = np.array(dataset['mat'][:,0:2])
+    #Yd = np.array(dataset['mat'][:,2])[:,None]
 
     #gp = GP(Xd,Yd, profile=True)
-    gp = GPUncertainInputs(Xd,Yd, profile=False)
+    #gp = GP_UI(Xd,Yd, profile=False)
+    gp = SPGP(Xd,Yd, profile=False, n_inducing = 10)
     utils.print_with_stamp('training','main')
     gp.train()
     utils.print_with_stamp('done training','main')
@@ -141,8 +142,6 @@ def test_K():
     Y = S(Y_,name='Y', borrow=False)
     loghyp = [S(loghyp_[i,:],name='loghyp', borrow=False) for i in xrange(odims)]
 
-    
-
     # We initialise the kernel matrices (one for each output dimension)
     K = [ kernel_func[i](X) for i in xrange(odims) ]
     iK = [ matrix_inverse(psd(K[i])) for i in xrange(odims) ]
@@ -161,11 +160,48 @@ def test_K():
     print time()-start
     utils.print_with_stamp('done predicting','main')
 
+def test_K_means():
+    from scipy.io import loadmat
+    import theano
+    dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
+    
+    idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1000)
+    Xd = np.array(dataset['mat'][idx,0:2])
+    Yd = np.array(dataset['mat'][idx,2])[:,None]
+    #Xd = np.array(dataset['mat'][:,0:2])
+    #Yd = np.array(dataset['mat'][:,2])[:,None]
+    Xd = Xd - Xd.mean(0)
+    k = 300
+    Wd = np.random.multivariate_normal(Xd.mean(0),np.diag(Xd.var(0)),k)
+    W, km = utils.get_kmeans_func(Wd)
+
+    batch_size = 125
+    n_trials=20
+    learning_rate = 0.0025
+    should_break = False
+    prev_err =  km(Xd[0:batch_size],learning_rate)
+    utils.print_with_stamp('start','main')
+    from time import time
+    start = time()
+    for i in xrange(1000):
+        for j in xrange(1,Xd.shape[0],batch_size):
+            err =  km(Xd[j:j+batch_size],learning_rate*(0.95**i))
+            if (abs(prev_err - err) <= 1e-6):
+                print i
+                should_break = True
+                break;
+        if should_break:
+            break;
+        prev_err = err
+    utils.print_with_stamp('done','main')
+    print (time()-start)
+
 if __name__=='__main__':
     np.set_printoptions(linewidth=500)
     #test_random()
     test_sonar()
     #test_K()
+    #test_K_means()
 
 
 

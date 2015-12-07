@@ -8,7 +8,7 @@ from scipy.optimize import minimize
 from theano import function as F, shared as S
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.tensor.nlinalg import matrix_dot
-from theano.sandbox.linalg import psd,matrix_inverse,det
+from theano.sandbox.linalg import psd,matrix_inverse,det, cholesky,solve
 
 import cov
 import utils
@@ -139,7 +139,6 @@ class GP(object):
     def init_predict(self):
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
         odims = self.odims
-        # and a expresion to evaluate the kernel vector at a new evaluation point
         if theano.config.floatX == 'float32':
             x_mean = T.fmatrix('x')
         else:
@@ -176,7 +175,7 @@ class GP(object):
         n = x_mean.shape[0]
         if len(x_mean.shape) == 1:
             # convert to row vector
-            x_mean = x_mean[None,:]
+            x_mean = x_mean[None,:].reshape((n,idims))
 
         res = None
         if self.name == 'GP':
@@ -185,7 +184,7 @@ class GP(object):
             if x_cov is None:
                 x_cov = np.zeros((n,idims,idims))
             if theano.config.floatX == 'float32':
-                x_cov = x_cov.astype(np.float32)
+                x_cov = x_cov.astype(np.float32).reshape((n,idims,idims))
             res = self.predict_(x_mean, x_cov)
         return res
 
@@ -193,22 +192,22 @@ class GP(object):
         # cast to float 32 if necessary
         if theano.config.floatX == 'float32':
             x_mean = x_mean.astype(np.float32)
-            if x_cov is not None:
-                x_cov = x_cov.astype(np.float32)
+
         odims = self.odims
         idims = self.idims
         n = x_mean.shape[0]
         if len(x_mean.shape) == 1:
             # convert to row vector
-            x_mean = x_mean[None,:]
-        res = None
+            x_mean = x_mean[None,:].reshape((n,idims))
 
-        if x_cov is None or self.name == 'GP':
-            if self.name == 'GP':
-                res = self.predict_(x_mean)
-            else:
-                res = self.predict_(x_mean, np.zeros((n_test,idims,idims)) )
+        res = None
+        if self.name == 'GP':
+            res = self.predict_d_(x_mean)
         else:
+            if x_cov is None:
+                x_cov = np.zeros((n,idims,idims))
+            if theano.config.floatX == 'float32':
+                x_cov = x_cov.astype(np.float32).reshape((n,idims,idims))
             res = self.predict_d_(x_mean, x_cov)
         return res
     
@@ -219,7 +218,8 @@ class GP(object):
         dnlml = np.array(res[1]).flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
-        utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
+        #utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
+        utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
         return res
 
     def train(self):
@@ -227,7 +227,7 @@ class GP(object):
         utils.print_with_stamp('Current hyperparameters:',self.name)
         print np.exp(self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
-        opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-6, options={'maxiter': 100})
+        opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 300})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.should_save = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
@@ -260,9 +260,9 @@ class GP(object):
                 state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
                 t_dump(state,f,2)
 
-class GPUncertainInputs(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'GPUncertainInputs',profile=False):
-        super(GPUncertainInputs, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+class GP_UI(GP):
+    def __init__(self, X_dataset, Y_dataset, name = 'GP_UI',profile=False):
+        super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
 
     def init_predict(self):
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
@@ -314,9 +314,9 @@ class GPUncertainInputs(GP):
             mean.name = 'M_%d'%(i)
             M.append(mean)
 
-            # inv(x_cov) times input output covariance
+            # inv(x_cov) times input output covariance (Eq 2.70)
             tiL = t*iL
-            v, updts = theano.scan(fn=lambda tiL_k,lb_k,c_k: tiL_k.T.dot(lb_k)*c_k,sequences=[tiL,lb,c])
+            v = T.sum(tiL*lb[:,:,None],axis=1)*c[:,None]
             V.append(v)
             
             # predictive covariance
@@ -358,3 +358,169 @@ class GPUncertainInputs(GP):
 
         utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
         self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+
+class SPGP(GP):
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP',profile=False, n_inducing = 100):
+        self.X_sp = None # inducing inputs
+        self.Y_sp = None #inducing targets
+        self.nlml_sp = None
+        self.dnlml_sp = None
+        self.n_inducing = n_inducing
+        # intialize parent class params
+        super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+
+    def init_pseudo_inputs(self):
+        if self.X_sp is None:
+            utils.print_with_stamp('Compiling kmeans function',self.name)
+            # pick initial cluster centers from dataset
+            self.X_sp_ = np.random.multivariate_normal(self.X_.mean(0),np.diag(self.X_.var(0)),self.n_inducing)
+            # this function corresponds to a single iteration of kmeans
+            self.X_sp, kmeans = utils.get_kmeans_func(self.X_sp_)
+        else:
+            # pick initial cluster centers from dataset
+            np.copyto(self.X_sp_,np.random.multivariate_normal(self.X_.mean(0),np.diag(self.X_.var(0)),self.n_inducing))
+
+        utils.print_with_stamp('Initialising pseudo inputs',self.name)
+        batch_size = 100  # this is a reasonable batch size for datasets that are not too high dimensional.
+        max_iters = 1000
+        alpha = 0.0025/0.95
+        prev_err = kmeans(self.X_[0:batch_size],alpha)
+        should_break = False
+        # run kmeans
+        for it in xrange(max_iters):
+            for i in xrange(0,self.N,batch_size):
+                err = kmeans(self.X_[i:i+batch_size],alpha*(0.95**it))
+                if abs(err-prev_err) <  1e-6:
+                    should_break = True
+                    break
+            if should_break:
+                break
+            prev_err = err
+        # at this point X_sp_ should correspond to the kmeans centers of the dataset
+
+    def set_dataset(self,X_dataset,Y_dataset):
+        # set the dataset on the parent class
+        super(SPGP, self).set_dataset(X_dataset,Y_dataset)
+        # init the shared variable for the pseudo inputs
+        self.init_pseudo_inputs()
+        
+    def init_log_likelihood(self):
+        # initialize the log likelihood of the GP class
+        super(SPGP, self).init_log_likelihood()
+        odims = self.odims
+        idims = self.idims
+        # initialize the log likelihood of the sparse FITC approximation
+        self.Kmm = [[]]*odims
+        self.Bmm = [[]]*odims
+        self.beta_sp = [[]]*odims
+        nlml_sp = [[]]*odims
+        dnlml_sp = [[]]*odims
+        for i in xrange(odims):
+            Kmn = self.kernel_func[i](self.X_sp,self.X)
+            Kmm = self.kernel_func[i](self.X_sp)
+            Qnn =  matrix_dot(Kmn.T,matrix_inverse(psd(Kmm)),Kmn)
+
+            # Gamma = diag(Knn - Qnn) + sn2*I
+            Gamma = (T.exp(2*self.loghyp[i][idims]) - T.diag(Qnn)) + T.exp(2*self.loghyp[i][idims+1]) 
+            Gamma_inv = T.sqrt(1.0/Gamma)
+            # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
+            Kmn_ = Kmn*Gamma_inv
+            Yi = self.Y[:,i]*(T.sqrt(Gamma_inv)[:,None])  # Gamma^1 dot Y
+            Bmm = Kmm + (Kmn_).dot(Kmn_.T)
+            Bmn_ = matrix_inverse(psd(Bmm)).dot(Kmn_)  #  ()
+
+            log_det_K_sp = T.sum(T.log(Gamma)) + T.log(det(psd(Kmm))) + T.log(det(psd(Bmm)))
+
+            self.Kmm[i] = Kmm
+            self.Bmm[i] = Bmm
+            self.beta_sp[i] = Bmn_.dot(Yi)
+
+            #nlml_sp[i] = 0.5*(matrix_dot(self.Y[:,i].T,iK_sp, self.Y[:,i] ) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
+            nlml_sp[i] = 0.5*( T.sum(Yi**2) + T.sum(self.beta_sp[i]**2) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
+            # Compute the gradients for each output dimension independently wrt the hyperparameters AND the inducing input
+            # locations Xb
+            # TODO include the log hyperparameters in the optimization
+            # TODO give the optiion for separate inducing inputs for every output dimension
+            dnlml_sp[i] = (T.jacobian(nlml_sp[i].flatten(),self.X_sp)).reshape(self.X_sp.shape)
+
+        nlml_sp = T.stacklists(nlml_sp)
+        dnlml_sp = T.stacklists(dnlml_sp)
+        # Compile the theano functions
+        utils.print_with_stamp('Compiling FITC log likelihood',self.name)
+        self.nlml_sp = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
+        utils.print_with_stamp('Compiling jacobian of FITC log likelihood',self.name)
+        self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
+
+    def init_predict(self):
+        # this is the sparse approximation
+        utils.print_with_stamp('Initialising expression graph for SPGP prediction',self.name)
+        odims = self.odims
+        if theano.config.floatX == 'float32':
+            x_mean = T.fmatrix('x')
+        else:
+            x_mean = T.dmatrix('x')
+
+        # compute the mean and variance for each output dimension
+        mean = [[]]*odims
+        variance = [[]]*odims
+        for i in xrange(odims):
+            k = self.kernel_func[i](x_mean,self.X_sp)
+            mean = k.dot(self.beta_sp[i])
+            iK = matrix_inverse(psd(self.Kmm[i]))
+            iB = matrix_inverse(psd(self.Bmm[i]))
+            variance = self.kernel_func[i](x_mean,all_pairs=False) - (k*(k.dot(iK) + k.dot(iB)) ).sum(axis=1)
+
+        # compile the prediction function
+        M = T.stacklists(mean).T
+        S = T.stacklists(variance).T
+        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
+        self.predict_ = F([x_mean],(M,S),name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
+
+        # compile the derivatives wrt the evaluation point
+        dMdm = T.jacobian(M.flatten(),x_mean)
+        dSdm = T.jacobian(S.flatten(),x_mean)
+
+        utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
+        self.predict_d_ = F([x_mean], (M,dMdm,S,dSdm),name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+        pass
+
+    def set_X_sp(self, X_sp):
+        X_sp = X_sp.reshape(self.X_sp_.shape)
+        if theano.config.floatX == 'float32':
+            X_sp = X_sp.astype(np.float32)
+        np.copyto(self.X_sp_,X_sp)
+
+    def loss_sp(self,X_sp):
+        self.set_X_sp(X_sp)
+        res = self.dnlml_sp()
+        nlml = np.array(res[0]).sum()
+        dnlml = np.array(res[1]).flatten()
+        # on a 64bit system, scipy optimize complains if we pass a 32 bit float
+        res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
+        #utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
+        utils.print_with_stamp('%s'%(str(res[0])),self.name,False)
+        print res
+        return res
+
+    def train(self):
+        # train the full GP
+        super(SPGP, self).train()
+
+        # find the pseudo input locations
+        #self.init_pseudo_inputs()
+
+        # train the pseudo input locations
+        utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
+        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 300})
+        print ''
+        X_sp = opt_res.x.reshape(self.X_sp_.shape)
+        np.copyto(self.X_sp_,X_sp)
+        utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
+
+
+class SPGP_UI(GP):
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False):
+        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+
+    def init_predict(self):
+        pass

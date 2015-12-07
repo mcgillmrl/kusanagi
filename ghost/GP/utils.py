@@ -45,3 +45,35 @@ def print_with_stamp(message, name=None, same_line=False):
         sys.stdout.write(out_str)
         print ''
     sys.stdout.flush()
+
+def kmeans(X,W,learning_rate=0.001):
+    #find the closest vector from W to each vector in X
+    Xm = X - X.mean(0)
+    Wm = W - X.mean(0)
+    D = (Xm**2).sum(1)[:,None] + (Wm**2).sum(1)[None,:] - 2*Xm.dot(W.T)
+    #D = maha(Xm,Wm)
+    err = T.sum(D)/X.shape[0]
+    # compute updates to the vectors in W
+    direction = T.stacklists(T.grad(err,[W])).reshape(W.shape)
+    updts = [(W, W - learning_rate*direction)]
+    # compute the error (i.e. the total distance from data to centers)
+    return err, updts
+
+def get_kmeans_func(W_):
+    ''' Compiles the kmeans function for the given data vector'''
+    X = theano.tensor.matrix('X')
+    learning_rate = theano.tensor.scalar('alpha')
+    W = []
+
+    if isinstance(W_,T.sharedvar.TensorSharedVariable):
+        W = W_
+    else:
+        W = theano.shared(W_, name='W', borrow=True)
+        
+    error, updts = kmeans(X,W,learning_rate)
+
+    km = theano.function(inputs= [X,learning_rate], outputs=error,updates=updts, allow_input_downcast=True)
+    return (W, km)
+
+
+
