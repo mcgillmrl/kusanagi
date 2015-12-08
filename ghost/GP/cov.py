@@ -4,18 +4,23 @@ from utils import *
 
 def SEard(loghyp,X1,X2=None, all_pairs=True):
     ''' Squared exponential kernel with diagonal scaling matrix (one lengthscale per dimension)'''
-    n = 1; idims = 1
+    n1 = 1; n2 = 1; idims = 1
     if(X1.ndim == 2):
-        n,idims = X1.shape
+        n1,idims = X1.shape
     elif(X2.ndim == 2):
-        n,idims = X2.shape
+        n2,idims = X2.shape
     else:
         idims = X1.shape[0]
-    D = maha(X1,X2,T.diag(T.exp(-loghyp[:idims])),all_pairs=all_pairs)
+    
+    if  not all_pairs and X1 is X2 or X2 is None:
+        # in this case all the distances are zero
+        K = T.tile(T.exp(2*loghyp[idims]),(n1,1))
+
+    D = maha(X1,X2,T.diag(T.exp(-2*loghyp[:idims])),all_pairs=all_pairs)
     K = T.exp(2*loghyp[idims] - 0.5*D)
 
-    if all_pairs:
-        nf = T.cast(n, theano.config.floatX)
+    if all_pairs and X1 is X2:
+        nf = T.cast(n1, theano.config.floatX)
         eps = 5e-4 if theano.config.floatX == 'float32' else 1e-4
         return K + eps*T.log(nf)*T.eye(n) if (X1 is X2 or X2 is None) else K
     else:

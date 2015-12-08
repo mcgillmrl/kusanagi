@@ -4,31 +4,30 @@ from datetime import datetime
 import theano
 import theano.tensor as T
 
-def maha(X1,X2=None,M_sqrt=None, all_pairs=True):
+def maha(X1,X2=None,M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
-    X1M = []
-    X2M = []
     D = []
-    if M_sqrt is None:
-        if X2 is None:
-            X1M = X1
-            X2M = X1
-        else:
-            X1M = X1
-            X2M = X2
-    else:
-        if X2 is None:
-            X1M = X1.dot(M_sqrt)
-            X2M = X1M
-        else:
-            X1M = X1.dot(M_sqrt)
-            X2M = X2.dot(M_sqrt)
+    deltaM = []
+    if X2 is None:
+        X2 = X1
+
     if all_pairs:
-        D, updts = theano.scan( lambda x1,x2: T.sum((x1-x2)**2,axis=1), sequences=[X1M],non_sequences=[X2M] )
+        # TODO this might allocate A LOT of memory, try passing blocks of X1 instead
+        delta = (X1[:,None,:] - X2[None,:,:])
+        if M is None:
+            deltaM = delta
+        else:
+            deltaM = delta.dot(M)
+        D = T.sum(deltaM*delta,2)
     else:
         # computes the distance  x1i - x2i for each row i
-        # TODO, ensure that x1 and x2 have the same number of elements
-        D = T.sum((X1M-X2M)**2,axis=1)
+        # TODO this is always zero if X1 == X2
+        delta = X1-X2
+        if M is None:
+            deltaM = delta
+        else:
+            deltaM = delta.dot(M)
+        D = T.sum(deltaM*delta,1)
         
     return D
 

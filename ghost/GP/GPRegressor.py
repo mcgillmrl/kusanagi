@@ -24,7 +24,7 @@ class GP(object):
         self.idims = X_dataset.shape[1]
         self.odims = Y_dataset.shape[1]
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.idims,self.odims,theano.config.device,theano.config.floatX)
-        self.should_save = False
+        self.state_changed = False
 
         try:
             # try loading from pickled file, to avoid recompiling
@@ -38,7 +38,6 @@ class GP(object):
             self.set_dataset(X_dataset,Y_dataset)
             self.init_log_likelihood()
             self.init_predict()
-            self.save()
         
         utils.print_with_stamp('Finished initialising GP',self.name)
     
@@ -90,7 +89,7 @@ class GP(object):
                 self.loghyp[i].set_value(self.loghyp_[i,:], borrow = True)
 
         # we should be saving, since we updated the trianing dataset
-        self.should_save = True
+        self.state_changed = True
 
     def set_loghyp(self, loghyp):
         loghyp = loghyp.reshape(self.loghyp_.shape)
@@ -230,35 +229,39 @@ class GP(object):
         opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 300})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
-        self.should_save = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
+        self.state_changed = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
         np.copyto(self.loghyp_,loghyp)
         utils.print_with_stamp('New hyperparameters:',self.name)
         print np.exp(self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
-        self.save()
 
     def load(self):
         with open(self.filename+'.zip','rb') as f:
             utils.print_with_stamp('Loading compiled GP with %d inputs and %d outputs'%(self.idims,self.odims),self.name)
             state = t_load(f)
-            self.X = state[0]
-            self.Y = state[1]
-            self.loghyp = state[2]
-            self.set_dataset(state[3],state[4])
-            self.set_loghyp(state[5])
-            self.nlml = state[6]
-            self.dnlml = state[7]
-            self.predict_ = state[8]
-            self.predict_d_ = state[9]
-        self.should_save = False
-
+            self.set_state(state)
+        self.state_changed = False
+    
     def save(self):
         sys.setrecursionlimit(100000)
-        if self.should_save:
+        if self.state_changed:
             with open(self.filename+'.zip','wb') as f:
                 utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs'%(self.idims,self.odims),self.name)
-                state = (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
-                t_dump(state,f,2)
+                t_dump(self.get_state(),f,2)
+
+    def set_state(self,state):
+        self.X = state[0]
+        self.Y = state[1]
+        self.loghyp = state[2]
+        self.set_dataset(state[3],state[4])
+        self.set_loghyp(state[5])
+        self.nlml = state[6]
+        self.dnlml = state[7]
+        self.predict_ = state[8]
+        self.predict_d_ = state[9]
+
+    def get_state(self):
+        return (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
 
 class GP_UI(GP):
     def __init__(self, X_dataset, Y_dataset, name = 'GP_UI',profile=False):
@@ -365,6 +368,7 @@ class SPGP(GP):
         self.Y_sp = None #inducing targets
         self.nlml_sp = None
         self.dnlml_sp = None
+        self.kmeans = None
         self.n_inducing = n_inducing
         # intialize parent class params
         super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
@@ -375,7 +379,7 @@ class SPGP(GP):
             # pick initial cluster centers from dataset
             self.X_sp_ = np.random.multivariate_normal(self.X_.mean(0),np.diag(self.X_.var(0)),self.n_inducing)
             # this function corresponds to a single iteration of kmeans
-            self.X_sp, kmeans = utils.get_kmeans_func(self.X_sp_)
+            self.X_sp, self.kmeans = utils.get_kmeans_func(self.X_sp_)
         else:
             # pick initial cluster centers from dataset
             np.copyto(self.X_sp_,np.random.multivariate_normal(self.X_.mean(0),np.diag(self.X_.var(0)),self.n_inducing))
@@ -384,12 +388,12 @@ class SPGP(GP):
         batch_size = 100  # this is a reasonable batch size for datasets that are not too high dimensional.
         max_iters = 1000
         alpha = 0.0025/0.95
-        prev_err = kmeans(self.X_[0:batch_size],alpha)
+        prev_err = self.kmeans(self.X_[0:batch_size],alpha)
         should_break = False
         # run kmeans
         for it in xrange(max_iters):
             for i in xrange(0,self.N,batch_size):
-                err = kmeans(self.X_[i:i+batch_size],alpha*(0.95**it))
+                err = self.kmeans(self.X_[i:i+batch_size],alpha*(0.95**it))
                 if abs(err-prev_err) <  1e-6:
                     should_break = True
                     break
@@ -418,30 +422,33 @@ class SPGP(GP):
         for i in xrange(odims):
             Kmn = self.kernel_func[i](self.X_sp,self.X)
             Kmm = self.kernel_func[i](self.X_sp)
-            Qnn =  matrix_dot(Kmn.T,matrix_inverse(psd(Kmm)),Kmn)
+            Qnn =  Kmn.T.dot(matrix_inverse(psd(Kmm))).dot(Kmn)
 
             # Gamma = diag(Knn - Qnn) + sn2*I
-            Gamma = (T.exp(2*self.loghyp[i][idims]) - T.diag(Qnn)) + T.exp(2*self.loghyp[i][idims+1]) 
+            #Gamma = (T.exp(2*self.loghyp[i][idims]) - T.diag(Qnn)) + T.exp(2*self.loghyp[i][idims+1]) 
+            Gamma = T.diag(Qnn)
             Gamma_inv = T.sqrt(1.0/Gamma)
             # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
             Kmn_ = Kmn*Gamma_inv
-            Yi = self.Y[:,i]*(T.sqrt(Gamma_inv)[:,None])  # Gamma^1 dot Y
-            Bmm = Kmm + (Kmn_).dot(Kmn_.T)
-            Bmn_ = matrix_inverse(psd(Bmm)).dot(Kmn_)  #  ()
+            Yi = self.Y[:,i]*(T.sqrt(Gamma_inv))    # Gamma^-.5* Y
+            Bmm = Kmm + (Kmn_).dot(Kmn_.T)                  # Kmm + Kmn * Gamma^-1 * Knm
+            Bmn_ = matrix_inverse(psd(Bmm)).dot(Kmn_)       # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-.5
 
             log_det_K_sp = T.sum(T.log(Gamma)) + T.log(det(psd(Kmm))) + T.log(det(psd(Bmm)))
 
             self.Kmm[i] = Kmm
             self.Bmm[i] = Bmm
-            self.beta_sp[i] = Bmn_.dot(Yi)
+            self.beta_sp[i] = Bmn_.dot(Yi)                  # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-1*Y
 
             #nlml_sp[i] = 0.5*(matrix_dot(self.Y[:,i].T,iK_sp, self.Y[:,i] ) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
-            nlml_sp[i] = 0.5*( T.sum(Yi**2) + T.sum(self.beta_sp[i]**2) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
+            #nlml_sp[i] = 0.5*( T.sum(Yi**2) + (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
+            #nlml_sp[i] = 0.5*( (Kmn_.dot(Yi)).T.dot(self.beta_sp[i])  )/self.N
+            nlml_sp[i] = Kmm[0,0]
             # Compute the gradients for each output dimension independently wrt the hyperparameters AND the inducing input
             # locations Xb
             # TODO include the log hyperparameters in the optimization
             # TODO give the optiion for separate inducing inputs for every output dimension
-            dnlml_sp[i] = (T.jacobian(nlml_sp[i].flatten(),self.X_sp)).reshape(self.X_sp.shape)
+            dnlml_sp[i] = (T.grad(nlml_sp[i],self.X_sp))
 
         nlml_sp = T.stacklists(nlml_sp)
         dnlml_sp = T.stacklists(dnlml_sp)
@@ -494,12 +501,15 @@ class SPGP(GP):
         self.set_X_sp(X_sp)
         res = self.dnlml_sp()
         nlml = np.array(res[0]).sum()
+        print np.array(res[1]).shape
         dnlml = np.array(res[1]).flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
         #utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
         utils.print_with_stamp('%s'%(str(res[0])),self.name,False)
+        print '---'
         print res
+        print '---'
         return res
 
     def train(self):
@@ -510,6 +520,7 @@ class SPGP(GP):
         #self.init_pseudo_inputs()
 
         # train the pseudo input locations
+        print np.array(self.nlml_sp()).shape
         utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
         opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 300})
         print ''
@@ -517,6 +528,22 @@ class SPGP(GP):
         np.copyto(self.X_sp_,X_sp)
         utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
 
+    def set_state(self,state):
+        self.X = state[0]
+        self.Y = state[1]
+        self.loghyp = state[2]
+        self.set_dataset(state[3],state[4])
+        self.set_loghyp(state[5])
+        self.nlml = state[6]
+        self.dnlml = state[7]
+        self.predict_ = state[8]
+        self.predict_d_ = state[9]
+        self.nlml_sp = state[10]
+        self.dnlml_sp = state[11]
+        self.kmeans = state[12]
+
+    def get_state(self):
+        return (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.nlml_sp,self.dnlml_sp,self.kmeans)
 
 class SPGP_UI(GP):
     def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False):
