@@ -71,15 +71,15 @@ def test_sonar():
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
-    #idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1500)
+    #idx = np.random.choice(np.arange(dataset['mat'].shape[0]),2000)
     #Xd = np.array(dataset['mat'][idx,0:2])
     #Yd = np.array(dataset['mat'][idx,2])[:,None]
     Xd = np.array(dataset['mat'][:,0:2])
     Yd = np.array(dataset['mat'][:,2])[:,None]
 
     #gp = GP(Xd,Yd, profile=False)
-    gp = GP_UI(Xd,Yd, profile=False)
-    #gp = SPGP(Xd,Yd, profile=False, n_inducing = 2)
+    #gp = GP_UI(Xd,Yd, profile=False)
+    gp = SPGP(Xd,Yd, profile=False, n_inducing = 300)
     utils.print_with_stamp('training','main')
     gp.train()
     utils.print_with_stamp('done training','main')

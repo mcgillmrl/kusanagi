@@ -25,6 +25,7 @@ class GP(object):
         self.odims = Y_dataset.shape[1]
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.idims,self.odims,theano.config.device,theano.config.floatX)
         self.state_changed = False
+        self.uncertain_inputs = False
 
         try:
             # try loading from pickled file, to avoid recompiling
@@ -177,14 +178,14 @@ class GP(object):
             x_mean = x_mean[None,:].reshape((n,idims))
 
         res = None
-        if self.name == 'GP':
-            res = self.predict_(x_mean)
-        else:
+        if self.uncertain_inputs:
             if x_cov is None:
                 x_cov = np.zeros((n,idims,idims))
             if theano.config.floatX == 'float32':
                 x_cov = x_cov.astype(np.float32).reshape((n,idims,idims))
             res = self.predict_(x_mean, x_cov)
+        else:
+            res = self.predict_(x_mean)
         return res
 
     def predict_d(self,x_mean,x_cov=None):
@@ -226,7 +227,7 @@ class GP(object):
         utils.print_with_stamp('Current hyperparameters:',self.name)
         print np.exp(self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
-        opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 300})
+        opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 500})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.state_changed = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
@@ -266,6 +267,7 @@ class GP(object):
 class GP_UI(GP):
     def __init__(self, X_dataset, Y_dataset, name = 'GP_UI',profile=False):
         super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+        self.uncertain_inputs = True
 
     def init_predict(self):
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
@@ -372,12 +374,15 @@ class SPGP(GP):
         self.n_inducing = n_inducing
         # intialize parent class params
         super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+        self.uncertain_inputs = False
 
     def init_pseudo_inputs(self):
         if self.X_sp is None:
             utils.print_with_stamp('Compiling kmeans function',self.name)
             # pick initial cluster centers from dataset
             self.X_sp_ = np.random.multivariate_normal(self.X_.mean(0),np.diag(self.X_.var(0)),self.n_inducing)
+            if theano.config.floatX == 'float32':
+                self.X_sp_ = self.X_sp_.astype(np.float32)
             # this function corresponds to a single iteration of kmeans
             self.X_sp, self.kmeans = utils.get_kmeans_func(self.X_sp_)
         else:
@@ -394,7 +399,7 @@ class SPGP(GP):
         for it in xrange(max_iters):
             for i in xrange(0,self.N,batch_size):
                 err = self.kmeans(self.X_[i:i+batch_size],alpha*(0.95**it))
-                if abs(err-prev_err) <  1e-6:
+                if abs(err-prev_err) <  1e-9:
                     should_break = True
                     break
             if should_break:
@@ -425,7 +430,6 @@ class SPGP(GP):
             Qnn =  Kmn.T.dot(matrix_inverse(psd(Kmm))).dot(Kmn)
 
             # Gamma = diag(Knn - Qnn) + sn2*I
-            #Gamma = (T.exp(2*self.loghyp[i][idims]) - T.diag(Qnn)) + T.exp(2*self.loghyp[i][idims+1]) 
             Gamma = T.diag(Qnn)
             Gamma_inv = T.sqrt(1.0/Gamma)
             # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
@@ -440,10 +444,7 @@ class SPGP(GP):
             self.Bmm[i] = Bmm
             self.beta_sp[i] = Bmn_.dot(Yi)                  # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-1*Y
 
-            #nlml_sp[i] = 0.5*(matrix_dot(self.Y[:,i].T,iK_sp, self.Y[:,i] ) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
-            #nlml_sp[i] = 0.5*( T.sum(Yi**2) + (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
-            #nlml_sp[i] = 0.5*( (Kmn_.dot(Yi)).T.dot(self.beta_sp[i])  )/self.N
-            nlml_sp[i] = Kmm[0,0]
+            nlml_sp[i] = 0.5*( T.sum(Yi**2) + (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
             # Compute the gradients for each output dimension independently wrt the hyperparameters AND the inducing input
             # locations Xb
             # TODO include the log hyperparameters in the optimization
@@ -501,28 +502,19 @@ class SPGP(GP):
         self.set_X_sp(X_sp)
         res = self.dnlml_sp()
         nlml = np.array(res[0]).sum()
-        print np.array(res[1]).shape
         dnlml = np.array(res[1]).flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
-        #utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
-        utils.print_with_stamp('%s'%(str(res[0])),self.name,False)
-        print '---'
-        print res
-        print '---'
+        utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
         return res
 
     def train(self):
         # train the full GP
         super(SPGP, self).train()
 
-        # find the pseudo input locations
-        #self.init_pseudo_inputs()
-
         # train the pseudo input locations
-        print np.array(self.nlml_sp()).shape
         utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
-        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 300})
+        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 500})
         print ''
         X_sp = opt_res.x.reshape(self.X_sp_.shape)
         np.copyto(self.X_sp_,X_sp)
@@ -548,6 +540,7 @@ class SPGP(GP):
 class SPGP_UI(GP):
     def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False):
         super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+        self.uncertain_inputs = True
 
     def init_predict(self):
         pass

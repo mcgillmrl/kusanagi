@@ -12,16 +12,16 @@ def maha(X1,X2=None,M=None, all_pairs=True):
         X2 = X1
 
     if all_pairs:
-        # TODO this might allocate A LOT of memory, try passing blocks of X1 instead
-        delta = (X1[:,None,:] - X2[None,:,:])
         if M is None:
-            deltaM = delta
+            D, updts = theano.scan(fn=lambda xi,X: T.sum((xi-X)**2,1), sequences=[X1], non_sequences=[X2])
         else:
-            deltaM = delta.dot(M)
-        D = T.sum(deltaM*delta,2)
+            D, updts = theano.scan(fn=lambda xi,X,V: T.sum(((xi-X).dot(V))*(xi-X),1), sequences=[X1], non_sequences=[X2,M])
     else:
         # computes the distance  x1i - x2i for each row i
-        # TODO this is always zero if X1 == X2
+        if X1 is X2:
+            # in this case, we don't need to compute anything
+            D = T.zeros((X1.shape[0],))
+            return D
         delta = X1-X2
         if M is None:
             deltaM = delta
@@ -50,8 +50,9 @@ def kmeans(X,W,learning_rate=0.001):
     Xm = X - X.mean(0)
     Wm = W - X.mean(0)
     D = (Xm**2).sum(1)[:,None] + (Wm**2).sum(1)[None,:] - 2*Xm.dot(W.T)
-    #D = maha(Xm,Wm)
-    err = T.sum(D)/X.shape[0]
+
+    n = T.cast(X.shape[0], theano.config.floatX)
+    err = T.sum(D)/n
     # compute updates to the vectors in W
     direction = T.stacklists(T.grad(err,[W])).reshape(W.shape)
     updts = [(W, W - learning_rate*direction)]
@@ -60,9 +61,12 @@ def kmeans(X,W,learning_rate=0.001):
 
 def get_kmeans_func(W_):
     ''' Compiles the kmeans function for the given data vector'''
-    X = theano.tensor.matrix('X')
-    learning_rate = theano.tensor.scalar('alpha')
-    W = []
+    if theano.config.floatX == 'float32':
+        X = theano.tensor.fmatrix('X')
+        learning_rate = theano.tensor.fscalar('alpha')
+    else: 
+        X = theano.tensor.dmatrix('X')
+        learning_rate = theano.tensor.dscalar('alpha')
 
     if isinstance(W_,T.sharedvar.TensorSharedVariable):
         W = W_

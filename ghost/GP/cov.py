@@ -11,6 +11,11 @@ def SEard(loghyp,X1,X2=None, all_pairs=True):
         n,idims = X2.shape
     else:
         idims = X1.shape[0]
+    if (not all_pairs) and (X1 is X2 or X2 is None):
+        # all the distances are going to be zero
+        K = T.tile(T.exp(2*loghyp[idims]), (n,))
+        return K
+
     D = maha(X1,X2,T.diag(T.exp(-2*loghyp[:idims])),all_pairs=all_pairs)
     K = T.exp(2*loghyp[idims] - 0.5*D)
 
@@ -21,13 +26,19 @@ def SEard(loghyp,X1,X2=None, all_pairs=True):
     else:
         return K
 
-def Noise(loghyp,X1,X2=None,D=None, all_pairs=True):
+def Noise(loghyp,X1,X2=None, all_pairs=True):
     ''' Noise kernel. Takes as an input a distance matrix D and creates a new matrix 
     as Kij = sn2 if Dij == 0 else 0'''
-    if D is None:
-        X2 = X1 if X2 is None else X2
-        D = maha(X1,X2,all_pairs=all_pairs)
-    K = T.isclose(D,0)*T.exp(2*loghyp)
+    if X2 is None:
+        X2 = X1
+
+    if all_pairs:
+        D = (X1[:,None,:] - X2[None,:,:]).sum(2)
+    else:
+        D = (X1 - X2).sum(1)
+
+    K = T.eq(D,0)*T.exp(2*loghyp)
+    
     return K
 
 def Sum(loghyp_l, cov_l, X1, X2=None, all_pairs=True):
