@@ -82,6 +82,8 @@ def test_sonar(gp_type='GP'):
         gp = GP_UI(Xd,Yd, profile=False)
     elif gp_type == 'SPGP':
         gp = SPGP(Xd,Yd, profile=False, n_inducing = 300)
+    elif gp_type == 'SPGP_UI':
+        gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 300)
     else:
         gp = GP(Xd,Yd, profile=False)
     utils.print_with_stamp('training','main')
@@ -210,9 +212,9 @@ def test_K_means():
 if __name__=='__main__':
     np.set_printoptions(linewidth=500)
     #test_random()
-    test_sonar('GP')
-    test_sonar('GP_UI')
-    test_sonar('SPGP')
+    #test_sonar('GP')
+    #test_sonar('GP_UI')
+    test_sonar('SPGP_UI')
     plt.show()
     #test_K()
     #test_K_means()

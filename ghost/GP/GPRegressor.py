@@ -407,58 +407,67 @@ class SPGP(GP):
     def set_dataset(self,X_dataset,Y_dataset):
         # set the dataset on the parent class
         super(SPGP, self).set_dataset(X_dataset,Y_dataset)
-        # init the shared variable for the pseudo inputs
-        self.init_pseudo_inputs()
+        if self.N > self.n_inducing:
+            # init the shared variable for the pseudo inputs
+            self.init_pseudo_inputs()
         
     def init_log_likelihood(self):
         # initialize the log likelihood of the GP class
         super(SPGP, self).init_log_likelihood()
-        odims = self.odims
-        idims = self.idims
-        # initialize the log likelihood of the sparse FITC approximation
-        self.Kmm = [[]]*odims
-        self.Bmm = [[]]*odims
-        self.beta_sp = [[]]*odims
-        nlml_sp = [[]]*odims
-        dnlml_sp = [[]]*odims
-        for i in xrange(odims):
-            sf2 = T.exp(2*self.loghyp[i][idims])
-            sn2 = T.exp(2*self.loghyp[i][idims+1])
-            Kmm = self.kernel_func[i](self.X_sp)
-            Kmn = self.kernel_func[i](self.X_sp,self.X)
-            Qnn =  Kmn.T.dot((matrix_inverse(psd(Kmm))).dot(Kmn))
+        # here nlml and dnlml have already been innitialised, sow e can replace nlml and dnlml
+        # only if we have enough data to train the pseudo inputs ( i.e. self.N > self.n_inducing)
+        if self.N > self.n_inducing:
+            odims = self.odims
+            idims = self.idims
+            # initialize the log likelihood of the sparse FITC approximation
+            self.Kmm = [[]]*odims
+            self.Bmm = [[]]*odims
+            self.beta_sp = [[]]*odims
+            nlml_sp = [[]]*odims
+            dnlml_sp = [[]]*odims
+            for i in xrange(odims):
+                sf2 = T.exp(2*self.loghyp[i][idims])
+                sn2 = T.exp(2*self.loghyp[i][idims+1])
+                Kmm = self.kernel_func[i](self.X_sp)
+                Kmn = self.kernel_func[i](self.X_sp,self.X)
+                Qnn =  Kmn.T.dot((matrix_inverse(psd(Kmm))).dot(Kmn))
 
-            # Gamma = diag(Knn - Qnn) + sn2*I
-            Gamma = ((sf2 - T.diag(Qnn))/sn2 + 1)
-            Gamma_inv = 1.0/Gamma
-            # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
-            Kmn_ = Kmn*T.sqrt(Gamma_inv)                    # Kmn_*Gamma^-.5
-            Yi = self.Y[:,i]*(T.sqrt(Gamma_inv))            # Gamma^-.5* Y
-            Bmm = Kmm + (Kmn_).dot(Kmn_.T)                  # Kmm + Kmn * Gamma^-1 * Knm
-            Bmn_ = matrix_inverse(psd(Bmm)).dot(Kmn_)       # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-.5
+                # Gamma = diag(Knn - Qnn) + sn2*I
+                Gamma = ((sf2 - T.diag(Qnn))/sn2 + 1)
+                Gamma_inv = 1.0/Gamma
+                # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
+                Kmn_ = Kmn*T.sqrt(Gamma_inv)                    # Kmn_*Gamma^-.5
+                Yi = self.Y[:,i]*(T.sqrt(Gamma_inv))            # Gamma^-.5* Y
+                Bmm = Kmm + (Kmn_).dot(Kmn_.T)                  # Kmm + Kmn * Gamma^-1 * Knm
+                Bmn_ = matrix_inverse(psd(Bmm)).dot(Kmn_)       # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-.5
 
-            log_det_K_sp = T.sum(T.log(Gamma)) - T.log(det(psd(Kmm))) + T.log(det(psd(Bmm)))
+                log_det_K_sp = T.sum(T.log(Gamma)) - T.log(det(psd(Kmm))) + T.log(det(psd(Bmm)))
 
-            self.Kmm[i] = Kmm
-            self.Bmm[i] = Bmm
-            self.beta_sp[i] = Bmn_.dot(Yi)                  # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-1*Y
+                self.Kmm[i] = Kmm
+                self.Bmm[i] = Bmm
+                self.beta_sp[i] = Bmn_.dot(Yi)                  # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-1*Y
 
-            nlml_sp[i] = 0.5*( T.sum(Yi**2) - (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
-            # Compute the gradients for each output dimension independently wrt the hyperparameters AND the inducing input
-            # locations Xb
-            # TODO include the log hyperparameters in the optimization
-            # TODO give the optiion for separate inducing inputs for every output dimension
-            dnlml_sp[i] = (T.grad(nlml_sp[i],self.X_sp))
+                nlml_sp[i] = 0.5*( T.sum(Yi**2) - (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
+                # Compute the gradients for each output dimension independently wrt the hyperparameters AND the inducing input
+                # locations Xb
+                # TODO include the log hyperparameters in the optimization
+                # TODO give the optiion for separate inducing inputs for every output dimension
+                dnlml_sp[i] = (T.grad(nlml_sp[i],self.X_sp))
 
-        nlml_sp = T.stacklists(nlml_sp)
-        dnlml_sp = T.stacklists(dnlml_sp)
-        # Compile the theano functions
-        utils.print_with_stamp('Compiling FITC log likelihood',self.name)
-        self.nlml_sp = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
-        utils.print_with_stamp('Compiling jacobian of FITC log likelihood',self.name)
-        self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
+            nlml_sp = T.stacklists(nlml_sp)
+            dnlml_sp = T.stacklists(dnlml_sp)
+            # Compile the theano functions
+            utils.print_with_stamp('Compiling FITC log likelihood',self.name)
+            self.nlml_sp = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
+            utils.print_with_stamp('Compiling jacobian of FITC log likelihood',self.name)
+            self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
 
     def init_predict(self):
+        if self.N < self.n_inducing:
+            # stick with the full GP
+            super(SPGP, self).init_predict()
+            return
+
         # this is the sparse approximation
         utils.print_with_stamp('Initialising expression graph for SPGP prediction',self.name)
         odims = self.odims
@@ -475,7 +484,7 @@ class SPGP(GP):
             mean = k.dot(self.beta_sp[i])
             iK = matrix_inverse(psd(self.Kmm[i]))
             iB = matrix_inverse(psd(self.Bmm[i]))
-            variance = self.kernel_func[i](x_mean,all_pairs=False) - (k*(k.dot(iK) + k.dot(iB)) ).sum(axis=1)
+            variance = self.kernel_func[i](x_mean,all_pairs=False) - (k*(k.dot(iK) - k.dot(iB)) ).sum(axis=1)
 
         # compile the prediction function
         M = T.stacklists(mean).T
@@ -537,10 +546,108 @@ class SPGP(GP):
     def get_state(self):
         return (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.nlml_sp,self.dnlml_sp,self.kmeans)
 
-class SPGP_UI(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False):
-        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+class SPGP_UI(SPGP,GP_UI):
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False, n_inducing = 100):
+        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile, n_inducing=n_inducing)
         self.uncertain_inputs = True
 
     def init_predict(self):
-        pass
+        if self.N < self.n_inducing:
+            # stick with the full GP
+            GP_UI.init_predict(self)
+            return
+
+        utils.print_with_stamp('Initialising expression graph for prediction',self.name)
+        idims = self.idims
+        odims = self.odims
+
+        # Note that this handles n_samples inputs
+        if theano.config.floatX == 'float32':
+            x_mean = T.fmatrix('x')      # n_samples x idims
+            x_cov = T.ftensor3('x_cov')  # n_samples x idims x idims
+        else:
+            x_mean = T.dmatrix('x')      # n_samples x idims
+            x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
+
+        #centralize inputs 
+        zeta = self.X_sp[None,:,:] - x_mean[:,None,:]
+        
+        # predictive mean and covariance (for each output dimension)
+        M = [] # mean
+        V = [] # inv(x_cov).dot(input_output_cov)
+        M2 = [[]]*(odims**2) # second moment
+
+        def M_helper(inp_k,B_k,sf2):
+            t_k = inp_k.dot(matrix_inverse(psd(B_k)))
+            c_k = sf2/T.sqrt(det(psd(B_k)))
+            return (t_k,c_k)
+            
+        #predictive second moment ( only the lower triangular part, including the diagonal)
+        def M2_helper(logk_i_k, logk_j_k, z_ij_k, R_k, x_cov_k):
+            nk2 = logk_i_k[:,None] + logk_j_k[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k))
+            tk = 1.0/T.sqrt(det(psd(R_k)))
+            Qk = tk*T.exp( nk2 )
+            
+            return Qk
+
+        logk=[[]]*odims
+        Lambda=[[]]*odims
+        for i in xrange(odims):
+            # rescale input dimensions by inverse lengthscales
+            iL = T.exp(-self.loghyp[i][:idims])
+            inp = zeta*iL  # Note this is assuming a diagonal scaling matrix on the kernel
+
+            # predictive mean ( which depends on input covariance )
+            B = iL[:,None]*x_cov*iL + T.eye(idims)
+            (t,c), updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[T.exp(2*self.loghyp[i][idims])], strict=True)
+            l = T.exp(-0.5*T.sum(inp*t,2))
+            lb = l*self.beta_sp[i] # beta should have been precomputed in init_log_likelihood
+            mean = T.sum(lb,1)*c;
+            mean.name = 'M_%d'%(i)
+            M.append(mean)
+
+            # inv(x_cov) times input output covariance (Eq 2.70)
+            tiL = t*iL
+            v = T.sum(tiL*lb[:,:,None],axis=1)*c[:,None]
+            V.append(v)
+            
+            # predictive covariance
+            logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,2)
+            Lambda[i] = iL*iL
+            for j in xrange(i+1):
+                # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
+                z_ij = zeta*Lambda[i] + zeta*Lambda[j]
+                R = x_cov*(Lambda[i] + Lambda[j]) + T.eye(idims)
+    
+                Q,updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_ij,R,x_cov))
+                Q.name = 'Q_%d%d'%(i,j)
+
+                # Eq 2.55
+                m2 = matrix_dot(self.beta_sp[i],Q,self.beta_sp[j])
+                if i == j:
+                    iKi = matrix_inverse(psd(self.Kmm[i])).dot(T.eye(self.n_inducing)) - matrix_inverse(psd(self.Bmm[i])).dot(T.eye(self.n_inducing))
+                    m2 =  m2 - T.sum(iKi*Q,(1,2)) + T.exp(2*self.loghyp[i][idims])
+                else:
+                    M2[j*odims+i] = m2
+                m2.name = 'M2_%d%d'%(i,j)
+                M2[i*odims+j] = m2
+
+        M = T.stacklists(M).T
+        V = T.stacklists(V).transpose(1,2,0)
+        M2 = T.stacklists(M2).T
+        S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
+
+        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
+        self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
+
+        # compile the derivatives wrt the evaluation point
+        dMdm = T.jacobian(M.flatten(),x_mean)
+        dVdm = T.jacobian(V.flatten(),x_mean)
+        dSdm = T.jacobian(S.flatten(),x_mean)
+        dMds = T.jacobian(M.flatten(),x_cov)
+        dVds = T.jacobian(V.flatten(),x_cov)
+        dSds = T.jacobian(S.flatten(),x_cov)
+
+        utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
+        self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+
