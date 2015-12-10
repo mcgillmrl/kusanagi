@@ -78,7 +78,29 @@ def get_kmeans_func(W_):
     error, updts = kmeans(X,W,learning_rate)
 
     km = theano.function(inputs= [X,learning_rate], outputs=error,updates=updts, allow_input_downcast=True)
-    return (W, km)
+    return km,W
 
+def get_kmeans_func2(X_,W_):
+    if isinstance(W_,T.sharedvar.TensorSharedVariable):
+        W = W_
+    else:
+        W = theano.shared(W_, name='W', borrow=True)
+    if isinstance(X_,T.sharedvar.TensorSharedVariable):
+        X = X_
+    else:
+        X = theano.shared(X_, name='X', borrow=True)
+
+    #find the closest vector from W to each vector in X
+    Xm = X - X.mean(0)
+    Wm = W - X.mean(0)
+    sq_D = maha(Xm,Wm)
+    # get the closest element from Wm for each Xm
+    Dmin = T.sqrt(sq_D.min(1))
+
+    n = T.cast(X.shape[0], theano.config.floatX)
+    err = T.sum(Dmin)
+
+    km = theano.function([],[err,T.stacklists(T.grad(err,[W])).flatten()], allow_input_downcast=True)
+    return km,W,X
 
 

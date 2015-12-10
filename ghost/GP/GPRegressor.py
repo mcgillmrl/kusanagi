@@ -228,8 +228,8 @@ class GP(object):
         utils.print_with_stamp('Current hyperparameters:',self.name)
         print np.exp(self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
-        #opt_res = minimize(self.loss, self.loghyp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
-        opt_res = basinhopping(self.loss, self.loghyp_, niter=10, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 100}})
+        opt_res = minimize(self.loss, self.loghyp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        #opt_res = basinhopping(self.loss, self.loghyp_, niter=2, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 250}})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.state_changed = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
@@ -386,28 +386,28 @@ class SPGP(GP):
             if theano.config.floatX == 'float32':
                 self.X_sp_ = self.X_sp_.astype(np.float32)
             # this function corresponds to a single iteration of kmeans
-            self.X_sp, self.kmeans = utils.get_kmeans_func(self.X_sp_)
+            self.kmeans, self.X_sp, _ = utils.get_kmeans_func2(self.X, self.X_sp_)
         else:
             # pick initial cluster centers from dataset
             np.copyto(self.X_sp_,np.random.multivariate_normal(self.X_.mean(0),np.diag(self.X_.var(0)),self.n_inducing))
 
         utils.print_with_stamp('Initialising pseudo inputs',self.name)
-        batch_size = 100  # this is a reasonable batch size for datasets that are not too high dimensional.
-        max_iters = 1000
-        alpha = 0.0025/0.95
-        prev_err = self.kmeans(self.X_[0:batch_size],alpha)
-        should_break = False
-        # run kmeans
-        for it in xrange(max_iters):
-            for i in xrange(0,self.N,batch_size):
-                err = self.kmeans(self.X_[i:i+batch_size],alpha*(0.95**it))
-                if abs(err-prev_err) <  1e-9:
-                    should_break = True
-                    break
-            if should_break:
-                break
-            prev_err = err
+        def kmeans_loss(X_sp):
+            np.copyto(self.X_sp_,X_sp.reshape(self.X_sp_.shape))
+            res = self.kmeans()
+            # on a 64bit system, scipy optimize complains if we pass a 32 bit float
+            res = (res[0].astype(np.float64),res[1].astype(np.float64))
+            utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
+            return res
+        
+        opt_res = minimize(kmeans_loss, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        X_sp = opt_res.x.reshape(self.X_sp_.shape)
+        print ''
+        np.copyto(self.X_sp_,X_sp)
+
+        
         # at this point X_sp_ should correspond to the kmeans centers of the dataset
+        print self.X_sp_ - self.X_sp_.mean(0)
 
     def set_dataset(self,X_dataset,Y_dataset):
         # set the dataset on the parent class
@@ -516,8 +516,8 @@ class SPGP(GP):
 
         # train the pseudo input locations
         utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
-        #opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
-        opt_res = basinhopping(self.loss_sp, self.X_sp_, niter=10, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 100}})
+        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        #opt_res = basinhopping(self.loss_sp, self.X_sp_, niter=2, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 250}})
         print ''
         X_sp = opt_res.x.reshape(self.X_sp_.shape)
         np.copyto(self.X_sp_,X_sp)
