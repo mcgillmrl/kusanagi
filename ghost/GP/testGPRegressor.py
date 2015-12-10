@@ -71,7 +71,7 @@ def test_sonar():
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
-    #idx = np.random.choice(np.arange(dataset['mat'].shape[0]),2000)
+    #idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1000)
     #Xd = np.array(dataset['mat'][idx,0:2])
     #Yd = np.array(dataset['mat'][idx,2])[:,None]
     Xd = np.array(dataset['mat'][:,0:2])
@@ -85,7 +85,7 @@ def test_sonar():
     utils.print_with_stamp('done training','main')
     
     n_test=25
-    xg,yg = np.meshgrid ( np.linspace(Xd[:,0].min(),Xd[:,0].max(),n_test) , np.linspace(Xd[:,1].min(),Xd[:,1].max(),n_test) )
+    xg,yg = np.meshgrid ( np.linspace(Xd[:,0].min()-10, Xd[:,0].max(),n_test)+10, np.linspace(Xd[:,1].min()-10,Xd[:,1].max()+10,n_test) )
     X_test= np.vstack((xg.flatten(),yg.flatten())).T
     n = X_test.shape[0]
     utils.print_with_stamp('predicting','main')
@@ -99,13 +99,16 @@ def test_sonar():
         M.append(r[0])
         S.append(r[1])
 
-    M = np.vstack(M)
-    S = np.vstack(S)
+    M = np.hstack(M)
+    S = np.hstack(S)
 
     utils.print_with_stamp('done predicting','main')
     from matplotlib import pyplot as plt
     plt.figure()
-    plt.imshow(M.reshape(n_test,n_test), origin='lower')
+    #plt.imshow(M.reshape(n_test,n_test), origin='lower')
+    plt.contourf(xg,yg,M.reshape(n_test,n_test))
+    plt.scatter(gp.X_sp_[:,0],gp.X_sp_[:,1],marker='o',c='r')
+    plt.scatter(Xd[:,0],Xd[:,1],s=1)
 
     plt.figure()
     plt.imshow(S.reshape(n_test,n_test), origin='lower')

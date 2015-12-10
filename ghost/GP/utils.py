@@ -49,10 +49,12 @@ def kmeans(X,W,learning_rate=0.001):
     #find the closest vector from W to each vector in X
     Xm = X - X.mean(0)
     Wm = W - X.mean(0)
-    D = (Xm**2).sum(1)[:,None] + (Wm**2).sum(1)[None,:] - 2*Xm.dot(W.T)
+    sq_D = maha(Xm,Wm)
+    # get the closest element from Wm for each Xm
+    Dmin = T.sqrt(sq_D.min(1))
 
     n = T.cast(X.shape[0], theano.config.floatX)
-    err = T.sum(D)/n
+    err = T.sum(Dmin)
     # compute updates to the vectors in W
     direction = T.stacklists(T.grad(err,[W])).reshape(W.shape)
     updts = [(W, W - learning_rate*direction)]

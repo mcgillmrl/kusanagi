@@ -4,7 +4,7 @@ from functools import partial
 import numpy as np
 import theano
 import theano.tensor as T
-from scipy.optimize import minimize
+from scipy.optimize import minimize, basinhopping
 from theano import function as F, shared as S
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.tensor.nlinalg import matrix_dot
@@ -17,6 +17,7 @@ class GP(object):
     def __init__(self, X_dataset, Y_dataset, name='GP', profile=False):
         self.profile= profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
+        self.min_method = "L-BFGS-B"
 
         self.X_ = None; self.Y_ = None
         self.X = None; self.Y = None; self.loghyp = None
@@ -227,7 +228,8 @@ class GP(object):
         utils.print_with_stamp('Current hyperparameters:',self.name)
         print np.exp(self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
-        opt_res = minimize(self.loss, self.loghyp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 500})
+        #opt_res = minimize(self.loss, self.loghyp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        opt_res = basinhopping(self.loss, self.loghyp_, niter=10, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 100}})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.state_changed = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
@@ -514,7 +516,8 @@ class SPGP(GP):
 
         # train the pseudo input locations
         utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
-        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method="L-BFGS-B", tol=1e-9, options={'maxiter': 500})
+        #opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        opt_res = basinhopping(self.loss_sp, self.X_sp_, niter=10, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 100}})
         print ''
         X_sp = opt_res.x.reshape(self.X_sp_.shape)
         np.copyto(self.X_sp_,X_sp)
