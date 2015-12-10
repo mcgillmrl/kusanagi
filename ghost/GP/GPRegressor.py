@@ -397,17 +397,12 @@ class SPGP(GP):
             res = self.kmeans()
             # on a 64bit system, scipy optimize complains if we pass a 32 bit float
             res = (res[0].astype(np.float64),res[1].astype(np.float64))
-            utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
             return res
         
         opt_res = minimize(kmeans_loss, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
         X_sp = opt_res.x.reshape(self.X_sp_.shape)
-        print ''
         np.copyto(self.X_sp_,X_sp)
-
-        
         # at this point X_sp_ should correspond to the kmeans centers of the dataset
-        print self.X_sp_ - self.X_sp_.mean(0)
 
     def set_dataset(self,X_dataset,Y_dataset):
         # set the dataset on the parent class
@@ -427,26 +422,28 @@ class SPGP(GP):
         nlml_sp = [[]]*odims
         dnlml_sp = [[]]*odims
         for i in xrange(odims):
-            Kmn = self.kernel_func[i](self.X_sp,self.X)
+            sf2 = T.exp(2*self.loghyp[i][idims])
+            sn2 = T.exp(2*self.loghyp[i][idims+1])
             Kmm = self.kernel_func[i](self.X_sp)
-            Qnn =  Kmn.T.dot(matrix_inverse(psd(Kmm))).dot(Kmn)
+            Kmn = self.kernel_func[i](self.X_sp,self.X)
+            Qnn =  Kmn.T.dot((matrix_inverse(psd(Kmm))).dot(Kmn))
 
             # Gamma = diag(Knn - Qnn) + sn2*I
-            Gamma = T.diag(Qnn)
-            Gamma_inv = T.sqrt(1.0/Gamma)
+            Gamma = ((sf2 - T.diag(Qnn))/sn2 + 1)
+            Gamma_inv = 1.0/Gamma
             # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
-            Kmn_ = Kmn*Gamma_inv
-            Yi = self.Y[:,i]*(T.sqrt(Gamma_inv))    # Gamma^-.5* Y
+            Kmn_ = Kmn*T.sqrt(Gamma_inv)                    # Kmn_*Gamma^-.5
+            Yi = self.Y[:,i]*(T.sqrt(Gamma_inv))            # Gamma^-.5* Y
             Bmm = Kmm + (Kmn_).dot(Kmn_.T)                  # Kmm + Kmn * Gamma^-1 * Knm
             Bmn_ = matrix_inverse(psd(Bmm)).dot(Kmn_)       # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-.5
 
-            log_det_K_sp = T.sum(T.log(Gamma)) + T.log(det(psd(Kmm))) + T.log(det(psd(Bmm)))
+            log_det_K_sp = T.sum(T.log(Gamma)) - T.log(det(psd(Kmm))) + T.log(det(psd(Bmm)))
 
             self.Kmm[i] = Kmm
             self.Bmm[i] = Bmm
             self.beta_sp[i] = Bmn_.dot(Yi)                  # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-1*Y
 
-            nlml_sp[i] = 0.5*( T.sum(Yi**2) + (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
+            nlml_sp[i] = 0.5*( T.sum(Yi**2) - (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
             # Compute the gradients for each output dimension independently wrt the hyperparameters AND the inducing input
             # locations Xb
             # TODO include the log hyperparameters in the optimization

@@ -105,10 +105,13 @@ def test_sonar():
     utils.print_with_stamp('done predicting','main')
     from matplotlib import pyplot as plt
     plt.figure()
-    #plt.imshow(M.reshape(n_test,n_test), origin='lower')
     plt.contourf(xg,yg,M.reshape(n_test,n_test))
-    plt.scatter(gp.X_sp_[:,0],gp.X_sp_[:,1],marker='o',c='r')
+    if gp.name.startswith('GP'):
+        plt.scatter(gp.X_sp_[:,0],gp.X_sp_[:,1],marker='o',c='r')
     plt.scatter(Xd[:,0],Xd[:,1],s=1)
+
+    plt.figure()
+    plt.imshow(M.reshape(n_test,n_test), origin='lower')
 
     plt.figure()
     plt.imshow(S.reshape(n_test,n_test), origin='lower')
