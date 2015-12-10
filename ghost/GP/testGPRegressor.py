@@ -106,7 +106,7 @@ def test_sonar():
     from matplotlib import pyplot as plt
     plt.figure()
     plt.contourf(xg,yg,M.reshape(n_test,n_test))
-    if gp.name.startswith('GP'):
+    if gp.name.startswith('SPGP'):
         plt.scatter(gp.X_sp_[:,0],gp.X_sp_[:,1],marker='o',c='r')
     plt.scatter(Xd[:,0],Xd[:,1],s=1)
 
