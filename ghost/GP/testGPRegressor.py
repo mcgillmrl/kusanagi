@@ -1,4 +1,5 @@
 from GPRegressor import *
+from matplotlib import pyplot as plt
 
 def test_random():
     # test function
@@ -67,7 +68,7 @@ def write_profile_files(gp):
     #predict_d_graph = formatter(gp.predict_d_)
     #predict_d_graph.write_png(root_path+'png/predict_d_'+theano.config.device+'.png')
 
-def test_sonar():
+def test_sonar(gp_type='GP'):
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
@@ -76,10 +77,13 @@ def test_sonar():
     #Yd = np.array(dataset['mat'][idx,2])[:,None]
     Xd = np.array(dataset['mat'][:,0:2])
     Yd = np.array(dataset['mat'][:,2])[:,None]
-
-    #gp = GP(Xd,Yd, profile=False)
-    #gp = GP_UI(Xd,Yd, profile=False)
-    gp = SPGP(Xd,Yd, profile=False, n_inducing = 300)
+    
+    if gp_type == 'GP_UI':
+        gp = GP_UI(Xd,Yd, profile=False)
+    elif gp_type == 'SPGP':
+        gp = SPGP(Xd,Yd, profile=False, n_inducing = 300)
+    else:
+        gp = GP(Xd,Yd, profile=False)
     utils.print_with_stamp('training','main')
     gp.train()
     utils.print_with_stamp('done training','main')
@@ -96,26 +100,27 @@ def test_sonar():
         next_i = min(i+batch_size,n)
         utils.print_with_stamp('batch %d , %d'%(i,next_i))
         r = gp.predict(X_test[i:next_i])
-        M.append(r[0])
-        S.append(r[1])
+        M.append(r[0].flatten())
+        S.append(r[1].flatten())
 
     M = np.hstack(M)
     S = np.hstack(S)
 
     utils.print_with_stamp('done predicting','main')
-    from matplotlib import pyplot as plt
     plt.figure()
+    plt.title(gp.name+' training dataset')
     plt.contourf(xg,yg,M.reshape(n_test,n_test))
     if gp.name.startswith('SPGP'):
         plt.scatter(gp.X_sp_[:,0],gp.X_sp_[:,1],marker='o',c='r')
     plt.scatter(Xd[:,0],Xd[:,1],s=1)
 
     plt.figure()
+    plt.title(gp.name+' mean')
     plt.imshow(M.reshape(n_test,n_test), origin='lower')
 
     plt.figure()
+    plt.title(gp.name+' variance')
     plt.imshow(S.reshape(n_test,n_test), origin='lower')
-    plt.show()
 
     if gp.profile:
         write_profile_files(gp)
@@ -205,9 +210,9 @@ def test_K_means():
 if __name__=='__main__':
     np.set_printoptions(linewidth=500)
     #test_random()
-    test_sonar()
+    test_sonar('GP')
+    test_sonar('GP_UI')
+    test_sonar('SPGP')
+    plt.show()
     #test_K()
     #test_K_means()
-
-
-
