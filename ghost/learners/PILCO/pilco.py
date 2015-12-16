@@ -1,52 +1,81 @@
 import numpy as np
+from utils import print_with_stamp
+from ghost.learners import EpisodicLearner
 
-class PILCO:
-    def __init__(self, plant, policy, cost, initial_random_rollouts=4):
-        self.x = numpy.array([])
-        self.x_cov = numpy.array([])
-        self.u = numpy.array([])
-        self.u_cov = numpy.array([])
-        self.y = numpy.array([])
-        self.L = numpy.array([])
+class PILCO(EpisodicLearner):
+    def __init__(self, plant, policy, cost, experience = None, name='PILCO'):
+        super(PILCO, self).__init__(plant, policy, cost, experience, name)
+        self.dynamics_model = None
 
-        self.initial_random_rollouts = initial_random_rollouts
+    def train_dynamics(self):
+        x = np.array(self.experience.states)
+        u = np.array(self.experience.actions)
+        # inputs are states, concatenated with actions (except for the last entry)
+        X = np.hstack(x[:-1],u[:-1])
+        # outputs are next states
+        Y =  x[1:]
+        if self.dynamics is None:
+            self.dynamics_model = GP_UI(X,Y)
+        else:
+            self.dynamics_model.set_dataset(X,Y)
 
-        self.cost = cost
-        self.plant = plant
-        self.policy = policy
+        self.dynamics_model.train()
 
-        if ( self.policy.angi is None or len(self.policy.angi) == 0 ):
-            self.policy.angi = self.plant.angi
+    def value(self, derivs=True):
+        if derivs == True:
+            return self.value_d
 
-    def execute_training_iteration(self, states, controls, succesor_states):
-        self.plant.update(states, controls, successor_states)
-        self.policy.optimize(self.plant, self.cost)
+        # get distribution of initial states
+        x0 = x[self.experience.episode_starts]
+        mx = []; Sx = []
+        if x0.shape[0] > 1:
+            mx = x0.mean()
+            Sx = np.cov(x0.T)
+        else:
+            mx = x0
+            Sx = 1e-2*np.eye(x0.shape[1])
 
-    def rollout(self, m0, S0, H):
-        # sample initial state
-        m = np.random.multivariate_normal(m0,s0)
-        s = S0
+        # simulate a rollout using the dynamics model
+        dt = self.dt; H = self.H; t = 0
+        while t < H:
+            # evaluate the policy at current state
+            mu, Su, Cu = self.policy.evaluate(t, m0, S0)
 
-        for i in xrange(H):
-            # apply policy (covariance empty for deterministic policies)
-            u = policy.fcn(m)
-            np.append(self.x,x)
-            np.append(self.x_cov,x_cov)
-            np.append(self.u,u)
-            np.append(self.u_cov,u_cov)
+            # fill in the covariance of the state-action vector
+            m, S = fillIn(mx,Sx,mu,Su,Vu) 
 
-            # compute cost ( need not depend on the control input or covariance)
-            np.append(L,cost.fcn(x,u,x_cov,u_cov))
+            #  predict next state given current state-action
+            mx, Sx, Cx = self.dynamics_model.predict(m,S)
 
-            # step the plant (covariance empty for deterministic systems)
-            x,x_cov = plant.fcn(x,u,x_cov,u_cov)
-            np.append(self.y,x)
-            np.append(self.y_cov,x_cov)
+            #  get cost:
+            mc, Sc = cost(mx,mu,Sx,Su)
 
-    def value(self):
-        # TODO implement this
-        pass
+        # return value
 
-    def minimize(self):
-        # TODO implement this
+    def value_d(self):
+        # get distribution of initial states
+        x0 = x[self.experience.episode_starts]
+        mx = []; Sx = []
+        if x0.shape[0] > 1:
+            mx = x0.mean()
+            Sx = np.cov(x0.T)
+        else:
+            mx = x0
+            Sx = 1e-2*np.eye(x0.shape[1])
 
+        # simulate a rollout using the dynamics model
+        dt = self.dt; H = self.H; t = 0
+        while t < H:
+            # evaluate the policy at current state
+            mu, Su, Cu = self.policy.evaluate(t, m0, S0)
+
+            # fill in the covariance of the state-action vector
+            m, S = fillIn(mx,Sx,mu,Su,Vu) 
+
+            #  predict next state given current state-action
+            mx, Sx, Cx = self.dynamics_model.predict(m,S)
+
+            #  get cost:
+            mc, Sc = cost(mx,mu,Sx,Su)
+
+        # return value + derivatives

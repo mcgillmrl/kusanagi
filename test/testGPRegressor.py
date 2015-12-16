@@ -1,4 +1,4 @@
-from GPRegressor import *
+from ghost.regression.GPRegressor import *
 from matplotlib import pyplot as plt
 
 def test_random():
@@ -72,18 +72,18 @@ def test_sonar(gp_type='GP'):
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
-    #idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1000)
-    #Xd = np.array(dataset['mat'][idx,0:2])
-    #Yd = np.array(dataset['mat'][idx,2])[:,None]
-    Xd = np.array(dataset['mat'][:,0:2])
-    Yd = np.array(dataset['mat'][:,2])[:,None]
+    idx = np.random.choice(np.arange(dataset['mat'].shape[0]),1500)
+    Xd = np.array(dataset['mat'][idx,0:2])
+    Yd = np.array(dataset['mat'][idx,2])[:,None]
+    #Xd = np.array(dataset['mat'][:,0:2])
+    #Yd = np.array(dataset['mat'][:,2])[:,None]
     
     if gp_type == 'GP_UI':
         gp = GP_UI(Xd,Yd, profile=False)
     elif gp_type == 'SPGP':
-        gp = SPGP(Xd,Yd, profile=False, n_inducing = 300)
+        gp = SPGP(Xd,Yd, profile=False, n_inducing = 50)
     elif gp_type == 'SPGP_UI':
-        gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 300)
+        gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 50)
     else:
         gp = GP(Xd,Yd, profile=False)
     utils.print_with_stamp('training','main')
@@ -128,7 +128,7 @@ def test_sonar(gp_type='GP'):
         write_profile_files(gp)
 
 def test_K():
-    import cov
+    import ghost.regression.cov
     from scipy.io import loadmat
     dataset = loadmat('/media/diskstation/Kingfisher/matlab.mat')
     
@@ -212,8 +212,9 @@ def test_K_means():
 if __name__=='__main__':
     np.set_printoptions(linewidth=500)
     #test_random()
-    #test_sonar('GP')
-    #test_sonar('GP_UI')
+    test_sonar('GP')
+    test_sonar('SPGP')
+    test_sonar('GP_UI')
     test_sonar('SPGP_UI')
     plt.show()
     #test_K()

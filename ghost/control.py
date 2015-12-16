@@ -1,5 +1,5 @@
 import numpy as np
-from GP import GP2d
+from regression.GPRegressor import GP_UI
 
 class conCat:
     def __init__(self, policy, saturating_function):
@@ -15,7 +15,7 @@ class conGP:
         # init policy inputs and targets
         self.inputs = np.random.multivariate_normal(m0,S0,n_basis_functions)
         self.targets = 0.1*np.random.random((n_basis_functions,len(max_control)))
-        self.model = GP2d(self.inputs,self.targets)
+        self.model = GP_UI(self.inputs,self.targets)
 
         self.model.init()
         self.model.init_predict()

@@ -1,10 +1,10 @@
 import numpy as np
 from scipy.integrate import ode
-from plant import Plant, PlantDraw
-from cost import Cost, lossGeneric
+from shell.plant import Plant, PlantDraw
+from ghost.cost import Cost, lossGeneric
 from util import augment
 from threading import Thread
-import mtTkinter as tk
+import thirdparty.mtTkinter as tk
 
 class Cartpole(Plant):
     def __init__(self, dt, model_parameters, initial_state, integrator='dopri5', atol=1e-12, rtol=1e-12):
@@ -42,9 +42,10 @@ class Cartpole(Plant):
 
         return dz
 
-    def fcn(self,x,u,x_cov=None,u_cov=None):
+    def fcn(self,x,u=None,x_cov=None,u_cov=None):
         self.set_state(x)
-        self.set_force(u)
+        if u is not None:
+          self.set_force(u)
         return self.step(self.dt)
 
 class CartpoleCost(Cost):
