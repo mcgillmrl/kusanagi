@@ -32,5 +32,5 @@ class conRand:
     def __init__(self,maxU=[10]):
         self.maxU = np.array(maxU)
 
-    def fcn(self,m,s=None):
+    def evaluate(self,t, m,s=None):
         return (2*np.random.random(self.maxU.shape)-1.0)*self.maxU

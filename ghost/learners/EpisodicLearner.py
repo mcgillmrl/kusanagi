@@ -1,7 +1,6 @@
 import numpy as np
 from utils import print_with_stamp
 from time import time
-from ghost.learners import EpisodicLearner
 
 class ExperienceDataset(object):
     def __init__(self):
@@ -11,7 +10,7 @@ class ExperienceDataset(object):
         self.immediate_cost = []
         self.episode_starts = []
 
-    def add_sample(t,x_t=None,u_t=None,c_t=None):
+    def add_sample(self,t,x_t=None,u_t=None,c_t=None):
         self.time_stamps.append(t)
         self.states.append(x_t)
         self.actions.append(u_t)
@@ -31,31 +30,35 @@ class EpisodicLearner(object):
         self.cost = cost
         pass
 
-    def apply_controller(self):
+    def apply_controller(self,H=float('inf')):
         print_with_stamp('Starting data collection run',self.name)
+        if H < float('inf'):
+            print_with_stamp('Running for %f seconds'%(H),self.name)
+
         # intialize episode specific variables
-        t = time()
+        t = 0
         self.experience.mark_start()
         # start robot
-        plant.start()
+        self.plant.start()
         while t < H:
             #  get robot state (this should ensure synchonicity by blocking until dt seconds have passed):
-            x_t, t = plant.get_state()
+            x_t, t = self.plant.get_state()
             #  get command from policy (this should be fast, or at least account for delays in processing):
-            u_t = policy(t, x_t)
+            u_t = self.policy.evaluate(t, x_t)
             #  send command to robot:
-            plant.apply_control(u_t)
-            if cost is not None:
+            self.plant.apply_control(u_t)
+            if self.cost is not None:
                 #  get cost:
-                c_t = cost(x_t,u_t) 
+                c_t = self.cost.evaluate(mx=x_t,mu=u_t) 
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
-            # append to experience dataset
-            self.experience.append(x_t,u_t,0)
+            else:
+                # append to experience dataset
+                self.experience.append(t,x_t,u_t,0)
         
         # stop robot
         print_with_stamp('Done. Stopping robot.',self.name)
-        plant.stop()
+        self.plant.stop()
         self.n_episodes += 1
 
     def train_policy(self):

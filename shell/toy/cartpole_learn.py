@@ -6,6 +6,7 @@ from threading import Thread
 from time import sleep,time
 from util import augment
 import utils
+import sys
 
 def test_sim():
     np.set_printoptions(linewidth=200, precision=6, suppress=True)
@@ -58,7 +59,7 @@ def test_sim():
         running = False
 
 if __name__ == '__main__':
-    dt = 0.005
+    dt = 0.05
     model_parameters ={}
     model_parameters['l'] = 0.5
     model_parameters['m'] = 0.5
@@ -70,9 +71,25 @@ if __name__ == '__main__':
     target = [0,0,0,np.pi]
     angle_dims = [3]
 
-    plant = Cartpole(dt,model_parameters,x0)
-    cost = CartpoleCost(target,model_parameters['l'])
-    policy = conRand([1])
+    plant = Cartpole(model_parameters,x0,dt)
+    draw_cp = CartpoleDraw(plant,0.033)
+    draw_cp.start()
 
-    learner = PILCO(plant, policy, cost, angle_dims)
-    #test_sim()
+    cost = CartpoleCost(target,model_parameters['l'], angle_dims)
+    policy = conRand([0.001])
+
+    learner = PILCO(plant, policy, cost)
+    learner.apply_controller(H=5)
+
+
+    x = np.array(learner.experience.states)
+    u = np.array(learner.experience.actions)
+    # inputs are states, concatenated with actions (except for the last entry)
+    X = np.hstack((x[:-1],u[:-1]))
+    # outputs are next states
+    Y =  x[1:]
+    np.savez('experience.npz',X=X,Y=Y)
+
+    #learner.train_dynamics()
+
+    draw_cp.stop()

@@ -1,6 +1,7 @@
 import numpy as np
 from utils import print_with_stamp
-from ghost.learners import EpisodicLearner
+from ghost.learners.EpisodicLearner import *
+from ghost.regression.GPRegressor import GP_UI
 
 class PILCO(EpisodicLearner):
     def __init__(self, plant, policy, cost, experience = None, name='PILCO'):
@@ -8,18 +9,20 @@ class PILCO(EpisodicLearner):
         self.dynamics_model = None
 
     def train_dynamics(self):
+        print_with_stamp('Training dynamics model',self.name)
         x = np.array(self.experience.states)
         u = np.array(self.experience.actions)
         # inputs are states, concatenated with actions (except for the last entry)
-        X = np.hstack(x[:-1],u[:-1])
+        X = np.hstack((x[:-1],u[:-1]))
         # outputs are next states
         Y =  x[1:]
-        if self.dynamics is None:
+        if self.dynamics_model is None:
             self.dynamics_model = GP_UI(X,Y)
         else:
             self.dynamics_model.set_dataset(X,Y)
 
         self.dynamics_model.train()
+        print_with_stamp('Done training dynamics model',self.name)
 
     def value(self, derivs=True):
         if derivs == True:

@@ -522,7 +522,7 @@ class SPGP(GP):
 
         # train the pseudo input locations
         utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
-        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-7, options={'maxiter': 250})
         #opt_res = basinhopping(self.loss_sp, self.X_sp_, niter=2, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 250}})
         print ''
         X_sp = opt_res.x.reshape(self.X_sp_.shape)

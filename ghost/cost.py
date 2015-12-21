@@ -106,47 +106,50 @@ class Cost(object):
         self.S2 = None
         self.Lfcn = None
         self.Lgrad = None
+        self.loss_function = loss_function
 
         # init symbolic variables for the mean and covariance of the state
         self.m = T.dvector('m')
         self.s = T.dmatrix('s')
+        self.init()
 
-    def fcn(self,m,s=None, derivs=False):
-        # set a default covariance matrix if needed
-        if s is None:
-            D = len(m)
-            s = np.zeros((D,D))
-
+    def init(self):
+        # get the symbolic expressions for the mean and the variance of the cost
         if self.L is None or self.S2 is None:
-            # get the symbolic expressions for the mean and the variance of the cost
-            L,S2 = loss_function(self,self.m,self.s)
+            L,S2 = self.loss_function(self,self.m,self.s)
             self.L = L
             self.S2 = S2
 
-        if not derivs:
-            # compile the loss function if needed
-            if self.Lfcn is None:
-                utils.print_with_stamp('Compiling cost function',self.name)
-                self.Lfcn = theano.compile.function([self.m,self.s],(self.L,self.S2))
-                utils.print_with_stamp('Done compiling',self.name)
+        # compile the loss function if needed
+        if self.Lfcn is None:
+            utils.print_with_stamp('Compiling cost function',self.name)
+            self.Lfcn = theano.compile.function([self.m,self.s],(self.L,self.S2))
+            utils.print_with_stamp('Done compiling',self.name)
 
+        # compile the derivatives if needed
+        if self.Lgrad is None:
+            utils.print_with_stamp('Compiling gradients of cost function',self.name)
+            dLdm = T.grad(self.L,self.m)
+            dLds = T.grad(self.L,self.s).T.ravel()
+            dS2dm = T.grad(self.S2,self.m)
+            dS2ds = T.grad(self.S2,self.s).T.ravel()
+            self.Lgrad = theano.compile.function([self.m,self.s],(self.L, dLdm,dLds, self.S2))
+            utils.print_with_stamp('Done compiling',self.name)
+
+    def evaluate(self,mx,mu=None,Sx=None,Su=None,derivs=False):
+        # set a default covariance matrix if needed
+        if Sx is None:
+            D = len(mx)
+            Sx = np.zeros((D,D))
+
+        if not derivs:
             # this will return values for  L and S2 evaluated at m and s
-            return self.Lfcn(m,s)
+            return self.Lfcn(mx,Sx)
 
         # add derivatives to the return values if requested
         else:
-            # compile the derivatives if needed
-            if self.Lgrad is None:
-                utils.print_with_stamp('Compiling gradients of cost function',self.name)
-                dLdm = T.grad(self.L,self.m)
-                dLds = T.grad(self.L,self.s).T.ravel()
-                dS2dm = T.grad(self.S2,self.m)
-                dS2ds = T.grad(self.S2,self.s).T.ravel()
-                self.Lgrad = theano.compile.function([self.m,self.s],(self.L, dLdm,dLds, self.S2))
-                utils.print_with_stamp('Done compiling',self.name)
-
             # this will return values for dLdm and dLds evaluated at m and s
-            return self.Lgrad(m,s)
+            return self.Lgrad(mx,Sx)
 
     def update(target=None,Q=None,cw=None,expl=None):
         # update the variables
@@ -167,7 +170,7 @@ class Cost(object):
             return
 
         # update the symbolic expressions for the loss and variance of loss
-        L,S2 = loss_function(self,self.m,self.s)
+        L,S2 = self.loss_function(self,self.m,self.s)
         self.L = L
         self.S2 = S2
 

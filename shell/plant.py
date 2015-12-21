@@ -1,25 +1,35 @@
 import numpy as np
+import sys
+
+from matplotlib import pyplot as plt
+from matplotlib.widgets import Cursor
 from scipy.integrate import ode
-import thirdparty.mtTkinter as tk
+from time import time, sleep
+from threading import Thread
 
 from utils import print_with_stamp
 
 class ODEPlant(object):
-    def __init__(self, dynamics, dt=0.01, name='Plant', integrator='dopri5', atol=1e-12, rtol=1e-12):
-        self.solver = ode(dynamics).set_integrator(integrator,atol=atol,rtol=rtol)
+    def __init__(self, params, x0, dt=0.01, name='Plant', integrator='dopri5', atol=1e-12, rtol=1e-12):
+        self.solver = ode(self.dynamics).set_integrator(integrator,atol=atol,rtol=rtol)
         self.name = name
         self.x = None
         self.u = None
         self.t = 0
         self.dt = dt
+        self.params = params
+        self.set_state(x0)
+
+    def apply_control(self,u):
+        self.u = np.array(u)[:,None]
 
     def set_state(self, x):
         if (self.x is None or np.linalg.norm(x-self.x) > 1e-12):
             self.x = np.array(x)[:,None]
             self.solver = self.solver.set_initial_value(x)
 
-    def set_control(self,u):
-        print "You need to implement the function fcn(x,u,x_cov,u_cov) in your plant class."
+    def get_state(self):
+        return self.x.flatten(),self.solver.t
 
     def step(self,dt):
         t1 = self.solver.t + dt
@@ -28,64 +38,88 @@ class ODEPlant(object):
         self.x = np.array(self.solver.y)
         self.t = self.solver.t
         return self.x
+    
+    def run(self):
+        start_time = time()
+        print_with_stamp('Starting simulation loop',self.name)
+        while self.running:
+            exec_time = time()
+            self.step(self.dt)
+            exec_time = time() - exec_time
+            sleep(max(self.dt-exec_time,0))
 
-    def fcn(self,x,u,x_cov,u_cov):
+    def start(self):
+        self.sim_thread = Thread(target=self.run)
+        self.running = True
+        self.sim_thread.start()
+    
+    def stop(self):
+        self.running = False
+
+    def dynamics(self):
+        print "You need to implement the function dynamics() in your plant class."
+
+    def fcn(self,x,u=None,x_cov=None,u_cov=None):
         print "You need to implement the function fcn(x,u,x_cov,u_cov) in your plant class."
 
 class PlantDraw(object):
-    def __init__(self, plant, refresh_period=100, master=None):
+    def __init__(self, plant, refresh_period=(1.0/60), name='PlantDraw'):
+        super(PlantDraw,self).__init__()
+        self.name = name
         self.plant = plant
 
-        # init tkinter window
-        if master is None:
-            self.master = tk.Tk()
-        else:
-            self.master = master
-
-        self.master.wm_title("Cartpole!")
-        self.master.geometry('512x512')
-        self.master.aspect(1,1,1,1)
-
-        # creathe the frame for the content
-        self.frame = tk.Frame(self.master)
-
-        # create the canvas for drawing the state of the cartpole
-        self.canvas = tk.Canvas(self.frame)
-
-        # place canvas in frame, frame in window
-        self.canvas.pack(fill = "both", expand = 1)
-        self.frame.pack(fill = "both", expand = 1)
-
-         #configure resize event
-        self.canvas.bind('<Configure>', self.resize)
-
-        # init variables
-        self.height =  self.canvas.winfo_height()
-        self.width =  self.canvas.winfo_width()
-        self.center_x = self.width/2.0
-        self.center_y = self.height/2.0
-
-        self.refresh_period = refresh_period
+        self.dt = refresh_period
         self.scale =  150 # pixels per meter
 
-    def resize(self,event):
-        if event.width == self.width and event.height == self.height:
-            return
-        # update internal variables
-        self.width = event.width
-        self.height = event.height
-        self.center_x = self.width/2.0
-        self.center_y = self.height/2.0
+        self.center_x = 0
+        self.center_y = 0
+
+    def init_ui(self):
+        self.fig = plt.figure(self.name)
+        plt.xlim([-2,2])
+        plt.ylim([-2,2])
+        plt.ion()
+        plt.show()
+        self.ax = plt.gca()
+        self.ax.set_aspect('equal','datalim')
+        self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
+        self.init_artists()
+        self.fig.canvas.draw()
+        self.cursor = Cursor(self.ax, useblit=True, color='red', linewidth=2 )
+        plt.show()
+        pass
+
+    def run(self):
+        # start the matplotlib plotting
+        self.init_ui()
+
+        while self.running:
+            exec_time = time()
+            # update the drawing from the plant state
+            state,t = self.plant.get_state()
+            updts = self.update(state,t)
+            self.fig.canvas.restore_region(self.bg)
+            for artist in updts:
+                self.ax.draw_artist(artist)
+            self.fig.canvas.blit(self.ax.bbox)
+
+            # sleep to guarantee the desired frame rate
+            exec_time = time() - exec_time
+            sleep(max(self.dt-exec_time,0))
+
+        # close the matplotlib windows, clean up
+        plt.ioff()
+        plt.close('all')
 
     def start(self):
-        self.master.after(self.refresh_period, self.update)
-        self.master.mainloop()
-
+        print_with_stamp('Starting drawing loop',self.name)
+        self.sim_thread = Thread(target=self.run)
+        self.running = True
+        self.sim_thread.start()
+    
+    def stop(self):
+        print_with_stamp('Stopping drawing loop',self.name)
+        self.running = False
+    
     def update(self):
-        self.draw()
-        self.master.after(self.refresh_period, self.update)
-
-    def draw(self):
-        print "You need to implement the draw() function  in your PlantDraw class."
-
-
+        print "You need to implement the self.update(qp) function in your PlantDraw class."
