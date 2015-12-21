@@ -59,6 +59,7 @@ def test_sim():
         running = False
 
 if __name__ == '__main__':
+    np.set_printoptions(linewidth=500)
     dt = 0.05
     model_parameters ={}
     model_parameters['l'] = 0.5
