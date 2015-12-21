@@ -209,13 +209,21 @@ def test_K_means():
     utils.print_with_stamp('done','main')
     print (time()-start)
 
+def test_CartpoleDyn():
+    data = np.load('experience.npz')
+    X = data['X']
+    Y = data['Y']
+    print X.shape
+    print Y.shape
+
 if __name__=='__main__':
     np.set_printoptions(linewidth=500)
     #test_random()
-    test_sonar('GP')
-    test_sonar('SPGP')
-    test_sonar('GP_UI')
-    test_sonar('SPGP_UI')
-    plt.show()
+    #test_sonar('GP')
+    #test_sonar('SPGP')
+    #test_sonar('GP_UI')
+    #test_sonar('SPGP_UI')
+    #plt.show()
     #test_K()
     #test_K_means()
+    test_CartpoleDyn()

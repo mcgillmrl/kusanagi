@@ -1,6 +1,6 @@
 import numpy as np
 from utils import print_with_stamp
-from time import time
+from time import time, sleep
 
 class ExperienceDataset(object):
     def __init__(self):
@@ -41,6 +41,7 @@ class EpisodicLearner(object):
         # start robot
         self.plant.start()
         while t < H:
+            exec_time = time()
             #  get robot state (this should ensure synchonicity by blocking until dt seconds have passed):
             x_t, t = self.plant.get_state()
             #  get command from policy (this should be fast, or at least account for delays in processing):
@@ -55,6 +56,10 @@ class EpisodicLearner(object):
             else:
                 # append to experience dataset
                 self.experience.append(t,x_t,u_t,0)
+
+            # sleep to match the desired sample rate
+            exec_time = time() - exec_time
+            sleep(max(self.plant.dt-exec_time,0))
         
         # stop robot
         print_with_stamp('Done. Stopping robot.',self.name)

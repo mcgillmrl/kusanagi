@@ -79,9 +79,13 @@ if __name__ == '__main__':
     policy = conRand([0.001])
 
     learner = PILCO(plant, policy, cost)
+
+    # testing single PILCO loop
     learner.apply_controller(H=5)
-
-
+    learner.train_dynamics()
+    #learner.train_policy()
+    
+    # saving dataset for external tests
     x = np.array(learner.experience.states)
     u = np.array(learner.experience.actions)
     # inputs are states, concatenated with actions (except for the last entry)
@@ -89,7 +93,5 @@ if __name__ == '__main__':
     # outputs are next states
     Y =  x[1:]
     np.savez('experience.npz',X=X,Y=Y)
-
-    #learner.train_dynamics()
 
     draw_cp.stop()
