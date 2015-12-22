@@ -173,10 +173,10 @@ class GP(object):
 
         odims = self.odims
         idims = self.idims
-        n = x_mean.shape[0]
         if len(x_mean.shape) == 1:
             # convert to row vector
-            x_mean = x_mean[None,:].reshape((n,idims))
+            x_mean = x_mean[None,:].reshape((1,idims))
+        n = x_mean.shape[0]
 
         res = None
         if self.uncertain_inputs:
@@ -184,6 +184,10 @@ class GP(object):
                 x_cov = np.zeros((n,idims,idims))
             if theano.config.floatX == 'float32':
                 x_cov = x_cov.astype(np.float32).reshape((n,idims,idims))
+
+            if len(x_cov.shape) == 2:
+                # convert to 3d array
+                x_cov = x_cov[None,:,:].reshape((1,idims,idims))
             res = self.predict_(x_mean, x_cov)
         else:
             res = self.predict_(x_mean)
@@ -630,6 +634,105 @@ class SPGP_UI(SPGP,GP_UI):
                 else:
                     M2[j*odims+i] = m2
                 m2.name = 'M2_%d%d'%(i,j)
+                M2[i*odims+j] = m2
+
+        M = T.stacklists(M).T
+        V = T.stacklists(V).transpose(1,2,0)
+        M2 = T.stacklists(M2).T
+        S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
+
+        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
+        self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
+
+        # compile the derivatives wrt the evaluation point
+        dMdm = T.jacobian(M.flatten(),x_mean)
+        dVdm = T.jacobian(V.flatten(),x_mean)
+        dSdm = T.jacobian(S.flatten(),x_mean)
+        dMds = T.jacobian(M.flatten(),x_cov)
+        dVds = T.jacobian(V.flatten(),x_cov)
+        dSds = T.jacobian(S.flatten(),x_cov)
+
+        utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
+        self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+
+# RBF network (GP with uncertain inputs/deterministic outputs)
+class RBFGP(GP_UI):
+    def __init__(self, X_dataset, Y_dataset, name = 'RBFGP',profile=False):
+        super(RBFGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+        self.uncertain_inputs = True
+
+    def init_predict(self):
+        utils.print_with_stamp('Initialising expression graph for prediction',self.name)
+        idims = self.idims
+        odims = self.odims
+
+        # Note that this handles n_samples inputs
+        if theano.config.floatX == 'float32':
+            x_mean = T.fmatrix('x')      # n_samples x idims
+            x_cov = T.ftensor3('x_cov')  # n_samples x idims x idims
+        else:
+            x_mean = T.dmatrix('x')      # n_samples x idims
+            x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
+
+        #centralize inputs 
+        zeta = self.X[None,:,:] - x_mean[:,None,:]
+        
+        # predictive mean and covariance (for each output dimension)
+        M = [] # mean
+        V = [] # inv(x_cov).dot(input_output_cov)
+        M2 = [[]]*(odims**2) # second moment
+
+        def M_helper(inp_k,B_k,sf2):
+            t_k = inp_k.dot(matrix_inverse(psd(B_k)))
+            c_k = sf2/T.sqrt(det(psd(B_k)))
+            return (t_k,c_k)
+            
+        #predictive second moment ( only the lower triangular part, including the diagonal)
+        def M2_helper(logk_i_k, logk_j_k, z_ij_k, R_k, x_cov_k):
+            nk2 = logk_i_k[:,None] + logk_j_k[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(x_cov_k))
+            tk = 1.0/T.sqrt(det(psd(R_k)))
+            Qk = tk*T.exp( nk2 )
+            
+            return Qk
+
+        logk=[[]]*odims
+        Lambda=[[]]*odims
+        for i in xrange(odims):
+            # rescale input dimensions by inverse lengthscales
+            iL = T.exp(-self.loghyp[i][:idims])
+            inp = zeta*iL  # Note this is assuming a diagonal scaling matrix on the kernel
+
+            # predictive mean ( which depends on input covariance )
+            B = iL[:,None]*x_cov*iL + T.eye(idims)
+            (t,c), updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[T.exp(2*self.loghyp[i][idims])], strict=True)
+            l = T.exp(-0.5*T.sum(inp*t,2))
+            lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
+            mean = T.sum(lb,1)*c;
+            mean.name = 'M_%d'%(i)
+            M.append(mean)
+
+            # inv(x_cov) times input output covariance (Eq 2.70)
+            tiL = t*iL
+            v = T.sum(tiL*lb[:,:,None],axis=1)*c[:,None]
+            V.append(v)
+            
+            # predictive covariance
+            logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,2)
+            Lambda[i] = iL*iL
+            for j in xrange(i+1):
+                # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
+                Lambda_ij = Lambda[i] + Lambda[j]
+                z_ij = zeta*Lambda_ij
+                R = x_cov*Lambda_ij + T.eye(idims)
+    
+                Q,updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_ij,R,x_cov))
+                Q.name = 'Q_%d%d'%(i,j)
+
+                # Eq 2.55
+                m2 = matrix_dot(self.beta[i],Q,self.beta[j])
+                m2.name = 'M2_%d%d'%(i,j)
+                if i != j:
+                    M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
 
         M = T.stacklists(M).T

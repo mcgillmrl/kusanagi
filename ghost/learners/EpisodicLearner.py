@@ -45,7 +45,7 @@ class EpisodicLearner(object):
             #  get robot state (this should ensure synchonicity by blocking until dt seconds have passed):
             x_t, t = self.plant.get_state()
             #  get command from policy (this should be fast, or at least account for delays in processing):
-            u_t = self.policy.evaluate(t, x_t)
+            u_t = self.policy.evaluate(t, x_t)[0].flatten()
             #  send command to robot:
             self.plant.apply_control(u_t)
             if self.cost is not None:

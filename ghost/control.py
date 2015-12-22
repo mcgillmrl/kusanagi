@@ -1,36 +1,27 @@
 import numpy as np
-from regression.GPRegressor import GP_UI
+from regression.GPRegressor import RBFGP
 
-class conCat:
-    def __init__(self, policy, saturating_function):
-        self.con = policy
-        self.sat= saturating_function
-        self.GP = GP()
-        pass
-
-
-class conGP:
-    def __init__(self, m0, S0, max_control=[10], n_basis_functions=10):
+# GP based controller
+class RBFPolicy:
+    def __init__(self, m0, S0, maxU=[10], n_basis_functions=10):
         self.maxU = np.array(maxU)
-        # init policy inputs and targets
+        # init policy inputs  near the given initial state
         self.inputs = np.random.multivariate_normal(m0,S0,n_basis_functions)
-        self.targets = 0.1*np.random.random((n_basis_functions,len(max_control)))
-        self.model = GP_UI(self.inputs,self.targets)
+        # init policy targets close to zero
+        self.targets = 0.1*np.random.random((n_basis_functions,len(maxU)))
 
-        self.model.init()
-        self.model.init_predict()
+        self.model = RBFGP(self.inputs,self.targets)
 
-    def fcn(self,m,s=None):
+    def evaluate(self, t, m, s=None, derivs=False):
         D = m[None,:].shape[-1]
         if s is None:
             s = np.zeros((D,D))
-        M,S,C = self.model.predict(m,s)
-        pass
+        return self.model.predict(m,s) if not derivs else self.model.predict_d(m,s)
 
 # random controller
-class conRand:
-    def __init__(self,maxU=[10]):
+class RandPolicy:
+    def __init__(self, maxU=[10]):
         self.maxU = np.array(maxU)
 
-    def evaluate(self,t, m,s=None):
+    def evaluate(self, t, m, s=None, derivs=False):
         return (2*np.random.random(self.maxU.shape)-1.0)*self.maxU

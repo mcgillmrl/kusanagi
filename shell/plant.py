@@ -47,6 +47,7 @@ class ODEPlant(object):
             self.step(self.dt)
             exec_time = time() - exec_time
             sleep(max(self.dt-exec_time,0))
+        print_with_stamp('Stopping simulation loop',self.name)
 
     def start(self):
         self.sim_thread = Thread(target=self.run)
