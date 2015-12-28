@@ -215,9 +215,44 @@ def test_CartpoleDyn():
     Y = data['Y']
     print X.shape
     print Y.shape
+    M = T.dmatrix('M')
+    S = T.dtensor3('S')
+    angi = T.ivector('angi')
+
+    mi = M[:,angi]
+    vi = S[:,angi,:][:,:,angi]
+    vii = S[:,angi,angi]
+    exp_vii_h = T.exp(-vii/2)
+    
+    # mean of sine and cosine of the input
+    sin_mi = exp_vii_h*T.sin(mi)
+    cos_mi = exp_vii_h*T.cos(mi)
+    sc_mi = T.stack([sin_mi,cos_mi],axis=1).reshape((M.shape[0],2*angi.shape[0]))
+
+    # covariance matrix of output
+    lq = -0.5*(vii[:,:,None]+vii[:,None,:]); q = T.exp(lq)
+    exp_lq_p_vi = T.exp(lq+vi)
+    exp_lq_m_vi = T.exp(lq-vi)
+    U1 = (exp_lq_p_vi - q)*(T.sin(mi[:,:,None]-mi[:,None,:]))
+    U2 = (exp_lq_m_vi - q)*(T.sin(mi[:,:,None]-mi[:,None,:]))
+    U3 = (exp_lq_p_vi - q)*(T.cos(mi[:,:,None]-mi[:,None,:]))
+    U4 = (exp_lq_m_vi - q)*(T.cos(mi[:,:,None]-mi[:,None,:]))
+
+    f = F([M,S,angi],sc_mi)
+    m = (np.tile(np.arange(1,6),(10,1))*np.arange(1,11)[:,None]).reshape(10,5)*np.pi/8.0
+    s = (np.tile(np.arange(2,27),(10,1))*np.arange(1,11)[:,None]).reshape(10,5,5)
+    s = 1.0/(s + s.transpose(0,2,1))
+    #print f(X,np.array([3],dtype=np.int32))
+    #print f(X,np.array([3],dtype=np.int32)).shape
+
+    res = f(m,s,np.array([1,3],dtype=np.int32))
+    
+    print res
+    print res[:,:,None] + res[:,None,:]
+    
 
 if __name__=='__main__':
-    np.set_printoptions(linewidth=500)
+    np.set_printoptions(linewidth=500, precision=5, suppress=True)
     #test_random()
     #test_sonar('GP')
     #test_sonar('SPGP')

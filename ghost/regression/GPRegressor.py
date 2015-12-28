@@ -14,8 +14,9 @@ import cov
 import utils
 
 class GP(object):
-    def __init__(self, X_dataset, Y_dataset, name='GP', profile=False):
+    def __init__(self, X_dataset, Y_dataset, name='GP', profile=False, save_after_init=True):
         self.profile= profile
+        self.save_after_init =  save_after_init
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
         self.min_method = "L-BFGS-B"
 
@@ -30,6 +31,7 @@ class GP(object):
 
         try:
             # try loading from pickled file, to avoid recompiling
+            self.save_after_init = False
             self.load()
             if (X_dataset.shape[0] != self.X_.shape[0] or Y_dataset.shape[0] != self.Y_.shape[0]) or not( np.allclose(X_dataset,self.X_) and np.allclose(Y_dataset,self.Y_) ):
                 self.set_dataset(X_dataset,Y_dataset)
@@ -42,6 +44,8 @@ class GP(object):
             self.init_predict()
         
         utils.print_with_stamp('Finished initialising GP',self.name)
+        if self.save_after_init:
+            self.save()
     
     def set_dataset(self,X_dataset,Y_dataset):
         utils.print_with_stamp('Updating GP dataset',self.name)
@@ -129,8 +133,8 @@ class GP(object):
             nlml[i] = 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + self.N*T.log(2*np.pi) )/self.N
             # Compute the gradients for each output dimension independently
             dnlml[i] = T.jacobian(nlml[i].flatten(),self.loghyp[i])
-        nlml = T.stacklists(nlml)
-        dnlml = T.stacklists(dnlml)
+        nlml = T.stack(nlml)
+        dnlml = T.stack(dnlml)
         # Compile the theano functions
         utils.print_with_stamp('Compiling log likelihood',self.name)
         self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode)
@@ -154,8 +158,8 @@ class GP(object):
             variance = self.kernel_func[i](x_mean,all_pairs=False) - (k*(k.dot( self.iK[i] )) ).sum(axis=1)
 
         # compile the prediction function
-        M = T.stacklists(mean).T
-        S = T.stacklists(variance).T
+        M = T.stack(mean).T
+        S = T.stack(variance).T
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean],(M,S),name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
@@ -271,8 +275,8 @@ class GP(object):
         return (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
 
 class GP_UI(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'GP_UI',profile=False):
-        super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+    def __init__(self, X_dataset, Y_dataset, name = 'GP_UI',profile=False, save_after_init=True):
+        super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,save_after_init=save_after_init)
         self.uncertain_inputs = True
 
     def init_predict(self):
@@ -351,9 +355,9 @@ class GP_UI(GP):
                 m2.name = 'M2_%d%d'%(i,j)
                 M2[i*odims+j] = m2
 
-        M = T.stacklists(M).T
-        V = T.stacklists(V).transpose(1,2,0)
-        M2 = T.stacklists(M2).T
+        M = T.stack(M).T
+        V = T.stack(V).transpose(1,2,0)
+        M2 = T.stack(M2).T
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
 
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
@@ -371,7 +375,7 @@ class GP_UI(GP):
         self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
 class SPGP(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'SPGP',profile=False, n_inducing = 100):
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP',profile=False, save_after_init=True, n_inducing = 100):
         self.X_sp = None # inducing inputs
         self.Y_sp = None #inducing targets
         self.nlml_sp = None
@@ -379,7 +383,7 @@ class SPGP(GP):
         self.kmeans = None
         self.n_inducing = n_inducing
         # intialize parent class params
-        super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+        super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,save_after_init=save_after_init)
         self.uncertain_inputs = False
 
     def init_pseudo_inputs(self):
@@ -458,8 +462,8 @@ class SPGP(GP):
                 # TODO give the optiion for separate inducing inputs for every output dimension
                 dnlml_sp[i] = (T.grad(nlml_sp[i],self.X_sp))
 
-            nlml_sp = T.stacklists(nlml_sp)
-            dnlml_sp = T.stacklists(dnlml_sp)
+            nlml_sp = T.stack(nlml_sp)
+            dnlml_sp = T.stack(dnlml_sp)
             # Compile the theano functions
             utils.print_with_stamp('Compiling FITC log likelihood',self.name)
             self.nlml_sp = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
@@ -491,8 +495,8 @@ class SPGP(GP):
             variance = self.kernel_func[i](x_mean,all_pairs=False) - (k*(k.dot(iK) - k.dot(iB)) ).sum(axis=1)
 
         # compile the prediction function
-        M = T.stacklists(mean).T
-        S = T.stacklists(variance).T
+        M = T.stack(mean).T
+        S = T.stack(variance).T
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean],(M,S),name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
@@ -551,8 +555,8 @@ class SPGP(GP):
         return (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.nlml_sp,self.dnlml_sp,self.kmeans)
 
 class SPGP_UI(SPGP,GP_UI):
-    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False, n_inducing = 100):
-        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile, n_inducing=n_inducing)
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False, save_after_init=True, n_inducing = 100):
+        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile, save_after_init=save_after_init, n_inducing=n_inducing)
         self.uncertain_inputs = True
 
     def init_predict(self):
@@ -636,9 +640,9 @@ class SPGP_UI(SPGP,GP_UI):
                 m2.name = 'M2_%d%d'%(i,j)
                 M2[i*odims+j] = m2
 
-        M = T.stacklists(M).T
-        V = T.stacklists(V).transpose(1,2,0)
-        M2 = T.stacklists(M2).T
+        M = T.stack(M).T
+        V = T.stack(V).transpose(1,2,0)
+        M2 = T.stack(M2).T
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
 
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
@@ -657,8 +661,8 @@ class SPGP_UI(SPGP,GP_UI):
 
 # RBF network (GP with uncertain inputs/deterministic outputs)
 class RBFGP(GP_UI):
-    def __init__(self, X_dataset, Y_dataset, name = 'RBFGP',profile=False):
-        super(RBFGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile)
+    def __init__(self, X_dataset, Y_dataset, name = 'RBFGP',profile=False, save_after_init=True):
+        super(RBFGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile, save_after_init=save_after_init)
         self.uncertain_inputs = True
 
     def init_predict(self):
@@ -735,9 +739,9 @@ class RBFGP(GP_UI):
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
 
-        M = T.stacklists(M).T
-        V = T.stacklists(V).transpose(1,2,0)
-        M2 = T.stacklists(M2).T
+        M = T.stack(M).T
+        V = T.stack(V).transpose(1,2,0)
+        M2 = T.stack(M2).T
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
 
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
