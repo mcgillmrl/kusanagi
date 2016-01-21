@@ -20,7 +20,7 @@ class ExperienceDataset(object):
         self.episode_starts.append(len(self.states))
 
 class EpisodicLearner(object):
-    def __init__(self, plant, policy, cost=None, experience = None, name='EpisodicLearner'):
+    def __init__(self, plant, policy, cost=None, angle_idims=None, experience = None, name='EpisodicLearner'):
         self.name = name
         self.min_method = "L-BFGS-B"
         self.n_episodes = 0
@@ -28,6 +28,7 @@ class EpisodicLearner(object):
         self.plant = plant
         self.policy = policy
         self.cost = cost
+        self.angle_idims = angle_idims
         pass
 
     def apply_controller(self,H=float('inf')):
@@ -40,6 +41,7 @@ class EpisodicLearner(object):
         self.experience.mark_start()
         # start robot
         self.plant.start()
+        # do rollout
         while t < H:
             exec_time = time()
             #  get robot state (this should ensure synchonicity by blocking until dt seconds have passed):

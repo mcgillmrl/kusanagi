@@ -20,16 +20,16 @@ class Cartpole(ODEPlant):
         g = self.params['g']
         f = self.u if self.u is not None else np.array([0])
 
-        sz3 = np.sin(z[3])
-        cz3 = np.cos(z[3])
-        a = m*l*(z[2]**2)*sz3
-        b = f[0] - b*z[1];
-        c = 4*(M+m) - 3*m*(cz3**2)
+        sz = np.sin(z[3]); cz = np.cos(z[3]); cz2 = cz*cz;
+        a0 = m*l*z[2]*z[2]*sz
+        a1 = g*sz
+        a2 = f[0] - b*z[1];
+        a3 = 4*(M+m) - 3*m*cz2
 
         dz = np.zeros((4,1))
         dz[0] = z[1]
-        dz[1] = (  2*a + 3*m*g*sz3*cz3 + 4*b )/c
-        dz[2] = ( -3*a*cz3 - 6*(M+m)*g*sz3 - 6*b )/( l*c ) 
+        dz[1] = (  2*a0 + 3*m*a1*cz + 4*a2 )/ ( a3 )
+        dz[2] = 3*( -a0*cz - 2*( (M+m)*a1 - a2*cz ) )/( l*a3 ) 
         dz[3] = z[2]
 
         return dz
@@ -59,6 +59,9 @@ class CartpoleDraw(PlantDraw):
         g = self.plant.params['g']
         self.mass_r = 0.05*np.sqrt( m ) # distance to corner of bounding box
         self.body_h = 0.5*np.sqrt( M )
+
+        self.center_x = 0
+        self.center_y = 0
 
         # initialize the patches to draw the cartpole
         self.body_rect = plt.Rectangle( (self.center_x-0.5*self.body_h, self.center_y-0.125*self.body_h), self.body_h, 0.25*self.body_h, facecolor='black')

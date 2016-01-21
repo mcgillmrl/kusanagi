@@ -3,10 +3,11 @@ from regression.GPRegressor import RBFGP
 
 # GP based controller
 class RBFPolicy:
-    def __init__(self, m0, S0, maxU=[10], n_basis_functions=10):
+    def __init__(self, m0, S0, maxU=[10], n_basis_functions=10, angle_dims=None):
         self.maxU = np.array(maxU)
         # init policy inputs  near the given initial state
         self.inputs = np.random.multivariate_normal(m0,S0,n_basis_functions)
+
         # init policy targets close to zero
         self.targets = 0.1*np.random.random((n_basis_functions,len(maxU)))
 

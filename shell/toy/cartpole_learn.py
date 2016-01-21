@@ -28,14 +28,16 @@ if __name__ == '__main__':
 
     cost = CartpoleCost(target,model_parameters['l'], angle_dims)
     p1 = RandPolicy([0.001])
-    p2 = RBFPolicy(x0,0.1*np.eye(len(x0)),[10],10)
+    p2 = RBFPolicy(x0,0.1*np.eye(len(x0)),[10],10, angle_dims)
 
-    learner = PILCO(plant, p2, cost)
+    learner = PILCO(plant, p2, cost, angle_dims)
 
     # testing single PILCO loop
     learner.apply_controller(H=5)
     learner.train_dynamics()
-    learner.value()
+    print 'testing value'
+    learner.value(H=5)
+    print 'done'
     #learner.train_policy()
     
     # saving dataset for external tests
