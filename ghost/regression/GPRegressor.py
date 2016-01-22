@@ -27,12 +27,12 @@ class GP(object):
         self.state_changed = False
         self.uncertain_inputs = False
         self.N = X_dataset.shape[0]
-        self.idims = X_dataset.shape[1] + len(angle_idims)
-        self.odims = Y_dataset.shape[1] + len(angle_odims)
+        self.D = X_dataset.shape[1]
+        self.E = Y_dataset.shape[1]
+        self.idims = self.D + len(angle_idims)
+        self.odims = self.E + len(angle_odims)
         self.angle_idims = angle_idims
         self.angle_odims = angle_odims
-        self.non_angle_idims = list(set(range(X_dataset.shape[1])).difference(angle_idims))
-        self.non_angle_odims = list(set(range(Y_dataset.shape[1])).difference(angle_odims))
 
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.idims,self.odims,theano.config.device,theano.config.floatX)
 
@@ -71,9 +71,13 @@ class GP(object):
             self.Y_ = Y_dataset
         # dims = non_angle_dims + 2*angle_dims
         N = self.X_.shape[0]
-        idims = self.X_.shape[1] + len(self.angle_idims)
-        odims = self.Y_.shape[1] + len(self.angle_odims)
+        D = X_dataset.shape[1]
+        E = Y_dataset.shape[1]
+        idims = D + len(self.angle_idims)
+        odims = E + len(self.angle_odims)
         self.N = N
+        self.D = D
+        self.E = E
         self.idims = idims
         self.odims = odims
 
@@ -105,13 +109,12 @@ class GP(object):
 
         # convert angle dimensions to cartesian coordinates
         if len(self.angle_idims) > 0:
-            utils.print_with_stamp('Converting angle inputs to cartesian',self.name)
-            print self.X_shared.get_value().shape,self.angle_idims,self.idims
-            self.X = gTrig(self.X_shared, self.angle_idims, self.idims)
+            utils.print_with_stamp('Converting angle dimensions in training dataset inputs to cartesian',self.name)
+            self.X = gTrig(self.X_shared, self.angle_idims,D)
 
         if len(self.angle_odims) > 0:
-            utils.print_with_stamp('Converting angle outputs to cartesian',self.name)
-            self.Y = gTrig(self.Y_shared, self.angle_odims, self.odims)
+            utils.print_with_stamp('Converting angle dimensions in training dataset outputs to cartesian',self.name)
+            self.Y = gTrig(self.Y_shared, self.angle_odims, E)
 
         # this creates one theano shared variable for the loghyperparameters of each output dimension, separately
         if self.loghyp is None:
@@ -159,6 +162,7 @@ class GP(object):
             nlml[i] = 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + self.N*T.log(2*np.pi) )/self.N
             # Compute the gradients for each output dimension independently
             dnlml[i] = T.jacobian(nlml[i].flatten(),self.loghyp[i])
+
         nlml = T.stack(nlml)
         dnlml = T.stack(dnlml)
         # Compile the theano functions
@@ -179,19 +183,20 @@ class GP(object):
         m = x_mean
         if len(self.angle_idims) > 0:
             utils.print_with_stamp('Converting input angle dimensions to cartesian',self.name)
-            m = gTrig(x_mean, self.angle_idims, self.idims)
+            m = gTrig(x_mean, self.angle_idims, self.D)
 
         # compute the mean and variance for each output dimension
         mean = [[]]*odims
         variance = [[]]*odims
         for i in xrange(odims):
             k = self.kernel_func[i](m,self.X)
-            mean = k.dot(self.beta[i])
-            variance = self.kernel_func[i](m,all_pairs=False) - (k*(k.dot( self.iK[i] )) ).sum(axis=1)
+            mean[i] = k.dot(self.beta[i])
+            variance[i] = self.kernel_func[i](m,all_pairs=False) - (k*(k.dot( self.iK[i] )) ).sum(axis=1)
 
         # compile the prediction function
         M = T.stack(mean).T
         S = T.stack(variance).T
+        S ,updts = theano.scan(fn=lambda Si: T.diag(Si),sequences=[S], strict=True)
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean],(M,S),name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
@@ -208,7 +213,8 @@ class GP(object):
             x_mean = x_mean.astype(np.float32)
 
         odims = self.odims
-        idims = self.idims
+        idims = self.D
+
         if len(x_mean.shape) == 1:
             # convert to row vector
             x_mean = x_mean[None,:].reshape((1,idims))
@@ -235,7 +241,8 @@ class GP(object):
             x_mean = x_mean.astype(np.float32)
 
         odims = self.odims
-        idims = self.idims
+        idims = self.D
+
         n = x_mean.shape[0]
         if len(x_mean.shape) == 1:
             # convert to row vector
@@ -333,7 +340,7 @@ class GP_UI(GP):
         s = x_cov
         if len(self.angle_idims) > 0:
             utils.print_with_stamp('Converting input angle dimensions to cartesian',self.name)
-            m, s = gTrig2(x_mean, x_cov, self.angle_idims, self.idims)
+            m, s = gTrig2(x_mean, x_cov, self.angle_idims, self.D)
 
         #centralize inputs 
         zeta = self.X[None,:,:] - m[:,None,:]
@@ -402,6 +409,7 @@ class GP_UI(GP):
         V = T.stack(V).transpose(1,2,0)
         M2 = T.stack(M2).T
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
+        S ,updts = theano.scan(fn=lambda Si: Si.reshape((odims,odims)), sequences=[S], strict=True)
 
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
@@ -414,7 +422,7 @@ class GP_UI(GP):
         dVds = T.jacobian(V.flatten(),x_cov)
         dSds = T.jacobian(S.flatten(),x_cov)
 
-        utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
+        #utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
         self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
 class SPGP(GP):
@@ -531,7 +539,7 @@ class SPGP(GP):
         m = x_mean
         if len(self.angle_idims) > 0:
             utils.print_with_stamp('Converting input angle dimensions to cartesian',self.name)
-            m = gTrig(x_mean, self.angle_idims, self.idims)
+            m = gTrig(x_mean, self.angle_idims, self.D)
 
         # compute the mean and variance for each output dimension
         mean = [[]]*odims
@@ -546,6 +554,7 @@ class SPGP(GP):
         # compile the prediction function
         M = T.stack(mean).T
         S = T.stack(variance).T
+        S ,updts = theano.scan(fn=lambda Si: T.diag(Si),sequences=[S], strict=True)
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean],(M,S),name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
@@ -631,7 +640,7 @@ class SPGP_UI(SPGP,GP_UI):
         s = x_cov
         if len(self.angle_idims) > 0:
             utils.print_with_stamp('Converting input angle dimensions to cartesian',self.name)
-            m, s = gTrig2(x_mean, x_cov, self.angle_idims, self.idims)
+            m, s = gTrig2(x_mean, x_cov, self.angle_idims, self.D)
 
         #centralize inputs 
         zeta = self.X_sp[None,:,:] - m[:,None,:]
@@ -700,6 +709,7 @@ class SPGP_UI(SPGP,GP_UI):
         V = T.stack(V).transpose(1,2,0)
         M2 = T.stack(M2).T
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
+        S ,updts = theano.scan(fn=lambda Si: Si.reshape((odims,odims)), sequences=[S], strict=True)
 
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
@@ -739,7 +749,7 @@ class RBFGP(GP_UI):
         s = x_cov
         if len(self.angle_idims) > 0:
             utils.print_with_stamp('Converting input angle dimensions to cartesian',self.name)
-            m, s = gTrig2(x_mean, x_cov, self.angle_idims, self.idims)
+            m, s = gTrig2(x_mean, x_cov, self.angle_idims, self.D)
 
         #centralize inputs 
         zeta = self.X[None,:,:] - m[:,None,:]
@@ -806,6 +816,7 @@ class RBFGP(GP_UI):
         V = T.stack(V).transpose(1,2,0)
         M2 = T.stack(M2).T
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
+        S ,updts = theano.scan(fn=lambda Si: Si.reshape((odims,odims)), sequences=[S], strict=True)
 
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)

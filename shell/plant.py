@@ -45,7 +45,7 @@ class ODEPlant(object):
         while self.running:
             exec_time = time()
             self.step(self.dt)
-            print_with_stamp('%f, %s'%(self.t,self.x),self.name)
+            #print_with_stamp('%f, %s'%(self.t,self.x),self.name)
             exec_time = time() - exec_time
             sleep(max(self.dt-exec_time,0))
         print_with_stamp('Stopping simulation loop',self.name)

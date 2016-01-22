@@ -15,7 +15,7 @@ if __name__ == '__main__':
     model_parameters['l'] = 0.5
     model_parameters['m'] = 0.5
     model_parameters['M'] = 0.5
-    model_parameters['b'] = 0.1
+    model_parameters['b'] = 0.5
     model_parameters['g'] = 9.82
 
     x0 = [0,0,0,np.pi]

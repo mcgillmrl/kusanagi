@@ -250,6 +250,49 @@ def test_CartpoleDyn():
     print res
     print res[:,:,None] + res[:,None,:]
     
+def test_angle():
+    # test function
+    def f(X):
+        #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
+        return np.exp(-500*(np.sum(0.001*(X**2),1)))
+
+    n_samples = 100
+    n_test = 10
+    idims = 4
+    odims = 3
+    np.random.seed(31337)
+    
+    X_ = 10*(np.random.rand(n_samples,idims) - 0.5)
+    Y_ = np.empty((n_samples,odims))
+    for i in xrange(odims):
+        Y_[:,i] =  (i+1)*f(X_) + 0.01*(np.random.rand(n_samples)-0.5)
+    
+    #gp = GP(X_,Y_)
+    #gp.train()
+
+    gpu = GP_UI(X_,Y_,angle_idims=[0,1],profile=False)
+    gpu.train()
+
+    X_ = 10*(np.random.rand(n_test,idims) - 0.5)
+    Y_ = np.empty((n_test,odims))
+    for i in xrange(odims):
+        Y_[:,i] =  (i+1)*f(X_) + 0.01*(np.random.rand(n_test)-0.5)
+
+    #r1 = gp.predict(X_,np.zeros((n_test,idims,idims)))
+    r2 = gpu.predict(X_)
+
+    for i in xrange(n_test):
+        print Y_[i,:],','
+     #   print r1[0][i],','
+        print r2[0][i],','
+
+      #  print r1[1][i],','
+        print r2[1][i],','
+        print '---'
+
+    if gpu.profile:
+        write_profile_files(gpu)
+
 
 if __name__=='__main__':
     np.set_printoptions(linewidth=500, precision=5, suppress=True)
@@ -261,4 +304,5 @@ if __name__=='__main__':
     #plt.show()
     #test_K()
     #test_K_means()
-    test_CartpoleDyn()
+    #test_CartpoleDyn()
+    test_angle()

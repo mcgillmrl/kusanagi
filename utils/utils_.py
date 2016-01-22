@@ -167,9 +167,8 @@ def gTrig2(m, v, angi, D, derivs=False):
     V = T.set_subtensor(V[:,Dna:,Dna:], Va)
 
     # fill in the cross covariances
-    v_inv, updts = theano.scan(fn=lambda vi: matrix_inverse(psd(vi)),sequences=[v], strict=True)
-    V = T.set_subtensor(V[:,:Dna,Dna:], (v_inv[:,:,None,:]*Ca[:,:,:,None]).sum(3)[:,non_angle_dims,:] )
-    #V = T.set_subtensor(V[:,Dna:,:Dna], V[:,:Dna,Dna:].transpose(0,2,1))
+    V = T.set_subtensor(V[:,:Dna,Dna:], (v[:,:,None,:]*Ca[:,:,:,None]).sum(3)[:,non_angle_dims,:] )
+    V = T.set_subtensor(V[:,Dna:,:Dna], V[:,:Dna,Dna:].transpose(0,2,1))
 
     retvars = [M,V]
 
