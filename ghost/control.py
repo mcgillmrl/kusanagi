@@ -1,5 +1,5 @@
 import numpy as np
-from regression.GPRegressor import RBFGP
+from regression.GPRegressor import RBFGP,GP_UI
 
 # GP based controller
 class RBFPolicy:
@@ -11,7 +11,7 @@ class RBFPolicy:
         # init policy targets close to zero
         self.targets = 0.1*np.random.random((n_basis_functions,len(maxU)))
 
-        self.model = RBFGP(self.inputs,self.targets)
+        self.model = GP_UI(self.inputs,self.targets)
 
     def evaluate(self, t, m, s=None, derivs=False):
         D = m[None,:].shape[-1]

@@ -9,20 +9,21 @@ import utils
 import sys
 
 if __name__ == '__main__':
-    np.set_printoptions(linewidth=200, precision=6, suppress=True)
-    dt = 0.05
+    np.set_printoptions(linewidth=200, precision=10, suppress=True)
+    dt = 0.1
     model_parameters ={}
     model_parameters['l'] = 0.5
     model_parameters['m'] = 0.5
     model_parameters['M'] = 0.5
-    model_parameters['b'] = 0.5
+    model_parameters['b'] = 0.1
     model_parameters['g'] = 9.82
 
     x0 = [0,0,0,np.pi]
+    S0 = np.eye(4)*0.001
     target = [0,0,0,np.pi]
     angle_dims = [3]
 
-    plant = Cartpole(model_parameters,x0,dt)
+    plant = Cartpole(model_parameters,x0,S0,dt)
     draw_cp = CartpoleDraw(plant,0.033)
     draw_cp.start()
 
@@ -33,7 +34,18 @@ if __name__ == '__main__':
     learner = PILCO(plant, p2, cost, angle_dims)
 
     # testing single PILCO loop
+    plant.reset_state()
     learner.apply_controller(H=5)
+
+    plant.reset_state()
+    learner.apply_controller(H=5)
+
+    plant.reset_state()
+    learner.apply_controller(H=5)
+
+    plant.reset_state()
+    learner.apply_controller(H=5)
+
     learner.train_dynamics()
     print 'testing value'
     learner.value(H=5)

@@ -36,31 +36,39 @@ class PILCO(EpisodicLearner):
         x0 = x[self.experience.episode_starts]
         mx = []; Sx = []
         if x0.shape[0] > 1:
-            mx = x0.mean()
+            mx = x0.mean(0)[None,:]
             Sx = np.cov(x0.T)
         else:
             mx = x0
             Sx = 1e-2*np.eye(x0.shape[1])
+        mx = mx.reshape((1,mx.shape[1]))
+        Sx = Sx.reshape((1,mx.shape[1],mx.shape[1]))
 	
-	print mx,Sx
-
         # simulate a rollout using the dynamics model
         dt = self.plant.dt; t = 0
         while t < H:
-            # evaluate the policy at current state
-            mu, Su, Cu = self.policy.evaluate(t, mx, Sx)
+            # compute distribution of control signal
+            Sx_ = Sx + np.diag(0.5*np.exp(self.dynamics_model.loghyp_[:,-1]))# noisy state measurement
+            mu, Su, Cu = self.policy.evaluate(t, mx, Sx_)
+            #print mu,Su,Cu
 	    
-	    print mu,Su
-
-            # fill in the covariance of the state-action vector
-            m, S = fillIn(mx,Sx,mu,Su,Vu) 
+            # compute state control joint distribution
+            idims = Sx.shape[1]+Su.shape[1]
+            q = (Sx[:,:,None,:]*Cu[:,:,:,None]).sum(3)
+            mxu = np.c_[mx,mu]
+            Sxu = np.zeros((Sx.shape[0],idims,idims))
+            Sxu[:,:Sx.shape[1],:Sx.shape[1]] = Sx
+            Sxu[:,Sx.shape[1]:,Sx.shape[1]:] = Su
+            Sxu[:,:Sx.shape[1],Sx.shape[1]:] = q
+            Sxu[:,Sx.shape[1]:,:Sx.shape[1]] = q.transpose(0,2,1)
 
             #  predict next state given current state-action
-            mx, Sx, Cx = self.dynamics_model.predict(m,S)
+            mx, Sx, Cx = self.dynamics_model.predict(mxu,Sxu)
 
             #  get cost:
-            mc, Sc = cost(mx,mu,Sx,Su)
-	    print mc,Sc
+            #mc, Sc = cost(mx,mu,Sx,Su)
+	    #print mc,Sc
+	    t += dt
 
         # return value
 

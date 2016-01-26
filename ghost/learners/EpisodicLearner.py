@@ -37,12 +37,14 @@ class EpisodicLearner(object):
             print_with_stamp('Running for %f seconds'%(H),self.name)
 
         # intialize episode specific variables
-        t = 0
         self.experience.mark_start()
         # start robot
         self.plant.start()
+        x_t, t0 = self.plant.get_state()
+        t = t0
+
         # do rollout
-        while t < H:
+        while t < t0 + H:
             exec_time = time()
             #  get robot state (this should ensure synchonicity by blocking until dt seconds have passed):
             x_t, t = self.plant.get_state()

@@ -10,22 +10,26 @@ from threading import Thread
 from utils import print_with_stamp
 
 class ODEPlant(object):
-    def __init__(self, params, x0, dt=0.01, name='Plant', integrator='dopri5', atol=1e-12, rtol=1e-12):
+    def __init__(self, params, x0, S0=None, dt=0.01, name='Plant', integrator='dopri5', atol=1e-12, rtol=1e-12):
         self.solver = ode(self.dynamics).set_integrator(integrator,atol=atol,rtol=rtol)
         self.name = name
         self.x = None
+        self.x0 = x0
+        self.S0= S0
         self.u = None
         self.t = 0
         self.dt = dt
         self.params = params
-        self.set_state(x0)
+        self.reset_state()
+        self.sim_thread = Thread(target=self.run)
+        self.running = False
 
     def apply_control(self,u):
         self.u = np.array(u)[:,None]
 
     def set_state(self, x):
         if (self.x is None or np.linalg.norm(x-self.x) > 1e-12):
-            self.x = np.array(x)[:,None]
+            self.x = np.array(x).flatten()[:,None]
             self.solver = self.solver.set_initial_value(x)
 
     def get_state(self):
@@ -48,15 +52,28 @@ class ODEPlant(object):
             #print_with_stamp('%f, %s'%(self.t,self.x),self.name)
             exec_time = time() - exec_time
             sleep(max(self.dt-exec_time,0))
-        print_with_stamp('Stopping simulation loop',self.name)
 
     def start(self):
-        self.sim_thread = Thread(target=self.run)
+        if self.sim_thread.is_alive():
+            print_with_stamp('Waiting until robot stops',self.name)
+            while self.sim_thread.is_alive():
+                sleep(1.0)
+        
         self.running = True
         self.sim_thread.start()
     
     def stop(self):
         self.running = False
+        self.sim_thread.join(10)
+        print_with_stamp('Stopped simulation loop',self.name)
+        # create new thread object, since python threads can only be started once
+        self.sim_thread = Thread(target=self.run)
+    
+    def reset_state(self):
+        if self.S0 is None:
+            self.set_state(self.x0)
+        else:
+            self.set_state(np.random.multivariate_normal(self.x0,self.S0))
 
     def dynamics(self):
         print "You need to implement the function dynamics() in your plant class."
