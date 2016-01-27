@@ -12,6 +12,8 @@ from theano.sandbox.linalg import psd,matrix_inverse,det, cholesky,solve
 
 import cov
 import utils
+print utils.__file__
+print dir(utils)
 from utils import gTrig, gTrig2,gTrig_np
 
 class GP(object):
@@ -273,16 +275,16 @@ class GP(object):
     def train(self):
         init_hyp = self.loghyp_.copy()
         utils.print_with_stamp('Current hyperparameters:',self.name)
-        print np.exp(self.loghyp_)
+        print (self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
-        opt_res = minimize(self.loss, self.loghyp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        opt_res = minimize(self.loss, self.loghyp_, jac=True, method=self.min_method, tol=1e-12, options={'maxiter': 500})
         #opt_res = basinhopping(self.loss, self.loghyp_, niter=2, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 250}})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.state_changed = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
         np.copyto(self.loghyp_,loghyp)
         utils.print_with_stamp('New hyperparameters:',self.name)
-        print np.exp(self.loghyp_)
+        print (self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
 
     def load(self):

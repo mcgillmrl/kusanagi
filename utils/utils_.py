@@ -6,6 +6,12 @@ import theano
 import theano.tensor as T
 from theano.sandbox.linalg import psd,matrix_inverse
 
+def a():
+    pass
+
+def b():
+    pass
+
 def maha(X1,X2=None,M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
     D = []

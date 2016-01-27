@@ -1,48 +1,50 @@
 from ghost.regression.GPRegressor import *
 from matplotlib import pyplot as plt
 
-def test_random():
+def test_random(gp_type='GP_UI'):
     # test function
     def f(X):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-500*(np.sum(0.001*(X**2),1)))
 
-    n_samples = 100
-    n_test = 10
-    idims = 7
-    odims = 3
+    n_samples = 1000
+    n_test = 100
+    idims = 2
+    odims = 2
     np.random.seed(31337)
     
-    X_ = 10*(np.random.rand(n_samples,idims) - 0.5)
-    Y_ = np.empty((n_samples,odims))
+    Xd = 10*(np.random.rand(n_samples,idims) - 0.5)
+    Yd = np.empty((n_samples,odims))
     for i in xrange(odims):
-        Y_[:,i] =  (i+1)*f(X_) + 0.01*(np.random.rand(n_samples)-0.5)
+        Yd[:,i] =  (i+1)*f(Xd) + 0.01*(np.random.rand(n_samples)-0.5)
     
-    #gp = GP(X_,Y_)
-    #gp.train()
+    if gp_type == 'GP_UI':
+        gp = GP_UI(Xd,Yd, profile=False)
+    elif gp_type == 'SPGP':
+        gp = SPGP(Xd,Yd, profile=False, n_inducing = 50)
+    elif gp_type == 'SPGP_UI':
+        gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 50)
+    else:
+        gp = GP(Xd,Yd, profile=False)
 
-    gpu = GP_UI(X_,Y_,profile=True)
-    gpu.train()
+    gp.train()
 
-    X_ = 10*(np.random.rand(n_test,idims) - 0.5)
-    Y_ = np.empty((n_test,odims))
+    Xd= 10*(np.random.rand(n_test,idims) - 0.5)
+    Yd = np.empty((n_test,odims))
     for i in xrange(odims):
-        Y_[:,i] =  (i+1)*f(X_) + 0.01*(np.random.rand(n_test)-0.5)
+        Yd[:,i] =  (i+1)*f(Xd) + 0.01*(np.random.rand(n_test)-0.5)
 
-    #r1 = gp.predict(X_,np.zeros((n_test,idims,idims)))
-    r2 = gpu.predict(X_)
+    res = gp.predict(Xd,np.zeros((n_test,idims,idims)))
 
     for i in xrange(n_test):
-        print Y_[i,:],','
-     #   print r1[0][i],','
-        print r2[0][i],','
-
-      #  print r1[1][i],','
-        print r2[1][i],','
+        print Xd[i,:],','
+        print Yd[i,:],','
+        for j in xrange(len(res)):
+           print res[j][i],','
         print '---'
 
-    if gpu.profile:
-        write_profile_files(gpu)
+    if gp.profile:
+        write_profile_files(gp)
 
 def write_profile_files(gp):
     from theano import d3viz
@@ -305,4 +307,5 @@ if __name__=='__main__':
     #test_K()
     #test_K_means()
     #test_CartpoleDyn()
-    test_angle()
+    #test_angle()
+    test_random()
