@@ -30,6 +30,9 @@ def test_random(gp_type='GP'):
     gp.train()
     #gp.loghyp_[0] = np.array([1.437162320968175,1.455360729998610,-1.409930866260999,-5.823212436578583])
     #gp.loghyp_[1] = np.array([1.413559056853744,1.421240039262625,-0.781203990801477,-5.835053303554018])
+    #gp.loghyp_[0] = np.array([1.359377707437151e+00,1.364614810623883e+00,1.367879018497026e+00,1.364276703749956e+00,1.348163031453976e+00,-2.854374418091668e+00,-5.961433823748723e+00])
+    #gp.loghyp_[1] = np.array([1.373106876540056e+00,1.373825540199595e+00,1.367502939523581e+00,1.363373498722983e+00,1.367710094807602e+00,-2.220517946942496e+00,-5.990091744109144e+00])
+    #gp.loghyp_[2] = np.array([1.370114211425596e+00,1.370551817587214e+00,1.374419487066466e+00,1.364584339906947e+00,1.367756631930048e+00,-1.851265297500794e+00,-5.984429534701722e+00])
 
 
     Xd= 10*(np.random.rand(n_test,idims) - 0.5)
@@ -303,7 +306,7 @@ def test_angle():
 
 
 if __name__=='__main__':
-    np.set_printoptions(linewidth=500, precision=16, suppress=True)
+    np.set_printoptions(linewidth=500)#, precision=16, suppress=True)
     #test_random()
     #test_sonar('GP')
     #test_sonar('SPGP')
@@ -314,4 +317,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random()
+    test_random('GP_UI')

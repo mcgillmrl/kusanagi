@@ -36,7 +36,7 @@ end
 
 for i=1:size(Ytest,1)
     disp(['x: ', num2str(Xtest(i,:)),', y: ',num2str(Ytest(i,:))])
-    [M, S, V] = model.fcn(model, Xtest(i,:)', 0.0*ones(D));
+    [M, S, V] = model.fcn(model, Xtest(i,:)', 0.01*ones(D));
     M
     S
     V

@@ -96,8 +96,8 @@ class PILCO(EpisodicLearner):
             mx = mx + m_deltax
             D=mx.shape[1]
             Sx_deltax = (Sxu[:,:,:,None]*C_deltax[:,:,None,:]).sum(1)[:,:D,:]
-            print Sx_deltax
-            np.linalg.cholesky(Sx_deltax)
+            #print Sx_deltax
+            #np.linalg.cholesky(Sx_deltax)
             Sx = Sx + Sx_deltax + Sx_deltax.transpose(0,2,1) + S_deltax
             #  get cost:
             #mc, Sc = cost(mx,mu,Sx,Su)

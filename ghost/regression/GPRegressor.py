@@ -191,7 +191,7 @@ class GP(object):
         for i in xrange(odims):
             k = self.kernel_func[i](m,self.X)
             mean[i] = k.dot(self.beta[i])
-            variance[i] = self.kernel_func[i](m,all_pairs=False) - (k*(k.dot( self.iK[i] )) ).sum(axis=1)
+            variance[i] = self.kernel_func[i](m,all_pairs=False) - (k*(k.dot( self.iK[i] )) ).sum(axis=1) #TODO verify this computation
 
         # compile the prediction function
         M = T.stack(mean).T
@@ -356,15 +356,16 @@ class GP_UI(GP):
             return (t_k,c_k)
             
         #predictive second moment ( only the lower triangular part, including the diagonal)
-        def M2_helper(logk_i_k, logk_j_k, z_ij_k, R_k, s_k):
-            nk2 = logk_i_k[:,None] + logk_j_k[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(s_k))
+        def M2_helper(logk_i_k, logk_j_k, z_i_k, z_j_k, R_k, s_k):
+            nk2 = logk_i_k[:,None] + logk_j_k[None,:] + utils.maha(z_i_k,-z_j_k,0.5*matrix_inverse(psd(R_k)).dot(s_k))
             tk = 1.0/T.sqrt(det(psd(R_k)))
-            Qk = tk*T.exp( nk2 )
+            Qk = T.exp( nk2 )
             
-            return Qk
+            return Qk,tk
 
         logk=[[]]*odims
         Lambda=[[]]*odims
+        z_=[[]]*odims
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
             iL = T.exp(-self.loghyp[i][:idims])
@@ -386,21 +387,22 @@ class GP_UI(GP):
             
             # predictive covariance
             logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,2)
-            Lambda[i] = iL*iL
+            Lambda[i] = T.exp(-2*self.loghyp[i][:idims])
+            z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                z_ij = zeta*Lambda[i] + zeta*Lambda[j]
                 R = s*(Lambda[i] + Lambda[j]) + T.eye(idims)
     
-                Q,updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_ij,R,s))
+                (Q,t),updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_[i],z_[j],R,s))
                 Q.name = 'Q_%d%d'%(i,j)
 
                 # Eq 2.55
-                m2 = matrix_dot(self.beta[i],Q,self.beta[j])
+                m2 = self.beta[i].dot(Q).dot(self.beta[j].T)
                 if i == j:
                     iKi = self.iK[i].dot(T.eye(self.N))
-                    m2 =  m2 - T.sum(iKi*Q,(1,2)) + T.exp(2*self.loghyp[i][idims])
+                    m2 =  t*(m2 - T.sum(iKi*Q,(1,2))) + T.exp(2*self.loghyp[i][idims])
                 else:
+                    m2 = t*m2
                     M2[j*odims+i] = m2
                 m2.name = 'M2_%d%d'%(i,j)
                 M2[i*odims+j] = m2
@@ -765,15 +767,16 @@ class RBFGP(GP_UI):
             return (t_k,c_k)
             
         #predictive second moment ( only the lower triangular part, including the diagonal)
-        def M2_helper(logk_i_k, logk_j_k, z_ij_k, R_k, s_k):
-            nk2 = logk_i_k[:,None] + logk_j_k[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(s_k))
+        def M2_helper(logk_i_k, logk_j_k, z_i_k, z_j_k, R_k, s_k):
+            nk2 = logk_i_k[:,None] + logk_j_k[None,:] + utils.maha(z_i_k,-z_j_k,0.5*matrix_inverse(psd(R_k)).dot(s_k))
             tk = 1.0/T.sqrt(det(psd(R_k)))
-            Qk = tk*T.exp( nk2 )
+            Qk = T.exp( nk2 )
             
-            return Qk
+            return Qk,tk
 
         logk=[[]]*odims
         Lambda=[[]]*odims
+        z_=[[]]*odims
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
             iL = T.exp(-self.loghyp[i][:idims])
@@ -795,18 +798,17 @@ class RBFGP(GP_UI):
             
             # predictive covariance
             logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,2)
-            Lambda[i] = iL*iL
+            Lambda[i] = T.exp(-2*self.loghyp[i][:idims])
+            z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                Lambda_ij = Lambda[i] + Lambda[j]
-                z_ij = zeta*Lambda_ij
-                R = s*Lambda_ij + T.eye(idims)
+                R = s*(Lambda[i] + Lambda[j]) + T.eye(idims)
     
-                Q,updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_ij,R,s))
+                (Q,t),updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_[i],z_[j],R,s))
                 Q.name = 'Q_%d%d'%(i,j)
 
                 # Eq 2.55
-                m2 = matrix_dot(self.beta[i],Q,self.beta[j])
+                m2 = self.beta[i].dot(Q).dot(self.beta[j].T)
                 m2.name = 'M2_%d%d'%(i,j)
                 if i != j:
                     M2[j*odims+i] = m2
@@ -815,8 +817,8 @@ class RBFGP(GP_UI):
         M = T.stack(M).T
         V = T.stack(V).transpose(1,2,0) # TODO if using angle dimensions, this will give the input-ouput covariances with the augmented inputs
         M2 = T.stack(M2).T
-        S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
-        S ,updts = theano.scan(fn=lambda Si: Si.reshape((odims,odims)), sequences=[S], strict=True)
+        S ,updts = theano.scan(fn=lambda M2i: M2i.reshape((odims,odims)), sequences=[M2], strict=True)
+        S = S - (M[:,:,None]*M[:,None,:])
 
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
