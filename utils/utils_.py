@@ -6,12 +6,6 @@ import theano
 import theano.tensor as T
 from theano.sandbox.linalg import psd,matrix_inverse
 
-def a():
-    pass
-
-def b():
-    pass
-
 def maha(X1,X2=None,M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
     D = []
@@ -173,7 +167,7 @@ def gTrig2(m, v, angi, D, derivs=False):
     V = T.set_subtensor(V[:,Dna:,Dna:], Va)
 
     # fill in the cross covariances
-    V = T.set_subtensor(V[:,:Dna,Dna:], (v[:,:,None,:]*Ca[:,:,:,None]).sum(3)[:,non_angle_dims,:] )
+    V = T.set_subtensor(V[:,:Dna,Dna:], (v[:,:,:,None]*Ca[:,:,None,:]).sum(1)[:,non_angle_dims,:] )
     V = T.set_subtensor(V[:,Dna:,:Dna], V[:,:Dna,Dna:].transpose(0,2,1))
 
     retvars = [M,V]
@@ -202,3 +196,14 @@ def gTrig_np(x,angi):
     m = np.concatenate([xnang,xang],axis=1)
 
     return m
+
+def get_compiled_gTrig(angi,D,derivs=True):
+    if theano.config.floatX == 'float32':
+        m = T.fmatrix('x')      # n_samples x idims
+        v = T.ftensor3('x_cov')  # n_samples x idims x idims
+    else:
+        m = T.dmatrix('x')      # n_samples x idims
+        v = T.dtensor3('x_cov')  # n_samples x idims x idims
+
+    gt = gTrig2(m, v, angi, D, derivs=derivs)
+    return theano.function([m,v],gt)

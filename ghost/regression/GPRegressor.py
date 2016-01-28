@@ -12,8 +12,6 @@ from theano.sandbox.linalg import psd,matrix_inverse,det, cholesky,solve
 
 import cov
 import utils
-print utils.__file__
-print dir(utils)
 from utils import gTrig, gTrig2,gTrig_np
 
 class GP(object):
@@ -410,8 +408,8 @@ class GP_UI(GP):
         M = T.stack(M).T
         V = T.stack(V).transpose(1,2,0)
         M2 = T.stack(M2).T
-        S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
-        S ,updts = theano.scan(fn=lambda Si: Si.reshape((odims,odims)), sequences=[S], strict=True)
+        S ,updts = theano.scan(fn=lambda M2i: M2i.reshape((odims,odims)), sequences=[M2], strict=True)
+        S = S - (M[:,:,None]*M[:,None,:])
 
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
         self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
@@ -815,7 +813,7 @@ class RBFGP(GP_UI):
                 M2[i*odims+j] = m2
 
         M = T.stack(M).T
-        V = T.stack(V).transpose(1,2,0)
+        V = T.stack(V).transpose(1,2,0) # TODO if using angle dimensions, this will give the input-ouput covariances with the augmented inputs
         M2 = T.stack(M2).T
         S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
         S ,updts = theano.scan(fn=lambda Si: Si.reshape((odims,odims)), sequences=[S], strict=True)

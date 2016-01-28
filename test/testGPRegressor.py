@@ -1,16 +1,16 @@
 from ghost.regression.GPRegressor import *
 from matplotlib import pyplot as plt
 
-def test_random(gp_type='GP_UI'):
+def test_random(gp_type='GP'):
     # test function
     def f(X):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
-        return np.exp(-500*(np.sum(0.001*(X**2),1)))
+        return np.exp(-500*(np.sum(0.0001*(X**2),1)))
 
     n_samples = 1000
     n_test = 100
-    idims = 2
-    odims = 2
+    idims = 5
+    odims = 3
     np.random.seed(31337)
     
     Xd = 10*(np.random.rand(n_samples,idims) - 0.5)
@@ -28,13 +28,19 @@ def test_random(gp_type='GP_UI'):
         gp = GP(Xd,Yd, profile=False)
 
     gp.train()
+    #gp.loghyp_[0] = np.array([1.437162320968175,1.455360729998610,-1.409930866260999,-5.823212436578583])
+    #gp.loghyp_[1] = np.array([1.413559056853744,1.421240039262625,-0.781203990801477,-5.835053303554018])
+
 
     Xd= 10*(np.random.rand(n_test,idims) - 0.5)
     Yd = np.empty((n_test,odims))
     for i in xrange(odims):
         Yd[:,i] =  (i+1)*f(Xd) + 0.01*(np.random.rand(n_test)-0.5)
 
-    res = gp.predict(Xd,np.zeros((n_test,idims,idims)))
+    res = gp.predict(Xd,0.01*np.ones((n_test,idims,idims)))
+    
+    for j in xrange(len(res)):
+        print res[j].shape
 
     for i in xrange(n_test):
         print Xd[i,:],','
@@ -297,7 +303,7 @@ def test_angle():
 
 
 if __name__=='__main__':
-    np.set_printoptions(linewidth=500, precision=5, suppress=True)
+    np.set_printoptions(linewidth=500, precision=16, suppress=True)
     #test_random()
     #test_sonar('GP')
     #test_sonar('SPGP')

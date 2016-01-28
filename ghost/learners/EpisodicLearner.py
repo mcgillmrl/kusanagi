@@ -1,5 +1,5 @@
 import numpy as np
-from utils import print_with_stamp
+from utils import print_with_stamp,gTrig_np
 from time import time, sleep
 
 class ExperienceDataset(object):
@@ -46,10 +46,12 @@ class EpisodicLearner(object):
         # do rollout
         while t < t0 + H:
             exec_time = time()
-            #  get robot state (this should ensure synchonicity by blocking until dt seconds have passed):
+            #  get robot state (this should ensure synchronicity by blocking until dt seconds have passed):
             x_t, t = self.plant.get_state()
+            # convert input angle dimensions to complex representation
+            x_t_ = gTrig_np(x_t[None,:], self.angle_idims).flatten()
             #  get command from policy (this should be fast, or at least account for delays in processing):
-            u_t = self.policy.evaluate(t, x_t)[0].flatten()
+            u_t = self.policy.evaluate(t, x_t_)[0].flatten()
             #  send command to robot:
             self.plant.apply_control(u_t)
             if self.cost is not None:

@@ -23,33 +23,23 @@ if __name__ == '__main__':
     target = [0,0,0,np.pi]
     angle_dims = [3]
 
-    plant = Cartpole(model_parameters,x0,S0,dt)
-    draw_cp = CartpoleDraw(plant,0.033)
-    draw_cp.start()
 
-    cost = CartpoleCost(target,model_parameters['l'], angle_dims)
     p1 = RandPolicy([0.001])
     p2 = RBFPolicy(x0,0.1*np.eye(len(x0)),[10],10, angle_dims)
-
+    cost = CartpoleCost(target,model_parameters['l'], angle_dims)
+    plant = Cartpole(model_parameters,x0,S0,dt)
+    
+    draw_cp = CartpoleDraw(plant,0.033)
+    draw_cp.start()
     learner = PILCO(plant, p2, cost, angle_dims)
 
     # testing single PILCO loop
-    plant.reset_state()
-    learner.apply_controller(H=5)
-
-    plant.reset_state()
-    learner.apply_controller(H=5)
-
-    plant.reset_state()
-    learner.apply_controller(H=5)
-
-    plant.reset_state()
-    learner.apply_controller(H=5)
+    for i in xrange(5):
+        plant.reset_state()
+        learner.apply_controller(H=4)
 
     learner.train_dynamics()
-    print 'testing value'
-    learner.value(H=5)
-    print 'done'
+    learner.value(H=4)
     #learner.train_policy()
     
     # saving dataset for external tests
