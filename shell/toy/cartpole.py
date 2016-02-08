@@ -9,8 +9,8 @@ from utils import print_with_stamp
 from matplotlib import pyplot as plt
 
 class Cartpole(ODEPlant):
-    def __init__(self, params, x0, S0=None, dt=0.01, name='Cartpole', integrator='dopri5', atol=1e-12, rtol=1e-12):
-        super(Cartpole, self).__init__(params, x0, S0, dt=dt, name=name, integrator=integrator, atol=atol, rtol=rtol)
+    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Cartpole', integrator='dopri5', atol=1e-12, rtol=1e-12):
+        super(Cartpole, self).__init__(params, x0, S0, dt=dt, noise=noise, name=name, integrator=integrator, atol=atol, rtol=rtol)
 
     def dynamics(self,t,z):
         l = self.params['l']

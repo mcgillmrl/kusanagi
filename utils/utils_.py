@@ -197,6 +197,60 @@ def gTrig_np(x,angi):
 
     return m
 
+def gTrig2_np(m,v,angi,D):
+    non_angle_dims = list(set(range(D)).difference(angi))
+    Da = 2*len(angi)
+    Dna = len(non_angle_dims) 
+    n = m.shape[0]
+    Ma = np.zeros((n,Da))
+    Va = np.zeros((n,Da,Da))
+    Ca = np.zeros((n,D,Da))
+    Is = 2*np.arange(len(angi)); Ic = Is +1;
+
+    # compute the mean
+    mi = m[:,angi]
+    vi = (v[:,angi,:][:,:,angi])
+    vii = (v[:,angi,angi])
+    exp_vii_h = np.exp(-vii/2)
+    
+    Ma[:,::2] = exp_vii_h*np.sin(mi)
+    Ma[:,1::2] = exp_vii_h*np.cos(mi)
+    
+    # compute the entries in the augmented covariance matrix
+    lq = -0.5*(vii[:,:,None]+vii[:,None,:]); q = np.exp(lq)
+    exp_lq_p_vi = np.exp(lq+vi)
+    exp_lq_m_vi = np.exp(lq-vi)
+    U1 = (exp_lq_p_vi - q)*(np.sin(mi[:,:,None]-mi[:,None,:]))
+    U2 = (exp_lq_m_vi - q)*(np.sin(mi[:,:,None]+mi[:,None,:]))
+    U3 = (exp_lq_p_vi - q)*(np.cos(mi[:,:,None]-mi[:,None,:]))
+    U4 = (exp_lq_m_vi - q)*(np.cos(mi[:,:,None]+mi[:,None,:]))
+    
+    Va[:,::2,::2] = U3-U4
+    Va[:,1::2,1::2] = U3+U4
+    Va[:,::2,1::2] = U1+U2
+    Va[:,1::2,::2] = Va[:,::2,1::2].transpose(0,2,1)
+    Va = 0.5*Va
+
+    # inv times input output covariance
+    Ca[:,angi,Is] = Ma[:,1::2]
+    Ca[:,angi,Ic] = -Ma[:,::2] 
+
+    # construct mean vectors ( non angle dimensions come first, then angle dimensions)
+    Mna = m[:, non_angle_dims]
+    M = np.concatenate([Mna,Ma],axis=1)
+
+    # construct the corresponding covariance matrices ( just the blocks for the non angle dimensions and the angle dimensions separately)
+    V = np.zeros((n,Dna+Da,Dna+Da))
+    Vna = v[:,non_angle_dims,:][:,:,non_angle_dims]
+    V[:,:Dna,:Dna] = Vna
+    V[:,Dna:,Dna:] = Va
+
+    # fill in the cross covariances
+    V[:,:Dna,Dna:] = (v[:,:,:,None]*Ca[:,:,None,:]).sum(1)[:,non_angle_dims,:] 
+    V[:,Dna:,:Dna] = V[:,:Dna,Dna:].transpose(0,2,1)
+
+    return [M,V]
+
 def get_compiled_gTrig(angi,D,derivs=True):
     if theano.config.floatX == 'float32':
         m = T.fmatrix('x')      # n_samples x idims

@@ -1,14 +1,16 @@
 from ghost.regression.GPRegressor import *
 from matplotlib import pyplot as plt
+from utils import gTrig2_np
+from scipy.signal import convolve2d
 
-def test_random(gp_type='GP'):
+def test_random(gp_type='GP',angi=[0,1]):
     # test function
     def f(X):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-500*(np.sum(0.0001*(X**2),1)))
 
     n_samples = 1000
-    n_test = 100
+    n_test = 20
     idims = 5
     odims = 3
     np.random.seed(31337)
@@ -17,34 +19,36 @@ def test_random(gp_type='GP'):
     Yd = np.empty((n_samples,odims))
     for i in xrange(odims):
         Yd[:,i] =  (i+1)*f(Xd) + 0.01*(np.random.rand(n_samples)-0.5)
-    
+    kk = 0.01*convolve2d(np.array([[1,2,3,2,1]]),np.array([[1,2,3,2,1]]).T)/9.0;
+    if len(angi)>0:
+        ss = convolve2d(np.eye(idims),kk,'same')
+        Xd,bbb = gTrig2_np(Xd,np.tile(ss,(n_samples,1)).reshape(n_samples,idims,idims), angi, idims)
     if gp_type == 'GP_UI':
         gp = GP_UI(Xd,Yd, profile=False)
+    elif gp_type == 'RBFGP':
+        gp = RBFGP(Xd,Yd, profile=False)
     elif gp_type == 'SPGP':
         gp = SPGP(Xd,Yd, profile=False, n_inducing = 50)
     elif gp_type == 'SPGP_UI':
         gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 50)
     else:
         gp = GP(Xd,Yd, profile=False)
-
+    
     gp.train()
-    #gp.loghyp_[0] = np.array([1.437162320968175,1.455360729998610,-1.409930866260999,-5.823212436578583])
-    #gp.loghyp_[1] = np.array([1.413559056853744,1.421240039262625,-0.781203990801477,-5.835053303554018])
-    #gp.loghyp_[0] = np.array([1.359377707437151e+00,1.364614810623883e+00,1.367879018497026e+00,1.364276703749956e+00,1.348163031453976e+00,-2.854374418091668e+00,-5.961433823748723e+00])
-    #gp.loghyp_[1] = np.array([1.373106876540056e+00,1.373825540199595e+00,1.367502939523581e+00,1.363373498722983e+00,1.367710094807602e+00,-2.220517946942496e+00,-5.990091744109144e+00])
-    #gp.loghyp_[2] = np.array([1.370114211425596e+00,1.370551817587214e+00,1.374419487066466e+00,1.364584339906947e+00,1.367756631930048e+00,-1.851265297500794e+00,-5.984429534701722e+00])
-
-
+    gp.save()
     Xd= 10*(np.random.rand(n_test,idims) - 0.5)
     Yd = np.empty((n_test,odims))
     for i in xrange(odims):
         Yd[:,i] =  (i+1)*f(Xd) + 0.01*(np.random.rand(n_test)-0.5)
 
-    res = gp.predict(Xd,0.01*np.ones((n_test,idims,idims)))
+    if len(angi)>0:
+        ss = convolve2d(np.eye(idims),kk,'same')
+        Xd,bbb = gTrig2_np(Xd,np.tile(ss,(n_test,1)).reshape(n_test,idims,idims), angi, idims)
+    ss = convolve2d(np.eye(Xd.shape[1]),kk,'same')
+    res = gp.predict(Xd,np.tile(ss,(n_test,1)).reshape(n_test,Xd.shape[1],Xd.shape[1]))
     
     for j in xrange(len(res)):
         print res[j].shape
-
     for i in xrange(n_test):
         print Xd[i,:],','
         print Yd[i,:],','
@@ -157,8 +161,8 @@ def test_K():
     loghyp_ = np.zeros((odims,idims+2))
     if theano.config.floatX == 'float32':
         loghyp_ = loghyp_.astype(np.float32)
-    loghyp_[:,:idims] = X_.std(0)
-    loghyp_[:,idims] = Y_.std(0)
+    loghyp_[:,:idims] = X_.std(0,ddof=1)
+    loghyp_[:,idims] = Y_.std(0,ddof=1)
     loghyp_[:,idims+1] = 0.1*loghyp_[:,idims]
     loghyp_ = np.log(loghyp_)
 
@@ -226,40 +230,7 @@ def test_CartpoleDyn():
     Y = data['Y']
     print X.shape
     print Y.shape
-    M = T.dmatrix('M')
-    S = T.dtensor3('S')
-    angi = T.ivector('angi')
 
-    mi = M[:,angi]
-    vi = S[:,angi,:][:,:,angi]
-    vii = S[:,angi,angi]
-    exp_vii_h = T.exp(-vii/2)
-    
-    # mean of sine and cosine of the input
-    sin_mi = exp_vii_h*T.sin(mi)
-    cos_mi = exp_vii_h*T.cos(mi)
-    sc_mi = T.stack([sin_mi,cos_mi],axis=1).reshape((M.shape[0],2*angi.shape[0]))
-
-    # covariance matrix of output
-    lq = -0.5*(vii[:,:,None]+vii[:,None,:]); q = T.exp(lq)
-    exp_lq_p_vi = T.exp(lq+vi)
-    exp_lq_m_vi = T.exp(lq-vi)
-    U1 = (exp_lq_p_vi - q)*(T.sin(mi[:,:,None]-mi[:,None,:]))
-    U2 = (exp_lq_m_vi - q)*(T.sin(mi[:,:,None]-mi[:,None,:]))
-    U3 = (exp_lq_p_vi - q)*(T.cos(mi[:,:,None]-mi[:,None,:]))
-    U4 = (exp_lq_m_vi - q)*(T.cos(mi[:,:,None]-mi[:,None,:]))
-
-    f = F([M,S,angi],sc_mi)
-    m = (np.tile(np.arange(1,6),(10,1))*np.arange(1,11)[:,None]).reshape(10,5)*np.pi/8.0
-    s = (np.tile(np.arange(2,27),(10,1))*np.arange(1,11)[:,None]).reshape(10,5,5)
-    s = 1.0/(s + s.transpose(0,2,1))
-    #print f(X,np.array([3],dtype=np.int32))
-    #print f(X,np.array([3],dtype=np.int32)).shape
-
-    res = f(m,s,np.array([1,3],dtype=np.int32))
-    
-    print res
-    print res[:,:,None] + res[:,None,:]
     
 def test_angle():
     # test function
@@ -306,7 +277,7 @@ def test_angle():
 
 
 if __name__=='__main__':
-    np.set_printoptions(linewidth=500)#, precision=16, suppress=True)
+    np.set_printoptions(linewidth=500, precision=9, suppress=True)
     #test_random()
     #test_sonar('GP')
     #test_sonar('SPGP')

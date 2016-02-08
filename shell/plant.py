@@ -10,8 +10,7 @@ from threading import Thread
 from utils import print_with_stamp
 
 class ODEPlant(object):
-    def __init__(self, params, x0, S0=None, dt=0.01, name='Plant', integrator='dopri5', atol=1e-12, rtol=1e-12):
-        self.solver = ode(self.dynamics).set_integrator(integrator,atol=atol,rtol=rtol)
+    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Plant', integrator='dopri5', atol=1e-12, rtol=1e-12):
         self.name = name
         self.x = None
         self.x0 = x0
@@ -20,9 +19,10 @@ class ODEPlant(object):
         self.t = 0
         self.dt = dt
         self.params = params
-        self.reset_state()
         self.sim_thread = Thread(target=self.run)
-        self.running = False
+        self.noise = noise
+        self.async = False
+        self.solver = ode(self.dynamics).set_integrator(integrator,atol=atol,rtol=rtol)
 
     def apply_control(self,u):
         self.u = np.array(u)[:,None]
@@ -35,7 +35,9 @@ class ODEPlant(object):
     def get_state(self):
         return self.x.flatten(),self.solver.t
 
-    def step(self,dt):
+    def step(self,dt=None):
+        if dt is None:
+            dt = self.dt
         t1 = self.solver.t + dt
         while self.solver.successful and self.solver.t < t1:
             self.solver.integrate(self.solver.t+ dt)
@@ -46,7 +48,7 @@ class ODEPlant(object):
     def run(self):
         start_time = time()
         print_with_stamp('Starting simulation loop',self.name)
-        while self.running:
+        while self.async:
             exec_time = time()
             self.step(self.dt)
             #print_with_stamp('%f, %s'%(self.t,self.x),self.name)
@@ -59,21 +61,26 @@ class ODEPlant(object):
             while self.sim_thread.is_alive():
                 sleep(1.0)
         
-        self.running = True
+        self.async = True
         self.sim_thread.start()
     
     def stop(self):
-        self.running = False
-        self.sim_thread.join(10)
+        self.async = False
+        if self.sim_thread.is_alive():
+            # wait until thread stops
+            self.sim_thread.join(10)
+            # create new thread object, since python threads can only be started once
+            self.sim_thread = Thread(target=self.run)
         print_with_stamp('Stopped simulation loop',self.name)
-        # create new thread object, since python threads can only be started once
-        self.sim_thread = Thread(target=self.run)
     
     def reset_state(self):
         if self.S0 is None:
             self.set_state(self.x0)
         else:
-            self.set_state(np.random.multivariate_normal(self.x0,self.S0))
+            #self.set_state(np.random.multivariate_normal(self.x0,self.S0))
+            L_noise = np.linalg.cholesky(self.S0)
+            start = self.x0 + np.random.randn(self.S0.shape[1]).dot(L_noise)
+            self.set_state( start );
 
     def dynamics(self):
         print "You need to implement the function dynamics() in your plant class."
@@ -92,6 +99,7 @@ class PlantDraw(object):
 
         self.center_x = 0
         self.center_y = 0
+        self.running = False
 
     def init_ui(self):
         self.fig = plt.figure(self.name)

@@ -8,24 +8,25 @@ from scipy.optimize import minimize, basinhopping
 from theano import function as F, shared as S
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.tensor.nlinalg import matrix_dot
-from theano.sandbox.linalg import psd,matrix_inverse,det, cholesky,solve
+from theano.sandbox.linalg import psd,matrix_inverse,det
 
 import cov
 import utils
 from utils import gTrig, gTrig2,gTrig_np
 
 class GP(object):
-    def __init__(self, X_dataset, Y_dataset, name='GP', profile=False, save_after_init=True, angle_idims = [], angle_odims = []):
+    def __init__(self, X_dataset, Y_dataset, name='GP', profile=False, angle_idims = [], angle_odims = [], uncertain_inputs=False, hyperparameter_gradients=False):
+        # theano options
         self.profile= profile
-        self.save_after_init =  save_after_init
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
-        self.min_method = "L-BFGS-B"
 
-        self.X_ = None; self.Y_ = None
-        self.X_shared = None; self.Y_shared = None; self.loghyp = None
-        self.name = name
+        # GP options
+        self.min_method = "L-BFGS-B"
         self.state_changed = False
-        self.uncertain_inputs = False
+        self.uncertain_inputs = uncertain_inputs
+        self.hyperparameter_gradients = hyperparameter_gradients
+        
+        # dimesnion related variables
         self.N = X_dataset.shape[0]
         self.D = X_dataset.shape[1]
         self.E = Y_dataset.shape[1]
@@ -34,11 +35,32 @@ class GP(object):
         self.angle_idims = angle_idims
         self.angle_odims = angle_odims
 
+        #symbolic varianbles
+        self.X_ = None; self.Y_ = None
+        self.X_shared = None; self.Y_shared = None; self.loghyp = None
+        self.X = None; self.Y = None
+        self.K = None; self.iK = None; self.beta = None;
+        self.nlml = None
+
+        # compiled functions
+        self.predict_ = None
+        self.predict_d_ = None
+
+        # name of this class for printing command line output and saving
+        self.name = name
+        # filename for saving
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.idims,self.odims,theano.config.device,theano.config.floatX)
+        if len(angle_idims) > 0:
+            self.filename += '_angi'
+            for i in xrange(len(angle_idims)):
+                self.filename += str(angle_idims[i])
+        if len(angle_odims) > 0:
+            self.filename += '_ango'
+            for i in xrange(len(angle_odims)):
+                self.filename += str(angle_odims[i])
 
         try:
             # try loading from pickled file, to avoid recompiling
-            self.save_after_init = False
             self.load()
             if (X_dataset.shape[0] != self.X_.shape[0] or Y_dataset.shape[0] != self.Y_.shape[0]) or not( np.allclose(X_dataset,self.X_) and np.allclose(Y_dataset,self.Y_) ):
                 self.set_dataset(X_dataset,Y_dataset)
@@ -48,11 +70,8 @@ class GP(object):
             assert X_dataset.shape[0] == Y_dataset.shape[0], "X_dataset and Y_dataset must have the same number of rows"
             self.set_dataset(X_dataset,Y_dataset)
             self.init_log_likelihood()
-            self.init_predict()
         
         utils.print_with_stamp('Finished initialising GP',self.name)
-        if self.save_after_init:
-            self.save()
     
     def set_dataset(self,X_dataset,Y_dataset):
         utils.print_with_stamp('Updating GP dataset',self.name)
@@ -81,17 +100,10 @@ class GP(object):
         self.idims = idims
         self.odims = odims
 
-        # and initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
-        self.loghyp_ = np.zeros((odims,idims+2))
-        if theano.config.floatX == 'float32':
-            self.loghyp_ = self.loghyp_.astype(np.float32)
-        # this ensures that we create separate hyperparameters for the 2 dimensions that correspond to a single angle input
+        # Convert angle dimensions to complex representation. this ensures that we create separate hyperparameters 
+        # for the 2 dimensions that correspond to a single angle input
         X_ = self.X_ if len(self.angle_idims) == 0 else gTrig_np(self.X_, self.angle_idims)
         Y_ = self.Y_ if len(self.angle_idims) == 0 else gTrig_np(self.Y_, self.angle_odims)
-        self.loghyp_[:,:idims] = X_.std(0)
-        self.loghyp_[:,idims] = Y_.std(0)
-        self.loghyp_[:,idims+1] = 0.1*self.loghyp_[:,idims]
-        self.loghyp_ = np.log(self.loghyp_)
         
         # now we create symbolic shared variables ( borrowing the memory from the numpy arrays)
         if self.X_shared is None:
@@ -116,6 +128,16 @@ class GP(object):
             utils.print_with_stamp('Converting angle dimensions in training dataset outputs to cartesian',self.name)
             self.Y = gTrig(self.Y_shared, self.angle_odims, E)
 
+        # if we have a compiled log likelihood function
+        # initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
+        self.loghyp_ = np.zeros((odims,idims+2))
+        if theano.config.floatX == 'float32':
+            self.loghyp_ = self.loghyp_.astype(np.float32)
+        self.loghyp_[:,:idims] = X_.std(0,ddof=1)
+        self.loghyp_[:,idims] = Y_.std(0,ddof=1)
+        self.loghyp_[:,idims+1] = 0.1*self.loghyp_[:,idims]
+        self.loghyp_ = np.log(self.loghyp_)
+
         # this creates one theano shared variable for the loghyperparameters of each output dimension, separately
         if self.loghyp is None:
             self.loghyp = [S(self.loghyp_[i,:],name='loghyp', borrow=True) for i in xrange(odims)]
@@ -131,6 +153,16 @@ class GP(object):
         if theano.config.floatX == 'float32':
             loghyp = loghyp.astype(np.float32)
         np.copyto(self.loghyp_,loghyp)
+
+    def get_params(self, symbolic=True):
+        if symbolic:
+            retvars = [self.X,self.Y]
+            for lh in self.loghyp:
+                retvars.append(lh)
+            return retvars
+        else:
+            retvars = [self.X_, self.Y_, self.loghyp_]
+            return retvars
 
     def init_log_likelihood(self):
         utils.print_with_stamp('Initialising expression graph for log likelihood',self.name)
@@ -159,7 +191,7 @@ class GP(object):
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
-            nlml[i] = 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + self.N*T.log(2*np.pi) )/self.N
+            nlml[i] = 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + self.N*T.log(2*np.pi) )
             # Compute the gradients for each output dimension independently
             dnlml[i] = T.jacobian(nlml[i].flatten(),self.loghyp[i])
 
@@ -170,15 +202,61 @@ class GP(object):
         self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode)
         utils.print_with_stamp('Compiling jacobian of log likelihood',self.name)
         self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode)
+        self.state_changed = True # for saving
     
-    def init_predict(self):
+    def init_predict(self, derivs=False):
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
-        odims = self.odims
+        # Note that this handles n_samples inputsa
+        # initialize variable for input vector ( iniput mean in the ccase of unceratin inputs )
+        x_mean=None; x_cov=None
         if theano.config.floatX == 'float32':
-            x_mean = T.fmatrix('x')
+            x_mean = T.fmatrix('x')      # n_samples x idims
+            # initialize variable for input covariance 
+            if self.uncertain_inputs:
+                x_cov = T.ftensor3('x_cov')  # n_samples x idims x idims
         else:
-            x_mean = T.dmatrix('x')
+            x_mean = T.dmatrix('x')      # n_samples x idims
+            # initialize variable for input covariance 
+            if self.uncertain_inputs:
+                x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
+        
+        # get prediction
+        retvars = self.predict_symbolic(x_mean,x_cov)
+        prediction = []
+        for r in retvars:
+            if r is not None:
+                prediction.append(r)
+        
+        if not derivs:
+            # compile prediction
+            utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
+            input_vars = [x_mean] if x_cov is None else [x_mean,x_cov]
+            self.predict_ = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
+            self.state_changed = True # for saving
+        else:
+            # compute the derivatives wrt the input vector ( or input mean in the case of uncertain inputs)
+            prediction_derivatives = list(prediction)
+            for p in prediction:
+                prediction_derivatives.append( T.jacobian( p.flatten(),x_mean ) )
+            if self.uncertain_inputs:
+                # compute the derivatives wrt the input covariance
+                for p in prediction:
+                    prediction_derivatives.append( T.jacobian( p.flatten(),x_cov ) )
+            if self.hyperparameter_gradients:
+                # compute the derivatives wrt the hyperparameters
+                for p in prediction:
+                    dpdlh =[]
+                    for i in xrange(self.odims):
+                        dpdlh.append( T.jacobian( p.flatten(), self.loghyp[i] ) )
+                    dpdlh = T.stack(dpdlh)
+                    prediction_derivatives.append(dpdlh)
+            #prediction_derivatives contains  [p1, p2, ..., pn, dp1/dx_mean, dp2/dx_mean, ..., dpn/dx_mean, dp1/dx_cov, dp2/dx_cov, ..., dpn/dx_cov, dp1/dloghyp, dp2/dloghyp, ..., dpn/loghyp]
+            utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
+            self.predict_d_ = F(input_vars, prediction_derivatives, name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+            self.state_changed = True # for saving
 
+    def predict_symbolic(self,x_mean,x_cov):
+        odims = self.odims
         # convert angle dimensions to cartesian coordinates
         m = x_mean
         if len(self.angle_idims) > 0:
@@ -197,17 +275,12 @@ class GP(object):
         M = T.stack(mean).T
         S = T.stack(variance).T
         S ,updts = theano.scan(fn=lambda Si: T.diag(Si),sequences=[S], strict=True)
-        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-        self.predict_ = F([x_mean],(M,S),name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
-        # compile the derivatives wrt the evaluation point
-        dMdm = T.jacobian(M.flatten(),x_mean)
-        dSdm = T.jacobian(S.flatten(),x_mean)
-
-        utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
-        self.predict_d_ = F([x_mean], (M,dMdm,S,dSdm),name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+        return M,S
     
     def predict(self,x_mean,x_cov = None):
+        if self.predict_ is None:
+            self.init_predict(derivs=False)
         # cast to float 32 if necessary
         if theano.config.floatX == 'float32':
             x_mean = x_mean.astype(np.float32)
@@ -236,6 +309,8 @@ class GP(object):
         return res
 
     def predict_d(self,x_mean,x_cov=None):
+        if self.predict_d_ is None:
+            self.init_predict(derivs=True)
         # cast to float 32 if necessary
         if theano.config.floatX == 'float32':
             x_mean = x_mean.astype(np.float32)
@@ -273,9 +348,14 @@ class GP(object):
     def train(self):
         init_hyp = self.loghyp_.copy()
         utils.print_with_stamp('Current hyperparameters:',self.name)
-        print (self.loghyp_)
+        loghyp0 = self.loghyp_.copy()
+        print (loghyp0)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
-        opt_res = minimize(self.loss, self.loghyp_, jac=True, method=self.min_method, tol=1e-12, options={'maxiter': 500})
+        try:
+            opt_res = minimize(self.loss, loghyp0, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 300})
+        except ValueError:
+            opt_res = minimize(self.loss, loghyp0, jac=True, method='CG', tol=1e-9, options={'maxiter': 300})
+
         #opt_res = basinhopping(self.loss, self.loghyp_, niter=2, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 250}})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
@@ -298,6 +378,7 @@ class GP(object):
             with open(self.filename+'.zip','wb') as f:
                 utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs'%(self.idims,self.odims),self.name)
                 t_dump(self.get_state(),f,2)
+            self.state_changed = False
 
     def set_state(self,state):
         self.X_shared = state[0]
@@ -307,33 +388,26 @@ class GP(object):
         self.angle_idims = state[4]
         self.angle_odims = state[5]
         self.loghyp = state[6]
-        self.set_dataset(state[7],state[8])
-        self.set_loghyp(state[9])
-        self.nlml = state[10]
-        self.dnlml = state[11]
-        self.predict_ = state[12]
-        self.predict_d_ = state[13]
+        self.K = state[7]
+        self.iK = state[8]
+        self.beta = state[9]
+        self.set_dataset(state[10],state[11])
+        self.set_loghyp(state[12])
+        self.nlml = state[13]
+        self.dnlml = state[14]
+        self.predict_ = state[15]
+        self.predict_d_ = state[16]
 
     def get_state(self):
-        return (self.X_shared,self.Y_shared,self.X,self.Y,self.angle_idims,self.angle_odims,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
+        return (self.X_shared,self.Y_shared,self.X,self.Y,self.angle_idims,self.angle_odims,self.loghyp,self.K,self.iK,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
 
 class GP_UI(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'GP_UI', profile=False, save_after_init=True, angle_idims = [], angle_odims = []):
-        super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,save_after_init=save_after_init, angle_idims=angle_idims,angle_odims=angle_odims)
-        self.uncertain_inputs = True
+    def __init__(self, X_dataset, Y_dataset, name = 'GP_UI', profile=False, angle_idims = [], angle_odims = [], hyperparameter_gradients=False):
+        super(GP_UI, self).__init__(X_dataset,Y_dataset,name,profile,angle_idims,angle_odims,True,hyperparameter_gradients)
 
-    def init_predict(self):
-        utils.print_with_stamp('Initialising expression graph for prediction',self.name)
+    def predict_symbolic(self,x_mean,x_cov):
         idims = self.idims
         odims = self.odims
-
-        # Note that this handles n_samples inputs
-        if theano.config.floatX == 'float32':
-            x_mean = T.fmatrix('x')      # n_samples x idims
-            x_cov = T.ftensor3('x_cov')  # n_samples x idims x idims
-        else:
-            x_mean = T.dmatrix('x')      # n_samples x idims
-            x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
 
         # convert angle dimensions to cartesian coordinates
         m = x_mean
@@ -351,17 +425,16 @@ class GP_UI(GP):
         M2 = [[]]*(odims**2) # second moment
 
         def M_helper(inp_k,B_k,sf2):
-            t_k = inp_k.dot(matrix_inverse(psd(B_k)))
-            c_k = sf2/T.sqrt(det(psd(B_k)))
+            t_k = inp_k.dot(matrix_inverse(B_k))
+            c_k = sf2/T.sqrt(det(B_k))
             return (t_k,c_k)
             
         #predictive second moment ( only the lower triangular part, including the diagonal)
         def M2_helper(logk_i_k, logk_j_k, z_i_k, z_j_k, R_k, s_k):
-            nk2 = logk_i_k[:,None] + logk_j_k[None,:] + utils.maha(z_i_k,-z_j_k,0.5*matrix_inverse(psd(R_k)).dot(s_k))
-            tk = 1.0/T.sqrt(det(psd(R_k)))
-            Qk = T.exp( nk2 )
-            
-            return Qk,tk
+            nk2 = logk_i_k[:,None] + logk_j_k[None,:] + utils.maha(z_i_k,-z_j_k,0.5*matrix_inverse(R_k).dot(s_k))
+            tk = 1.0/T.sqrt(det(R_k))
+            Qk = tk*T.exp( nk2 )
+            return Qk
 
         logk=[[]]*odims
         Lambda=[[]]*odims
@@ -393,16 +466,15 @@ class GP_UI(GP):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 R = s*(Lambda[i] + Lambda[j]) + T.eye(idims)
     
-                (Q,t),updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_[i],z_[j],R,s))
+                Q,updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_[i],z_[j],R,s))
                 Q.name = 'Q_%d%d'%(i,j)
 
                 # Eq 2.55
-                m2 = self.beta[i].dot(Q).dot(self.beta[j].T)
+                m2 = matrix_dot(self.beta[i], Q, self.beta[j].T)
                 if i == j:
                     iKi = self.iK[i].dot(T.eye(self.N))
-                    m2 =  t*(m2 - T.sum(iKi*Q,(1,2))) + T.exp(2*self.loghyp[i][idims])
+                    m2 =  m2 - T.sum(iKi*Q,(1,2)) + T.exp(2*self.loghyp[i][idims])
                 else:
-                    m2 = t*m2
                     M2[j*odims+i] = m2
                 m2.name = 'M2_%d%d'%(i,j)
                 M2[i*odims+j] = m2
@@ -410,25 +482,13 @@ class GP_UI(GP):
         M = T.stack(M).T
         V = T.stack(V).transpose(1,2,0)
         M2 = T.stack(M2).T
-        S ,updts = theano.scan(fn=lambda M2i: M2i.reshape((odims,odims)), sequences=[M2], strict=True)
+        S = M2.reshape((M.shape[0],odims,odims))
         S = S - (M[:,:,None]*M[:,None,:])
 
-        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-        self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
-
-        # compile the derivatives wrt the evaluation point
-        dMdm = T.jacobian(M.flatten(),x_mean)
-        dVdm = T.jacobian(V.flatten(),x_mean)
-        dSdm = T.jacobian(S.flatten(),x_mean)
-        dMds = T.jacobian(M.flatten(),x_cov)
-        dVds = T.jacobian(V.flatten(),x_cov)
-        dSds = T.jacobian(S.flatten(),x_cov)
-
-        #utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
-        self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
-
+        return M,S,V
+        
 class SPGP(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'SPGP',profile=False, save_after_init=True, n_inducing = 100, angle_idims = [], angle_odims = []):
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP',profile=False, n_inducing = 100, angle_idims = [], angle_odims = [], uncertain_inputs=False, hyperparameter_gradients=False):
         self.X_sp = None # inducing inputs
         self.Y_sp = None #inducing targets
         self.nlml_sp = None
@@ -436,8 +496,7 @@ class SPGP(GP):
         self.kmeans = None
         self.n_inducing = n_inducing
         # intialize parent class params
-        super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,save_after_init=save_after_init,angle_idims=angle_idims,angle_odims=angle_odims)
-        self.uncertain_inputs = False
+        super(SPGP, self).__init__(X_dataset,Y_dataset,name,profile,angle_idims,angle_odims,uncertain_inputs,hyperparameter_gradients)
 
     def init_pseudo_inputs(self):
         if self.X_sp is None:
@@ -523,19 +582,10 @@ class SPGP(GP):
             utils.print_with_stamp('Compiling jacobian of FITC log likelihood',self.name)
             self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
 
-    def init_predict(self):
+    def predict_symbolic(self,x_mean,x_cov):
         if self.N < self.n_inducing:
             # stick with the full GP
-            super(SPGP, self).init_predict()
-            return
-
-        # this is the sparse approximation
-        utils.print_with_stamp('Initialising expression graph for SPGP prediction',self.name)
-        odims = self.odims
-        if theano.config.floatX == 'float32':
-            x_mean = T.fmatrix('x')
-        else:
-            x_mean = T.dmatrix('x')
+            return super(SPGP, self).predict_symbolic()
 
         # convert angle dimensions to cartesian coordinates
         m = x_mean
@@ -557,16 +607,8 @@ class SPGP(GP):
         M = T.stack(mean).T
         S = T.stack(variance).T
         S ,updts = theano.scan(fn=lambda Si: T.diag(Si),sequences=[S], strict=True)
-        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-        self.predict_ = F([x_mean],(M,S),name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
 
-        # compile the derivatives wrt the evaluation point
-        dMdm = T.jacobian(M.flatten(),x_mean)
-        dSdm = T.jacobian(S.flatten(),x_mean)
-
-        utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
-        self.predict_d_ = F([x_mean], (M,dMdm,S,dSdm),name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
-        pass
+        return M,S
 
     def set_X_sp(self, X_sp):
         X_sp = X_sp.reshape(self.X_sp_.shape)
@@ -590,7 +632,7 @@ class SPGP(GP):
 
         # train the pseudo input locations
         utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
-        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-7, options={'maxiter': 250})
+        opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
         #opt_res = basinhopping(self.loss_sp, self.X_sp_, niter=2, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 250}})
         print ''
         X_sp = opt_res.x.reshape(self.X_sp_.shape)
@@ -615,27 +657,16 @@ class SPGP(GP):
         return (self.X,self.Y,self.loghyp,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.nlml_sp,self.dnlml_sp,self.kmeans)
 
 class SPGP_UI(SPGP,GP_UI):
-    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False, save_after_init=True, n_inducing = 100, angle_idims = [], angle_odims = []):
-        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile, save_after_init=save_after_init, n_inducing=n_inducing, angle_idims=angle_idims, angle_odims=angle_odims)
-        self.uncertain_inputs = True
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False, n_inducing = 100, angle_idims = [], angle_odims = []):
+        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,n_inducing=n_inducing,angle_idims=angle_idims,angle_odims=angle_odims,uncertain_inputs=True)
 
-    def init_predict(self):
+    def predict_symbolic(self,x_mean,x_cov):
         if self.N < self.n_inducing:
             # stick with the full GP
-            GP_UI.init_predict(self)
-            return
+            return GP_UI.predict_symbolic(self)
 
-        utils.print_with_stamp('Initialising expression graph for prediction',self.name)
         idims = self.idims
         odims = self.odims
-
-        # Note that this handles n_samples inputs
-        if theano.config.floatX == 'float32':
-            x_mean = T.fmatrix('x')      # n_samples x idims
-            x_cov = T.ftensor3('x_cov')  # n_samples x idims x idims
-        else:
-            x_mean = T.dmatrix('x')      # n_samples x idims
-            x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
 
         # convert angle dimensions to cartesian coordinates
         m = x_mean
@@ -653,20 +684,20 @@ class SPGP_UI(SPGP,GP_UI):
         M2 = [[]]*(odims**2) # second moment
 
         def M_helper(inp_k,B_k,sf2):
-            t_k = inp_k.dot(matrix_inverse(psd(B_k)))
-            c_k = sf2/T.sqrt(det(psd(B_k)))
+            t_k = inp_k.dot(matrix_inverse(B_k))
+            c_k = sf2/T.sqrt(det(B_k))
             return (t_k,c_k)
             
         #predictive second moment ( only the lower triangular part, including the diagonal)
         def M2_helper(logk_i_k, logk_j_k, z_ij_k, R_k, s_k):
-            nk2 = logk_i_k[:,None] + logk_j_k[None,:] - utils.maha(z_ij_k,z_ij_k,matrix_inverse(psd(R_k)).dot(s_k))
-            tk = 1.0/T.sqrt(det(psd(R_k)))
-            Qk = tk*T.exp( nk2 )
-            
-            return Qk
+            nk2 = logk_i_k[:,None] + logk_j_k[None,:] + utils.maha(z_i_k,-z_j_k,0.5*matrix_inverse(R_k).dot(s_k))
+            tk = 1.0/T.sqrt(det(R_k))
+            Qk = T.exp( nk2 )
+            return Qk,tk
 
         logk=[[]]*odims
         Lambda=[[]]*odims
+        z_=[[]]*odims
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
             iL = T.exp(-self.loghyp[i][:idims])
@@ -688,21 +719,22 @@ class SPGP_UI(SPGP,GP_UI):
             
             # predictive covariance
             logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,2)
-            Lambda[i] = iL*iL
+            Lambda[i] = T.exp(-2*self.loghyp[i][:idims])
+            z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                z_ij = zeta*Lambda[i] + zeta*Lambda[j]
                 R = s*(Lambda[i] + Lambda[j]) + T.eye(idims)
     
-                Q,updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_ij,R,s))
+                (Q,t),updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_[i],z_[j],R,s))
                 Q.name = 'Q_%d%d'%(i,j)
 
                 # Eq 2.55
-                m2 = matrix_dot(self.beta_sp[i],Q,self.beta_sp[j])
+                m2 = self.beta[i].dot(Q).dot(self.beta[j].T)
                 if i == j:
                     iKi = matrix_inverse(psd(self.Kmm[i])).dot(T.eye(self.n_inducing)) - matrix_inverse(psd(self.Bmm[i])).dot(T.eye(self.n_inducing))
-                    m2 =  m2 - T.sum(iKi*Q,(1,2)) + T.exp(2*self.loghyp[i][idims])
+                    m2 =  t*(m2 - T.sum(iKi*Q,(1,2))) + T.exp(2*self.loghyp[i][idims])
                 else:
+                    m2 = t*m2
                     M2[j*odims+i] = m2
                 m2.name = 'M2_%d%d'%(i,j)
                 M2[i*odims+j] = m2
@@ -710,41 +742,22 @@ class SPGP_UI(SPGP,GP_UI):
         M = T.stack(M).T
         V = T.stack(V).transpose(1,2,0)
         M2 = T.stack(M2).T
-        S = M2 - (M[:,:,None]*M[:,None,:]).flatten(2)
-        S ,updts = theano.scan(fn=lambda Si: Si.reshape((odims,odims)), sequences=[S], strict=True)
-
-        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-        self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
-
-        # compile the derivatives wrt the evaluation point
-        dMdm = T.jacobian(M.flatten(),x_mean)
-        dVdm = T.jacobian(V.flatten(),x_mean)
-        dSdm = T.jacobian(S.flatten(),x_mean)
-        dMds = T.jacobian(M.flatten(),x_cov)
-        dVds = T.jacobian(V.flatten(),x_cov)
-        dSds = T.jacobian(S.flatten(),x_cov)
-
-        utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
-        self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+        S ,updts = theano.scan(fn=lambda M2i: M2i.reshape((odims,odims)), sequences=[M2], strict=True)
+        S = S - (M[:,:,None]*M[:,None,:])
+        
+        return M,S,V
 
 # RBF network (GP with uncertain inputs/deterministic outputs)
 class RBFGP(GP_UI):
-    def __init__(self, X_dataset, Y_dataset, name = 'RBFGP',profile=False, save_after_init=True, angle_idims = [], angle_odims = []):
-        super(RBFGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile, save_after_init=save_after_init, angle_idims=angle_idims, angle_odims=angle_odims)
-        self.uncertain_inputs = True
+    def __init__(self, X_dataset, Y_dataset, sat_func=None, name = 'RBFGP',profile=False, angle_idims = [], angle_odims = []):
+        self.sat_func = sat_func
+        if self.sat_func is not None:
+            name += '_sat'
+        super(RBFGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,angle_idims=angle_idims,angle_odims=angle_odims,hyperparameter_gradients=True)
 
-    def init_predict(self):
-        utils.print_with_stamp('Initialising expression graph for prediction',self.name)
+    def predict_symbolic(self,x_mean,x_cov):
         idims = self.idims
         odims = self.odims
-
-        # Note that this handles n_samples inputs
-        if theano.config.floatX == 'float32':
-            x_mean = T.fmatrix('x')      # n_samples x idims
-            x_cov = T.ftensor3('x_cov')  # n_samples x idims x idims
-        else:
-            x_mean = T.dmatrix('x')      # n_samples x idims
-            x_cov = T.dtensor3('x_cov')  # n_samples x idims x idims
 
         # convert angle dimensions to cartesian coordinates
         m = x_mean
@@ -762,17 +775,17 @@ class RBFGP(GP_UI):
         M2 = [[]]*(odims**2) # second moment
 
         def M_helper(inp_k,B_k,sf2):
-            t_k = inp_k.dot(matrix_inverse(psd(B_k)))
-            c_k = sf2/T.sqrt(det(psd(B_k)))
+            t_k = inp_k.dot(matrix_inverse(B_k))
+            c_k = sf2/T.sqrt(det(B_k))
             return (t_k,c_k)
             
         #predictive second moment ( only the lower triangular part, including the diagonal)
         def M2_helper(logk_i_k, logk_j_k, z_i_k, z_j_k, R_k, s_k):
-            nk2 = logk_i_k[:,None] + logk_j_k[None,:] + utils.maha(z_i_k,-z_j_k,0.5*matrix_inverse(psd(R_k)).dot(s_k))
-            tk = 1.0/T.sqrt(det(psd(R_k)))
-            Qk = T.exp( nk2 )
+            nk2 = logk_i_k[:,None] + logk_j_k[None,:] + utils.maha(z_i_k,-z_j_k,0.5*matrix_inverse(R_k).dot(s_k))
+            tk = 1.0/T.sqrt(det(R_k))
+            Qk = tk*T.exp( nk2 )
             
-            return Qk,tk
+            return Qk
 
         logk=[[]]*odims
         Lambda=[[]]*odims
@@ -804,33 +817,28 @@ class RBFGP(GP_UI):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 R = s*(Lambda[i] + Lambda[j]) + T.eye(idims)
     
-                (Q,t),updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_[i],z_[j],R,s))
+                Q,updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_[i],z_[j],R,s))
                 Q.name = 'Q_%d%d'%(i,j)
 
                 # Eq 2.55
-                m2 = self.beta[i].dot(Q).dot(self.beta[j].T)
+                m2 = matrix_dot(self.beta[i],Q,self.beta[j].T)
                 m2.name = 'M2_%d%d'%(i,j)
-                if i != j:
+                if i == j:
+                    m2 = m2 + 1e-6
+                else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
 
         M = T.stack(M).T
         V = T.stack(V).transpose(1,2,0) # TODO if using angle dimensions, this will give the input-ouput covariances with the augmented inputs
         M2 = T.stack(M2).T
-        S ,updts = theano.scan(fn=lambda M2i: M2i.reshape((odims,odims)), sequences=[M2], strict=True)
+        S = M2.reshape((M.shape[0],odims,odims))
         S = S - (M[:,:,None]*M[:,None,:])
 
-        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-        self.predict_ = F([x_mean,x_cov],(M,S,V), name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
+        # apply saturating function to the output if available
+        if self.sat_func is not None:
+            # compute the joint input output covariance
+            M,S,U = self.sat_func(M,S)
+            V = (V[:,:,None,:]*(U[:,None,:,:])).sum(3)
 
-        # compile the derivatives wrt the evaluation point
-        dMdm = T.jacobian(M.flatten(),x_mean)
-        dVdm = T.jacobian(V.flatten(),x_mean)
-        dSdm = T.jacobian(S.flatten(),x_mean)
-        dMds = T.jacobian(M.flatten(),x_cov)
-        dVds = T.jacobian(V.flatten(),x_cov)
-        dSds = T.jacobian(S.flatten(),x_cov)
-
-        utils.print_with_stamp('Compiling derivatives of mean and variance of prediction',self.name)
-        self.predict_d_ = F([x_mean,x_cov], (M,dMdm,dMds,S,dSdm,dSds,V,dVdm,dVds), name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
-
+        return M,S,V
