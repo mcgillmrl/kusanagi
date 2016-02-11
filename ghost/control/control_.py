@@ -19,15 +19,14 @@ class RBFPolicy:
         self.inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(n_basis_functions)]);
         # init policy targets close to zero
         self.targets = 0.1*np.random.randn(n_basis_functions,len(maxU))
-
         sat_func = partial(gSat, e=maxU)
         self.model = RBFGP(self.inputs,self.targets,sat_func=sat_func)
         self.model.save()
 
     def evaluate(self, t, m, s=None, derivs=False):
-        D = m.shape[len(m.shape)-1]
+        D = m.shape[0]
         if s is None:
-            s = np.zeros((1,D,D))
+            s = np.zeros((D,D))
         ret = self.model.predict(m,s) if not derivs else self.model.predict_d(m,s)
         return ret 
 

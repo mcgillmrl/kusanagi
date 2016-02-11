@@ -24,14 +24,16 @@ for i=1:size(Y,1)
     [Xa(i,:),~,~] = gTrig(X(i,:),ss,angi);
 end
 
-model.fcn = @gp0;                % function for GP predictions
+model.fcn = @gp2;                % function for GP predictions
 model.train = @train;             % function to train dynamics model
 trainOpt = [300 500];                % defines the max. number of line searches
 
 model.inputs  = [X(:,nangi), Xa];
 model.targets = Y;
-model = model.train(model, [], trainOpt);  %  train dynamics GP
-
+%model = model.train(model, [], trainOpt);  %  train dynamics GP
+model.hyp = [1.488644640716878,   1.376880336167960,   1.405309748390113,  0.794514565057032,   1.264445698631373,   3.587939447644951,   0.378659570401003,  -2.107781681104368,  -2.670827107680510;
+             1.487738978825120,   1.377055841019811,   1.405875137232056,  0.794717434510711,   1.267984365286328,   3.540119863989067,   0.381918802434586,  -1.415237559412543,  -1.979235545504115;
+             1.487908336813194,   1.379300719560770,   1.404292670414302,  0.793524475430800,   1.267560010517307,   3.595231469390403,   0.377971363284628,  -1.011282163586751,  -1.573726951186254]';
 Xtest = 10*(pyrand(D,n_test)' -0.5);
 Ytest = zeros(E,n_test)';
 Xatest = zeros(n_test,2*length(angi));

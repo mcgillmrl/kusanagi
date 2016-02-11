@@ -12,7 +12,7 @@ from scipy.io import savemat
 
 if __name__ == '__main__':
     np.random.seed(31337)
-    np.set_printoptions(linewidth=200, precision=16, suppress=True)
+    np.set_printoptions(linewidth=200, precision=9, suppress=True)
     dt = 0.1
     T = 4.0
     J = 5

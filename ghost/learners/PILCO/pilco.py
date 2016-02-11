@@ -49,33 +49,33 @@ class PILCO(EpisodicLearner):
     def get_state(self):
         return (self.X_shared,self.Y_shared,self.X,self.Y,self.angle_idims,self.angle_odims,self.loghyp,self.K,self.iK,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
 
-
     def init_propagate(self, derivs=False):
         ''' This compiles the propagate function, which applies the policy and predicts the next state 
             of the system using the learn GP dynamics model '''
         
         # define the function for a single propagation step
         def propagate_single_step(mx,Sx):
-            D=mx.shape[1]
+            D=mx.shape[0]
             # convert angles from input distribution to its complex representation
             mxa,Sxa = gTrig2(mx,Sx,self.angle_idims,self.mx0.size)
 
             # compute distribution of control signal
-            logsn = theano.tensor.stack([ lh[-1] for lh in self.dynamics_model.loghyp ]).flatten()
+            logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
             mxa_,Sxa_ = gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
-            mu, Su, Cu = self.policy.model.predict_symbolic(mxa, Sxa_)
+            mu, Su, Cu = self.policy.model.predict_symbolic(mxa_, Sxa_)
             
             # compute state control joint distribution
             n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
             idimsa = Da + U
-            q = (Sxa[:,:,:,None]*Cu[:,:,None,:]).sum(1)
-            mxu = theano.tensor.horizontal_stack(mxa,mu)
-            Sxu = theano.tensor.zeros((n,idimsa,idimsa))
-            Sxu = theano.tensor.set_subtensor(Sxu[:,:Da,:Da], Sxa)
-            Sxu = theano.tensor.set_subtensor(Sxu[:,Da:,Da:], Su)
-            Sxu = theano.tensor.set_subtensor(Sxu[:,:Da,Da:], q)
-            Sxu = theano.tensor.set_subtensor(Sxu[:,Da:,:Da], q.transpose(0,2,1))
+            q = Sxa.dot(Cu)
+            qT = Cu.T.dot(Sxa) # just to guarantee that the jacobian is symmetric( but has no real effect on end result)
+            mxu = theano.tensor.concatenate([mxa,mu])
+            Sxu = theano.tensor.zeros((idimsa,idimsa))
+            Sxu = theano.tensor.set_subtensor(Sxu[:Da,:Da], Sxa)
+            Sxu = theano.tensor.set_subtensor(Sxu[Da:,Da:], Su)
+            Sxu = theano.tensor.set_subtensor(Sxu[:Da,Da:], q)
+            Sxu = theano.tensor.set_subtensor(Sxu[Da:,:Da], qT)
 
             #  predict the change in state given current state-action
             # C_deltax = inv (Sxu) dot Sxu_deltax
@@ -83,8 +83,8 @@ class PILCO(EpisodicLearner):
 
             # compute the successor state distribution
             mx = mx + m_deltax
-            Sx_deltax = (Sxu[:,:,:,None]*C_deltax[:,:,None,:]).sum(1)[:,:D,:]
-            Sx = Sx + S_deltax + Sx_deltax + Sx_deltax.transpose(0,2,1) 
+            Sx_deltax = Sxu.dot(C_deltax)[:D,:]
+            Sx = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
             #  get cost:
             #mc, Sc = cost(mx,mu,Sx,Su)
@@ -94,8 +94,9 @@ class PILCO(EpisodicLearner):
 
         # define input variables
         print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
-        mx = theano.tensor.dmatrix('mx')
-        Sx = theano.tensor.dtensor3('Sx')
+        mx = theano.tensor.fvector('mx') if theano.config.floatX == 'float32' else theano.tensor.dvector('mx')
+        Sx = theano.tensor.fmatrix('Sx') if theano.config.floatX == 'float32' else theano.tensor.dmatrix('Sx')
+
         mx_next,Sx_next = propagate_single_step(mx,Sx)
         retvars = [mx_next,Sx_next]
         if derivs :
@@ -104,28 +105,21 @@ class PILCO(EpisodicLearner):
             retvars.append( theano.tensor.jacobian( Sx_next.flatten(), mx ) )
             retvars.append( theano.tensor.jacobian( mx_next.flatten(), Sx ) )
             retvars.append( theano.tensor.jacobian( Sx_next.flatten(), Sx ) )
-            
             # derivatives wrt policy parameters
             params = self.policy.get_params()
             if not isinstance(params,list):
                 params = [params]
 
             dMdp = []; dSdp = []
-            #for p in params:
-            #    retvars.append( theano.tensor.jacobian( mx_next.flatten(), p ) )
-            #    retvars.append( theano.tensor.jacobian( Sx_next.flatten(), p ) )
-            #dMdp = theano.tensor.stack(dMdp)
-            #dSdp = theano.tensor.stack(dSdp)
+            for p in params:
+                retvars.append( theano.tensor.jacobian( mx_next.flatten(), p ) )
+                retvars.append( theano.tensor.jacobian( Sx_next.flatten(), p ) )
 
-            #retvars.append( dMdp )
-            #retvars.append( dSdp )
             print_with_stamp('Compiling belief state propagation with derivatives',self.name)
-            self.propagate_d = theano.function([mx,Sx], retvars)
+            self.propagate = theano.function([mx,Sx], retvars, allow_input_downcast=True)
         else:
             print_with_stamp('Compiling belief state propagation',self.name)
-            self.propagate = theano.function([mx,Sx], retvars)
-        
-
+            self.propagate = theano.function([mx,Sx], retvars, allow_input_downcast=True)
 
     def train_dynamics(self):
         print_with_stamp('Training dynamics model',self.name)
@@ -167,8 +161,17 @@ class PILCO(EpisodicLearner):
         else:
             self.dynamics_model.set_dataset(X,Y)
         
-        self.dynamics_model.train()
-        self.dynamics_model.save()
+        self.dynamics_model.set_loghyp(np.array([[ 5.509997626011774,   5.695797298947197,   5.692015197025450,   5.638201671096178],
+                                                [ 2.172712533907143,   4.666315918776204,   4.612552250383755,   4.942292180454226],
+                                                [ 5.146257432313829,   2.296298649465123,   2.456701520947445,   2.614396832176411],
+                                                [ 2.890900478963427,   0.214158569334003,   0.224852498280747,   0.493471679361221],
+                                                [ 1.797786347384082,   1.586977710450885,  -0.058171149174515,  -0.345601213254841],
+                                                [ 4.069820471633279,   3.013197670171895,   2.934665512611971,   3.616775778040698],
+                                                [-0.984097642284717,   0.137890342258600,   1.299603816102084,  -0.611523812016797],
+                                                [-4.115382429098694,  -4.115897287345494,  -3.168863634366222,  -4.247869488525884]]).T)
+        #self.dynamics_model.train()
+
+        #self.dynamics_model.save()
         print_with_stamp('Done training dynamics model',self.name)
 
     def value(self, H, derivs=False):
@@ -177,57 +180,20 @@ class PILCO(EpisodicLearner):
         # compile the belef state propagation
         self.init_propagate(derivs=True)
     
-        mx = np.array(self.plant.x0)[None,:]
-        Sx = np.array(self.plant.S0)[None,:,:]
+        mx = np.array(self.plant.x0)
+        Sx = np.array(self.plant.S0)
 	
         # simulate a rollout using the dynamics model
         dt = self.plant.dt; t = 0
         while t < H:
-            print '--- %f:'%(t)
-            print 'mx:'
-            print mx
-            print Sx
-            ret = self.propagate_d(mx,Sx)
+            print_with_stamp('--- %f:'%(t),self.name)
+            ret = self.propagate(mx,Sx)
             mx = ret[0]
             Sx = ret[1]
             for r in ret:
-                print r.shape
+                print r
 	    t += dt
 	    
         self.policy.model.save()
         self.dynamics_model.save()
         # return value
-
-    def value_d(self,H):
-        print_with_stamp('Computing value of current policy, with derivatives',self.name)
-	x = np.array(self.experience.states)
-	u = np.array(self.experience.actions)
-        # get distribution of initial states
-        x0 = x[self.experience.episode_starts]
-        mx = []; Sx = []
-        if x0.shape[0] > 1:
-            mx = x0.mean()
-            Sx = np.cov(x0.T)
-        else:
-            mx = x0
-            Sx = 1e-2*np.eye(x0.shape[1])
-
-	print mx,Sx
-
-        # simulate a rollout using the dynamics model
-        dt = self.plant.dt; t = 0
-        while t < H:
-            # evaluate the policy at current state
-            mu, Su, Cu = self.policy.evaluate(t, mx, Sx)
-
-            # fill in the covariance of the state-action vector
-            m, S = fillIn(mx,Sx,mu,Su,Vu) 
-
-            #  predict next state given current state-action
-            mx, Sx, Cx = self.dynamics_model.predict(m,S)
-
-            #  get cost:
-            mc, Sc = cost(mx,mu,Sx,Su)
-	    print mc,Sc
-
-        # return value + derivatives

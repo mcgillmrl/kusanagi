@@ -64,6 +64,7 @@ class EpisodicLearner(object):
             x_t_ = gTrig_np(x_t[None,:], self.angle_idims).flatten()
             #  get command from policy (this should be fast, or at least account for delays in processing):
             u_t = self.policy.evaluate(t, x_t_)[0].flatten()
+            #print x_t_,u_t
             #  send command to robot:
             self.plant.apply_control(u_t)
             if self.cost is not None:

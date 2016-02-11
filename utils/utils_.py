@@ -12,12 +12,18 @@ def maha(X1,X2=None,M=None, all_pairs=True):
     deltaM = []
     if X2 is None:
         X2 = X1
-
+    
     if all_pairs:
         if M is None:
-            D, updts = theano.scan(fn=lambda xi,X: T.sum((xi-X)**2,1), sequences=[X1], non_sequences=[X2])
+            #D, updts = theano.scan(fn=lambda xi,X: T.sum((xi-X)**2,1), sequences=[X1], non_sequences=[X2])
+            #D = ((X1-X2[:,None,:])**2).sum(2)
+            D = T.sum(X1**2,1)[:,None] + T.sum(X2**2,1) - 2*X1.dot(X2.T);
         else:
-            D, updts = theano.scan(fn=lambda xi,X,V: T.sum(((xi-X).dot(V))*(xi-X),1), sequences=[X1], non_sequences=[X2,M])
+            #D, updts = theano.scan(fn=lambda xi,X,V: T.sum(((xi-X).dot(V))*(xi-X),1), sequences=[X1], non_sequences=[X2,M])
+            #delta = (X1-X2[:,None,:])
+            #D = ((delta.dot(M))*delta).sum(2)
+            X1M = X1.dot(M);
+            D = T.sum(X1M*X1,1)[:,None] + T.sum(X2.dot(M)*X2,1) - 2*X1M.dot(X2.T)
     else:
         # computes the distance  x1i - x2i for each row i
         if X1 is X2:
@@ -30,7 +36,6 @@ def maha(X1,X2=None,M=None, all_pairs=True):
         else:
             deltaM = delta.dot(M)
         D = T.sum(deltaM*delta,1)
-        
     return D
 
 def print_with_stamp(message, name=None, same_line=False):
@@ -122,63 +127,70 @@ def gTrig2(m, v, angi, D, derivs=False):
     non_angle_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
     Dna = len(non_angle_dims) 
-    n = m.shape[0]
-    Ma = T.zeros((n,Da))
-    Va = T.zeros((n,Da,Da))
-    Ca = T.zeros((n,D,Da))
+    Ma = T.zeros((Da,))
+    Va = T.zeros((Da,Da))
+    Ca = T.zeros((D,Da))
 
     # compute the mean
-    mi = m[:,angi]
-    vi = (v[:,angi,:][:,:,angi])
-    vii = (v[:,angi,angi])
+    mi = m[angi]
+    vi = v[angi,:][:,angi]
+    vii = v[angi,angi]
     exp_vii_h = T.exp(-vii/2)
 
-    Ma = T.set_subtensor(Ma[:,::2], exp_vii_h*T.sin(mi))
-    Ma = T.set_subtensor(Ma[:,1::2], exp_vii_h*T.cos(mi))
+    Ma = T.set_subtensor(Ma[::2], exp_vii_h*T.sin(mi))
+    Ma = T.set_subtensor(Ma[1::2], exp_vii_h*T.cos(mi))
     
     # compute the entries in the augmented covariance matrix
-    lq = -0.5*(vii[:,:,None]+vii[:,None,:]); q = T.exp(lq)
+    vii_c = vii[:,None]
+    vii_r = vii[None,:]
+    lq = -0.5*(vii_c+vii_r); q = T.exp(lq)
     exp_lq_p_vi = T.exp(lq+vi)
     exp_lq_m_vi = T.exp(lq-vi)
-    U1 = (exp_lq_p_vi - q)*(T.sin(mi[:,:,None]-mi[:,None,:]))
-    U2 = (exp_lq_m_vi - q)*(T.sin(mi[:,:,None]+mi[:,None,:]))
-    U3 = (exp_lq_p_vi - q)*(T.cos(mi[:,:,None]-mi[:,None,:]))
-    U4 = (exp_lq_m_vi - q)*(T.cos(mi[:,:,None]+mi[:,None,:]))
+    mi_c = mi[:,None]
+    mi_r = mi[None,:]
+    U1 = (exp_lq_p_vi - q)*(T.sin(mi_c-mi_r))
+    U2 = (exp_lq_m_vi - q)*(T.sin(mi_c+mi_r))
+    U3 = (exp_lq_p_vi - q)*(T.cos(mi_c-mi_r))
+    U4 = (exp_lq_m_vi - q)*(T.cos(mi_c+mi_r))
     
-    Va = T.set_subtensor(Va[:,::2,::2], U3-U4)
-    Va = T.set_subtensor(Va[:,1::2,1::2], U3+U4)
-    Va = T.set_subtensor(Va[:,::2,1::2],U1+U2)
-    Va = T.set_subtensor(Va[:,1::2,::2],Va[:,::2,1::2].transpose(0,2,1))
+    Va = T.set_subtensor(Va[::2,::2], U3-U4)
+    Va = T.set_subtensor(Va[1::2,1::2], U3+U4)
+    U12 = U1+U2
+    Va = T.set_subtensor(Va[::2,1::2],U12)
+    Va = T.set_subtensor(Va[1::2,::2],U12.T)
     Va = 0.5*Va
 
     # inv times input output covariance
     Is = 2*np.arange(len(angi)); Ic = Is +1;
-    Ca = T.set_subtensor( Ca[:,angi,Is], Ma[:,1::2]) 
-    Ca = T.set_subtensor( Ca[:,angi,Ic], -Ma[:,::2]) 
+    Ca = T.set_subtensor( Ca[angi,Is], Ma[1::2]) 
+    Ca = T.set_subtensor( Ca[angi,Ic], -Ma[::2]) 
 
     # construct mean vectors ( non angle dimensions come first, then angle dimensions)
-    Mna = m[:, non_angle_dims]
-    M = T.concatenate([Mna,Ma],axis=1)
+    Mna = m[non_angle_dims]
+    M = T.concatenate([Mna,Ma])
 
     # construct the corresponding covariance matrices ( just the blocks for the non angle dimensions and the angle dimensions separately)
-    V = T.zeros((n,Dna+Da,Dna+Da))
-    Vna = v[:,non_angle_dims,:][:,:,non_angle_dims]
-    V = T.set_subtensor(V[:,:Dna,:Dna], Vna)
-    V = T.set_subtensor(V[:,Dna:,Dna:], Va)
+    V = T.zeros((Dna+Da,Dna+Da))
+    Vna = v[non_angle_dims,:][:,non_angle_dims]
+    V = T.set_subtensor(V[:Dna,:Dna], Vna)
+    V = T.set_subtensor(V[Dna:,Dna:], Va)
 
     # fill in the cross covariances
-    V = T.set_subtensor(V[:,:Dna,Dna:], (v[:,:,:,None]*Ca[:,:,None,:]).sum(1)[:,non_angle_dims,:] )
-    V = T.set_subtensor(V[:,Dna:,:Dna], V[:,:Dna,Dna:].transpose(0,2,1))
+    q = v.dot(Ca)[non_angle_dims,:]
+    qT = (Ca.T).dot(v)[:,non_angle_dims] # this is to guarantee that the derivatves are symmetric, but has no real impact on the end result
+    V = T.set_subtensor(V[:Dna,Dna:], q  )
+    V = T.set_subtensor(V[Dna:,:Dna], qT)
 
     retvars = [M,V]
 
     # compute derivatives
     if derivs:
-        dMdm = T.jacobian(M,m)
-        dMdv =  T.jacobian(M,v).reshape((n,Da, D**2))
-        dVdm = T.jacobian(V.T.flatten(),m)
-        dVdv =  T.jacobian(V.T.flatten(),v).reshape((n,Da**2, D**2))
-        retvars.append(dMdm,dVdm,dMdv,dVdv)
+        dretvars = []
+        for r in retvars:
+            dretvars.append( T.jacobian(r.flatten(),m) )
+        for r in retvars:
+            dretvars.append( T.jacobian(r.flatten(),v) )
+        retvars.extend(dretvars)
 
     return retvars
 
