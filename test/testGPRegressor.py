@@ -10,9 +10,9 @@ def test_random(gp_type='GP',angi=[0,1]):
         return np.exp(-500*(np.sum(0.0001*(X**2),1)))
 
     n_samples = 1000
-    n_test = 20
-    idims = 5
-    odims = 3
+    n_test = 10
+    idims = 2
+    odims = 2
     np.random.seed(31337)
     
     Xd = 10*(np.random.rand(n_samples,idims) - 0.5)
@@ -34,11 +34,8 @@ def test_random(gp_type='GP',angi=[0,1]):
     else:
         gp = GP(Xd,Yd, profile=False)
     
-    gp.set_loghyp(np.array([ [ 1.488644640716878,   1.376880336167960,   1.405309748390113,   0.794514565057032,   1.264445698631373,   3.587939447644951,   0.378659570401003,  -2.107781681104368,  -2.670827107680510],
-                             [ 1.487738978825120,   1.377055841019811,   1.405875137232056,   0.794717434510711,   1.267984365286328,   3.540119863989067,   0.381918802434586,  -1.415237559412543,  -1.979235545504115],
-                             [ 1.487908336813194,   1.379300719560770,   1.404292670414302,   0.793524475430800,   1.267560010517307,   3.595231469390403,   0.377971363284628,  -1.011282163586751,  -1.573726951186254]] ))
-    #gp.train()
-    #gp.save()
+    gp.train()
+    gp.save()
     Xd= 10*(np.random.rand(n_test,idims) - 0.5)
     Yd = np.empty((n_test,odims))
     for i in xrange(odims):
@@ -50,7 +47,7 @@ def test_random(gp_type='GP',angi=[0,1]):
     ss = convolve2d(np.eye(Xd.shape[1]),kk,'same')
 
     for i in xrange(n_test):
-        res = gp.predict(Xd[i,:],ss,derivs=True)
+        res = gp.predict(Xd[i,:],ss,derivs=False)
         print Xd[i,:],','
         print Yd[i,:],','
         for j in xrange(len(res)):
@@ -278,7 +275,7 @@ def test_angle():
 
 
 if __name__=='__main__':
-    np.set_printoptions(linewidth=500, precision=15, suppress=True)
+    np.set_printoptions(linewidth=500, precision=17, suppress=True)
     #test_random()
     #test_sonar('GP')
     #test_sonar('SPGP')

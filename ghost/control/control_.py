@@ -1,7 +1,7 @@
 import numpy as np
 from ghost.regression.GPRegressor import RBFGP,GP_UI
 from utils import print_with_stamp,gTrig_np, gTrig2_np
-from saturation import gSat
+from ghost.control.saturation import gSat
 from functools import partial
 
 # GP based controller
@@ -21,7 +21,6 @@ class RBFPolicy:
         self.targets = 0.1*np.random.randn(n_basis_functions,len(maxU))
         sat_func = partial(gSat, e=maxU)
         self.model = RBFGP(self.inputs,self.targets,sat_func=sat_func)
-        self.model.save()
 
     def evaluate(self, t, m, s=None, derivs=False):
         D = m.shape[0]
@@ -30,8 +29,14 @@ class RBFPolicy:
         ret = self.model.predict(m,s) if not derivs else self.model.predict_d(m,s)
         return ret 
 
-    def get_params(self, symbolic=True):
+    def get_params(self, symbolic=False):
         return self.model.get_params(symbolic)
+
+    def set_params(self,params):
+        self.model.set_params(params)
+
+    def save(self):
+        self.model.save()
 
 # random controller
 class RandPolicy:

@@ -177,11 +177,10 @@ def gTrig2(m, v, angi, D, derivs=False):
 
     # fill in the cross covariances
     q = v.dot(Ca)[non_angle_dims,:]
-    qT = (Ca.T).dot(v)[:,non_angle_dims] # this is to guarantee that the derivatves are symmetric, but has no real impact on the end result
-    V = T.set_subtensor(V[:Dna,Dna:], q  )
-    V = T.set_subtensor(V[Dna:,:Dna], qT)
+    V = T.set_subtensor(V[:Dna,Dna:], q )
+    V = T.set_subtensor(V[Dna:,:Dna], q.T )
 
-    retvars = [M,V]
+    retvars = [M,V,Ca]
 
     # compute derivatives
     if derivs:
@@ -195,6 +194,10 @@ def gTrig2(m, v, angi, D, derivs=False):
     return retvars
 
 def gTrig_np(x,angi):
+    if type(x) is list:
+        x = np.array(x)
+    if x.ndim == 1:
+        x = x[None,:]
     D = x.shape[1]
     Da = 2*len(angi)
     n = x.shape[0]

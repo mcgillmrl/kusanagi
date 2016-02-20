@@ -11,11 +11,12 @@ from theano.tensor.nlinalg import matrix_dot
 from theano.sandbox.linalg import psd,matrix_inverse,det
 
 import cov
+import SNRpenalty
 import utils
 from utils import gTrig, gTrig2,gTrig_np
 
 class GP(object):
-    def __init__(self, X_dataset, Y_dataset, name='GP', profile=False, angle_idims = [], angle_odims = [], uncertain_inputs=False, hyperparameter_gradients=False):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', profile=False, angle_idims = [], angle_odims = [], uncertain_inputs=False, hyperparameter_gradients=False, snr_penalty=SNRpenalty.SEard):
         # theano options
         self.profile= profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
@@ -25,8 +26,9 @@ class GP(object):
         self.state_changed = False
         self.uncertain_inputs = uncertain_inputs
         self.hyperparameter_gradients = hyperparameter_gradients
+        self.snr_penalty = snr_penalty
         
-        # dimesnion related variables
+        # dimension related variables
         self.N = X_dataset.shape[0]
         self.D = X_dataset.shape[1]
         self.E = Y_dataset.shape[1]
@@ -36,7 +38,7 @@ class GP(object):
         self.angle_odims = angle_odims
 
         #symbolic varianbles
-        self.X_ = None; self.Y_ = None
+        self.X_ = None; self.Y_ = None; self.loghyp_=None
         self.X_shared = None; self.Y_shared = None; self.loghyp = None
         self.X = None; self.Y = None
         self.K = None; self.iK = None; self.beta = None;
@@ -74,7 +76,7 @@ class GP(object):
         utils.print_with_stamp('Finished initialising GP',self.name)
     
     def set_dataset(self,X_dataset,Y_dataset):
-        utils.print_with_stamp('Updating GP dataset',self.name)
+        #utils.print_with_stamp('Updating GP dataset',self.name)
         # ensure we don't change the number of input and output dimensions ( the number of samples can change)
         if self.X_ is not None:
             assert self.X_.shape[1] == X_dataset.shape[1]
@@ -105,19 +107,22 @@ class GP(object):
         X_ = self.X_ if len(self.angle_idims) == 0 else gTrig_np(self.X_, self.angle_idims)
         Y_ = self.Y_ if len(self.angle_idims) == 0 else gTrig_np(self.Y_, self.angle_odims)
         
-        # now we create symbolic shared variables ( borrowing the memory from the numpy arrays)
+        # now we create symbolic shared variables
         if self.X_shared is None:
-            self.X_shared = S(self.X_,name='X', borrow=True)
+            self.X_shared = S(self.X_,name='X')
         else:
-            self.X_shared.set_value(self.X_, borrow = True)
+            self.X_shared.set_value(self.X_)
         if self.Y_shared is None:
-            self.Y_shared = S(self.Y_,name='Y', borrow=True)
+            self.Y_shared = S(self.Y_,name='Y')
         else:
-            self.Y_shared.set_value(self.Y_, borrow = True)
+            self.Y_shared.set_value(self.Y_)
 
         # set the X and Y variables
         self.X = self.X_shared
         self.Y = self.Y_shared
+        
+        # init log hyperparameters
+        self.init_loghyp()
 
         # convert angle dimensions to cartesian coordinates
         if len(self.angle_idims) > 0:
@@ -128,30 +133,36 @@ class GP(object):
             utils.print_with_stamp('Converting angle dimensions in training dataset outputs to cartesian',self.name)
             self.Y = gTrig(self.Y_shared, self.angle_odims, E)
 
-        # if we have a compiled log likelihood function
-        # initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
-        self.loghyp_ = np.zeros((odims,idims+2))
-        if theano.config.floatX == 'float32':
-            self.loghyp_ = self.loghyp_.astype(np.float32)
-        self.loghyp_[:,:idims] = X_.std(0,ddof=1)
-        self.loghyp_[:,idims] = Y_.std(0,ddof=1)
-        self.loghyp_[:,idims+1] = 0.1*self.loghyp_[:,idims]
-        self.loghyp_ = np.log(self.loghyp_)
-
-        # this creates one theano shared variable for the loghyperparameters of each output dimension, separately
-        if self.loghyp is None:
-            self.loghyp = S(self.loghyp_,name='loghyp', borrow=True)
-        else:
-            self.loghyp.set_value(self.loghyp_, borrow = True)
-
         # we should be saving, since we updated the trianing dataset
         self.state_changed = True
+
+    def init_loghyp(self,reinit=False):
+        idims = self.idims; odims = self.odims; 
+        # initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
+        if self.loghyp_ is None:
+            reinit = True
+            self.loghyp_ = np.zeros((odims,idims+2))
+
+        if reinit:
+            X_ = self.X_; Y_ = self.Y_
+            self.loghyp_[:,:idims] = X_.std(0,ddof=1)
+            self.loghyp_[:,idims] = Y_.std(0,ddof=1)
+            self.loghyp_[:,idims+1] = 0.1*self.loghyp_[:,idims]
+            self.loghyp_ = np.log(self.loghyp_)
+
+        self.set_loghyp(self.loghyp_)
 
     def set_loghyp(self, loghyp):
         loghyp = loghyp.reshape(self.loghyp_.shape)
         if theano.config.floatX == 'float32':
             loghyp = loghyp.astype(np.float32)
-        np.copyto(self.loghyp_,loghyp)
+        
+        self.loghyp_ = loghyp
+        # this creates one theano shared variable for the log hyperparameters
+        if self.loghyp is None:
+            self.loghyp = S(self.loghyp_,name='loghyp')
+        else:
+            self.loghyp.set_value(self.loghyp_)
 
     def get_params(self, symbolic=True):
         if symbolic:
@@ -160,6 +171,13 @@ class GP(object):
         else:
             retvars = [self.loghyp_,self.X_, self.Y_]
             return retvars
+
+    def set_params(self, params):
+        loghyp = params[0]
+        inputs = params[1]
+        targets = params[2]
+        self.set_dataset(inputs,targets)
+        self.set_loghyp(loghyp)
 
     def init_log_likelihood(self):
         utils.print_with_stamp('Initialising expression graph for log likelihood',self.name)
@@ -173,50 +191,45 @@ class GP(object):
         nlml = [[]]*odims
         dnlml = [[]]*odims
         covs = (cov.SEard, cov.Noise)
+        N = self.X.shape[0]
         for i in xrange(odims):
             # initialise the (before compilation) kernel function
-            loghyps = (self.loghyp[i][:idims+1],self.loghyp[i][idims+1])
+            loghyps = (self.loghyp[i,:idims+1],self.loghyp[i,idims+1])
             self.kernel_func[i] = partial(cov.Sum, loghyps, covs)
 
             # We initialise the kernel matrices (one for each output dimension)
             self.K[i] = self.kernel_func[i](self.X)
-            self.K[i].name = 'K_%d'%(i)
             self.iK[i] = matrix_inverse(psd(self.K[i]))
-            self.iK[i].name = 'iK_%d'%(i)
             Yi = self.Y[:,i]
             self.beta[i] = self.iK[i].dot(Yi)
-            self.beta[i].name = 'beta_%d'%(i)
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
-            nlml[i] = 0.5*(Yi.T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + self.N*T.log(2*np.pi) )
+            nlml[i] = 0.5*(Yi.T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + N*T.log(2*np.pi) )
 
         nlml = T.stack(nlml)
+        if self.snr_penalty is not None:
+            penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
+            nlml += self.snr_penalty(self.loghyp)
+
         # Compute the gradients for the sum of nlml for all output dimensions
         dnlml = T.jacobian(nlml.sum(),self.loghyp)
 
         # Compile the theano functions
         utils.print_with_stamp('Compiling log likelihood',self.name)
-        self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode)
+        self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
         utils.print_with_stamp('Compiling jacobian of log likelihood',self.name)
-        self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode)
+        self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
         self.state_changed = True # for saving
     
     def init_predict(self, derivs=False):
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
         # Note that this handles n_samples inputsa
-        # initialize variable for input vector ( iniput mean in the ccase of unceratin inputs )
-        x_mean=None; x_cov=None
-        if theano.config.floatX == 'float32':
-            x_mean = T.fvector('x')      # n_samples x idims
-            # initialize variable for input covariance 
-            if self.uncertain_inputs:
-                x_cov = T.fmatrix('x_cov')  # n_samples x idims x idims
-        else:
-            x_mean = T.dvector('x')      # n_samples x idims
-            # initialize variable for input covariance 
-            if self.uncertain_inputs:
-                x_cov = T.dmatrix('x_cov')  # n_samples x idims x idims
+        # initialize variable for input vector ( input mean in the case of uncertain inputs )
+        x_mean = T.vector('x')
+        # initialize variable for input covariance 
+        if self.uncertain_inputs:
+            x_cov = T.matrix('x_cov')
         input_vars = [x_mean] if x_cov is None else [x_mean,x_cov]
         
         # get prediction
@@ -229,7 +242,7 @@ class GP(object):
         if not derivs:
             # compile prediction
             utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-            self.predict_ = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode)
+            self.predict_ = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             self.state_changed = True # for saving
         else:
             # compute the derivatives wrt the input vector ( or input mean in the case of uncertain inputs)
@@ -243,10 +256,12 @@ class GP(object):
             if self.hyperparameter_gradients:
                 # compute the derivatives wrt the hyperparameters
                 for p in prediction:
-                    prediction_derivatives.append( T.jacobian( p.flatten(), self.loghyp ).flatten(2) )
+                    prediction_derivatives.append( T.jacobian( p.flatten(), self.loghyp ) )
+                    prediction_derivatives.append( T.jacobian( p.flatten(), self.X ) )
+                    prediction_derivatives.append( T.jacobian( p.flatten(), self.Y ) )
             #prediction_derivatives contains  [p1, p2, ..., pn, dp1/dx_mean, dp2/dx_mean, ..., dpn/dx_mean, dp1/dx_cov, dp2/dx_cov, ..., dpn/dx_cov, dp1/dloghyp, dp2/dloghyp, ..., dpn/loghyp]
             utils.print_with_stamp('Compiling mean and variance of prediction with jacobians',self.name)
-            self.predict_d_ = F(input_vars, prediction_derivatives, name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode)
+            self.predict_d_ = F(input_vars, prediction_derivatives, name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             self.state_changed = True # for saving
 
     def predict_symbolic(self,x_mean,x_cov):
@@ -265,7 +280,7 @@ class GP(object):
             mean[i] = k.dot(self.beta[i])
             variance[i] = self.kernel_func[i](m,all_pairs=False).flatten() - k.dot( self.iK[i] ).dot(k.T)  #TODO verify this computation
 
-        # compile the prediction function
+        # reshape output variables
         M = T.stack(mean).T
         S = T.diag(T.stack(variance).T.flatten())
 
@@ -282,18 +297,12 @@ class GP(object):
                 self.init_predict(derivs=derivs)
             predict = self.predict_d_
 
-        # cast to float 32 if necessary
-        if theano.config.floatX == 'float32':
-            x_mean = x_mean.astype(np.float32)
-
         odims = self.odims
         idims = self.D
         res = None
         if self.uncertain_inputs:
             if x_cov is None:
                 x_cov = np.zeros((idims,idims))
-            if theano.config.floatX == 'float32':
-                x_cov = x_cov.astype(np.float32).reshape((idims,idims))
             res = predict(x_mean, x_cov)
         else:
             res = predict(x_mean)
@@ -301,11 +310,11 @@ class GP(object):
     
     def loss(self,loghyp):
         self.set_loghyp(loghyp)
-        res = self.dnlml()
-        nlml = np.array(res[0]).sum()
-        dnlml = np.array(res[1]).flatten()
+        nlml,dnlml = self.dnlml()
+        nlml = nlml.sum()
+        dnlml = dnlml.flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
-        res = (nlml.astype(np.float64),dnlml.astype(np.float64)) if theano.config.floatX == 'float32' else (nlml,dnlml)
+        res = (nlml.astype(np.float64), dnlml.astype(np.float64))
         #utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
         utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
         return res
@@ -317,9 +326,9 @@ class GP(object):
         print (loghyp0)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         try:
-            opt_res = minimize(self.loss, loghyp0, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 300})
+            opt_res = minimize(self.loss, loghyp0, jac=True, method=self.min_method, tol=1e-12, options={'maxiter': 500})
         except ValueError:
-            opt_res = minimize(self.loss, loghyp0, jac=True, method='CG', tol=1e-9, options={'maxiter': 300})
+            opt_res = minimize(self.loss, loghyp0, jac=True, method='CG', tol=1e-12, options={'maxiter': 500})
 
         #opt_res = basinhopping(self.loss, self.loghyp_, niter=2, minimizer_kwargs = {'jac': True, 'method': self.min_method, 'tol': 1e-9, 'options': {'maxiter': 250}})
         print ''
@@ -365,7 +374,7 @@ class GP(object):
         self.kernel_func = state[17]
 
     def get_state(self):
-        return (self.X_shared,self.Y_shared,self.X,self.Y,self.angle_idims,self.angle_odims,self.loghyp,self.K,self.iK,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func)
+        return [self.X_shared,self.Y_shared,self.X,self.Y,self.angle_idims,self.angle_odims,self.loghyp,self.K,self.iK,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func]
 
 class GP_UI(GP):
     def __init__(self, X_dataset, Y_dataset, name = 'GP_UI', profile=False, angle_idims = [], angle_odims = [], hyperparameter_gradients=False):
@@ -394,18 +403,17 @@ class GP_UI(GP):
         z_=[[]]*odims
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
-            iL = T.diag(T.exp(-self.loghyp[i][:idims]))
+            iL = T.diag(T.exp(-self.loghyp[i,:idims]))
             inp = zeta.dot(iL)  # Note this is assuming a diagonal scaling matrix on the kernel
 
             # predictive mean ( which depends on input covariance )
             B = iL.dot(s).dot(iL) + T.eye(idims)
             t = inp.dot(matrix_inverse(B))
-            sf2 = T.exp(2*self.loghyp[i][idims])
+            sf2 = T.exp(2*self.loghyp[i,idims])
             c = sf2/T.sqrt(det(B))
             l = T.exp(-0.5*T.sum(inp*t,1))
             lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
             mean = T.sum(lb)*c;
-            mean.name = 'M_%d'%(i)
             M.append(mean.flatten())
 
             # inv(s) times input output covariance (Eq 2.70)
@@ -414,8 +422,8 @@ class GP_UI(GP):
             V.append(v)
             
             # predictive covariance
-            logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,1)
-            Lambda[i] = T.exp(-2*self.loghyp[i][:idims])
+            logk[i] = 2*self.loghyp[i,idims] - 0.5*T.sum(inp*inp,1)
+            Lambda[i] = T.exp(-2*self.loghyp[i,:idims])
             z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
@@ -424,16 +432,14 @@ class GP_UI(GP):
                 n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(R).dot(s))
                 t2 = 1.0/T.sqrt(det(R))
                 Q = t2*T.exp( n2 )
-                Q.name = 'Q_%d%d'%(i,j)
 
                 # Eq 2.55
                 m2 = matrix_dot(self.beta[i], Q, self.beta[j].T)
                 if i == j:
-                    iKi = self.iK[i].dot(T.eye(self.N))
-                    m2 =  m2 - T.sum(iKi*Q) + T.exp(2*self.loghyp[i][idims])
+                    iKi = self.iK[i].dot(T.eye(self.iK[i].shape[0]))
+                    m2 =  m2 - T.sum(iKi*Q) + T.exp(2*self.loghyp[i,idims])
                 else:
                     M2[j*odims+i] = m2.flatten()
-                m2.name = 'M2_%d%d'%(i,j)
                 M2[i*odims+j] = m2.flatten()
 
         M = T.stack(M).T.flatten()
@@ -503,8 +509,8 @@ class SPGP(GP):
             nlml_sp = [[]]*odims
             dnlml_sp = [[]]*odims
             for i in xrange(odims):
-                sf2 = T.exp(2*self.loghyp[i][idims])
-                sn2 = T.exp(2*self.loghyp[i][idims+1])
+                sf2 = T.exp(2*self.loghyp[i,idims])
+                sn2 = T.exp(2*self.loghyp[i,idims+1])
                 Kmm = self.kernel_func[i](self.X_sp)
                 Kmn = self.kernel_func[i](self.X_sp,self.X)
                 Qnn =  Kmn.T.dot((matrix_inverse(psd(Kmm))).dot(Kmn))
@@ -524,7 +530,7 @@ class SPGP(GP):
                 self.Bmm[i] = Bmm
                 self.beta_sp[i] = Bmn_.dot(Yi)                  # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-1*Y
 
-                nlml_sp[i] = 0.5*( T.sum(Yi**2) - (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.N*T.log(2*np.pi) )/self.N
+                nlml_sp[i] = 0.5*( T.sum(Yi**2) - (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + self.X.shape[0]*T.log(2*np.pi) )/self.X.shape[0]
                 # Compute the gradients for each output dimension independently wrt the hyperparameters AND the inducing input
                 # locations Xb
                 # TODO include the log hyperparameters in the optimization
@@ -535,9 +541,9 @@ class SPGP(GP):
             dnlml_sp = T.stack(dnlml_sp)
             # Compile the theano functions
             utils.print_with_stamp('Compiling FITC log likelihood',self.name)
-            self.nlml_sp = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
+            self.nlml_sp = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             utils.print_with_stamp('Compiling jacobian of FITC log likelihood',self.name)
-            self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode)
+            self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
 
     def predict_symbolic(self,x_mean,x_cov):
         if self.N < self.n_inducing:
@@ -560,7 +566,7 @@ class SPGP(GP):
             iB = matrix_inverse(psd(self.Bmm[i]))
             variance[i] = self.kernel_func[i](m,all_pairs=False) - (k*(k.dot(iK) - k.dot(iB)) ).sum(axis=1)
 
-        # compile the prediction function
+        # reshape the prediction output variables
         M = T.stack(mean).T
         S = T.stack(variance).T
         S ,updts = theano.scan(fn=lambda Si: T.diag(Si),sequences=[S], strict=True)
@@ -657,16 +663,15 @@ class SPGP_UI(SPGP,GP_UI):
         z_=[[]]*odims
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
-            iL = T.exp(-self.loghyp[i][:idims])
+            iL = T.exp(-self.loghyp[i,:idims])
             inp = zeta*iL  # Note this is assuming a diagonal scaling matrix on the kernel
 
             # predictive mean ( which depends on input covariance )
             B = iL[:,None]*s*iL + T.eye(idims)
-            (t,c), updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[T.exp(2*self.loghyp[i][idims])], strict=True)
+            (t,c), updts = theano.scan(fn=M_helper,sequences=[inp,B], non_sequences=[T.exp(2*self.loghyp[i,idims])], strict=True)
             l = T.exp(-0.5*T.sum(inp*t,2))
             lb = l*self.beta_sp[i] # beta should have been precomputed in init_log_likelihood
             mean = T.sum(lb,1)*c;
-            mean.name = 'M_%d'%(i)
             M.append(mean)
 
             # inv(x_cov) times input output covariance (Eq 2.70)
@@ -675,25 +680,23 @@ class SPGP_UI(SPGP,GP_UI):
             V.append(v)
             
             # predictive covariance
-            logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,2)
-            Lambda[i] = T.exp(-2*self.loghyp[i][:idims])
+            logk[i] = 2*self.loghyp[i,idims] - 0.5*T.sum(inp*inp,2)
+            Lambda[i] = T.exp(-2*self.loghyp[i,:idims])
             z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 R = s*(Lambda[i] + Lambda[j]) + T.eye(idims)
     
                 (Q,t),updts = theano.scan(fn=M2_helper, sequences=(logk[i],logk[j],z_[i],z_[j],R,s))
-                Q.name = 'Q_%d%d'%(i,j)
 
                 # Eq 2.55
                 m2 = self.beta[i].dot(Q).dot(self.beta[j].T)
                 if i == j:
                     iKi = matrix_inverse(psd(self.Kmm[i])).dot(T.eye(self.n_inducing)) - matrix_inverse(psd(self.Bmm[i])).dot(T.eye(self.n_inducing))
-                    m2 =  t*(m2 - T.sum(iKi*Q,(1,2))) + T.exp(2*self.loghyp[i][idims])
+                    m2 =  t*(m2 - T.sum(iKi*Q,(1,2))) + T.exp(2*self.loghyp[i,idims])
                 else:
                     m2 = t*m2
                     M2[j*odims+i] = m2
-                m2.name = 'M2_%d%d'%(i,j)
                 M2[i*odims+j] = m2
 
         M = T.stack(M).T
@@ -711,6 +714,38 @@ class RBFGP(GP_UI):
         if self.sat_func is not None:
             name += '_sat'
         super(RBFGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,angle_idims=angle_idims,angle_odims=angle_odims,hyperparameter_gradients=True)
+
+    def set_state(self,state):
+        super(RBFGP,self).set_state(state[:-1])
+        self.loghyp_full = state[-1]
+
+    def get_state(self):
+        state = super(RBFGP,self).get_state()
+        state.append(self.loghyp_full)
+        return state
+    
+    def get_params(self, symbolic=True):
+        if symbolic:
+            retvars = [self.loghyp_full,self.X,self.Y]
+            return retvars
+        else:
+            retvars = [self.loghyp_,self.X_, self.Y_]
+            return retvars
+    
+    def set_loghyp(self, loghyp):
+        loghyp = loghyp.reshape(self.loghyp_.shape)
+        if theano.config.floatX == 'float32':
+            loghyp = loghyp.astype(np.float32)
+        
+        self.loghyp_ = loghyp
+        # this creates one theano shared variable for the log hyperparameters
+        if self.loghyp is None:
+            self.loghyp_full = S(self.loghyp_,name='loghyp')
+            self.loghyp = T.zeros_like(self.loghyp_full)
+            self.loghyp = T.set_subtensor(self.loghyp[:,:-2], self.loghyp_full[:,:-2])
+            self.loghyp = T.set_subtensor(self.loghyp[:,-2:], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:]))
+        else:
+            self.loghyp_full.set_value(self.loghyp_)
 
     def predict_symbolic(self,x_mean,x_cov):
         idims = self.idims
@@ -735,18 +770,17 @@ class RBFGP(GP_UI):
         z_=[[]]*odims
         for i in xrange(odims):
             # rescale input dimensions by inverse lengthscales
-            iL = T.diag(T.exp(-self.loghyp[i][:idims]))
+            iL = T.diag(T.exp(-self.loghyp[i,:idims]))
             inp = zeta.dot(iL)  # Note this is assuming a diagonal scaling matrix on the kernel
 
             # predictive mean ( which depends on input covariance )
             B = iL.dot(s).dot(iL) + T.eye(idims)
             t = inp.dot(matrix_inverse(B))
-            sf2 = T.exp(2*self.loghyp[i][idims])
+            sf2 = T.exp(2*self.loghyp[i,idims])
             c = sf2/T.sqrt(det(B))
             l = T.exp(-0.5*T.sum(inp*t,1))
             lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
             mean = T.sum(lb)*c;
-            mean.name = 'M_%d'%(i)
             M.append(mean.flatten())
 
             # inv(s) times input output covariance (Eq 2.70)
@@ -755,8 +789,8 @@ class RBFGP(GP_UI):
             V.append(v)
             
             # predictive covariance
-            logk[i] = 2*self.loghyp[i][idims] - 0.5*T.sum(inp*inp,1)
-            Lambda[i] = T.exp(-2*self.loghyp[i][:idims])
+            logk[i] = 2*self.loghyp[i,idims] - 0.5*T.sum(inp*inp,1)
+            Lambda[i] = T.exp(-2*self.loghyp[i,:idims])
             z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
@@ -765,11 +799,9 @@ class RBFGP(GP_UI):
                 n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(R).dot(s))
                 t2 = 1.0/T.sqrt(det(R))
                 Q = t2*T.exp( n2 )
-                Q.name = 'Q_%d%d'%(i,j)
 
                 # Eq 2.55
                 m2 = matrix_dot(self.beta[i],Q,self.beta[j].T)
-                m2.name = 'M2_%d%d'%(i,j)
                 if i == j:
                     m2 = m2 + 1e-6
                 else:

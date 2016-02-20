@@ -70,7 +70,6 @@ def gSat(m,v,i=None,e=None,derivs=False):
     Q = T.vertical_stack(T.eye(D), 3*T.eye(D))
     ma = Q.dot(m)
     va = Q.dot(v).dot(Q.T)
-    va = (va + va.T)/2
     
     # compute the joint distribution of 9*sin(x)/8 and sin(3*x)/8
     i1 = T.concatenate([i, i+D]);
@@ -82,7 +81,7 @@ def gSat(m,v,i=None,e=None,derivs=False):
     M = M2.dot(P)
     # variance
     V = P.T.dot(V2).dot(P)
-    V = (V + V.T)/2
+
     # inv input covariance dot input output covariance
     C = Q.T.dot(C2).dot(P)
     

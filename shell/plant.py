@@ -23,6 +23,8 @@ class ODEPlant(object):
         self.noise = noise
         self.async = False
         self.solver = ode(self.dynamics).set_integrator(integrator,atol=atol,rtol=rtol)
+        self.set_state(self.x0)
+        self.x = np.array(self.solver.y)
 
     def apply_control(self,u):
         self.u = np.array(u)[:,None]

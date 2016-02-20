@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.optimize import minimize, basinhopping
+import theano
 from utils import print_with_stamp,gTrig_np
 from time import time, sleep
 
@@ -25,22 +27,64 @@ class ExperienceDataset(object):
         self.curr_episode += 1
 
 class EpisodicLearner(object):
-    def __init__(self, plant, policy, cost=None, angle_idims=None, experience = None, async_plant=True, name='EpisodicLearner'):
+    def __init__(self, plant, policy, cost=None, angle_idims=None, discount=1, experience = None, async_plant=True, name='EpisodicLearner'):
         self.name = name
         self.min_method = "L-BFGS-B"
         self.n_episodes = 0
         self.experience = ExperienceDataset() if experience is None else experience
         self.plant = plant
         self.policy = policy
-        self.cost = cost
         self.angle_idims = angle_idims
         self.async_plant = async_plant
+        self.cost=None
+        if cost is not None:
+            self.init_cost(cost)
+        self.H = 10
+        self.discount = 1
+
+    def load(self):
+        # TODO use saved filenames to load the appropriate policy and dynamics model
+        # TODO load experience dataset
         pass
+
+    def save(self):
+        self.policy.save()
+        self.dynamics_model.save()
+        #TODO save filenames of these
+
+    def set_state(self,state):
+        self.X_shared = state[0]
+        self.Y_shared = state[1]
+        self.X = state[2]
+        self.Y = state[3]
+        self.angle_idims = state[4]
+        self.angle_odims = state[5]
+        self.loghyp = state[6]
+        self.K = state[7]
+        self.iK = state[8]
+        self.beta = state[9]
+        self.set_dataset(state[10],state[11])
+        self.set_loghyp(state[12])
+        self.nlml = state[13]
+        self.dnlml = state[14]
+        self.predict_ = state[15]
+        self.predict_d_ = state[16]
+
+    def get_state(self):
+        return (self.X_shared,self.Y_shared,self.X,self.Y,self.angle_idims,self.angle_odims,self.loghyp,self.K,self.iK,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
+
+    def init_cost(self,cost):
+        self.cost_symbolic = cost
+        print_with_stamp('Compiling cost function',self.name)
+        mx = theano.tensor.fvector('mx') if theano.config.floatX == 'float32' else theano.tensor.dvector('mx')
+        Sx = theano.tensor.fmatrix('Sx') if theano.config.floatX == 'float32' else theano.tensor.dmatrix('Sx')
+        self.cost = theano.function((mx,Sx),self.cost_symbolic(mx,Sx), allow_input_downcast=True)
 
     def apply_controller(self,H=float('inf')):
         print_with_stamp('Starting data collection run',self.name)
         if H < float('inf'):
             print_with_stamp('Running for %f seconds'%(H),self.name)
+            self.H = H
 
         # mark the start of the episode
         self.experience.new_episode()
@@ -49,6 +93,7 @@ class EpisodicLearner(object):
         if self.async_plant:
             self.plant.start()
         x_t, t0 = self.plant.get_state()
+        Sx_t = np.zeros((x_t.shape[0],x_t.shape[0]))
         L_noise = np.linalg.cholesky(self.plant.noise)
         if self.plant.noise is not None:
             # randomize state
@@ -69,7 +114,7 @@ class EpisodicLearner(object):
             self.plant.apply_control(u_t)
             if self.cost is not None:
                 #  get cost:
-                c_t = self.cost.evaluate(mx=x_t,mu=u_t) 
+                c_t = self.cost(x_t, Sx_t) 
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
             else:
@@ -91,9 +136,9 @@ class EpisodicLearner(object):
         
         # add last state to experience
         x_t_ = gTrig_np(x_t[None,:], self.angle_idims).flatten()
-        u_t = self.policy.evaluate(t, x_t_)[0].flatten()
+        u_t = np.zeros_like(u_t)
         if self.cost is not None:
-            c_t = self.cost.evaluate(mx=x_t,mu=u_t) 
+            c_t = self.cost(x_t, Sx_t)
             self.experience.add_sample(t,x_t,u_t,c_t)
         else:
             self.experience.append(t,x_t,u_t,0)
@@ -103,17 +148,51 @@ class EpisodicLearner(object):
         self.plant.stop()
         self.n_episodes += 1
 
-    def train_policy(self):
+    def train_policy(self, H=None):
+        if H is not None:
+            self.H = H
         # optimize value wrt to the policy parameters
-        print_with_stamp('Training policy parameters',self.name)
-        opt_res = minimize(self.loss, self.policy.get_params(), jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
-        print_with_stamp('Done training',self.name)
+        print_with_stamp('Training policy parameters.', self.name)# Starting value [%f]'%(self.value(derivs=False)),self.name)
+        p0 = self.wrap_policy_params(self.policy.get_params(symbolic=False))
+        opt_res = minimize(self.loss, p0, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        self.policy.set_params(self.unwrap_policy_params(opt_res.x))
+        print '' 
+        print_with_stamp('Done training. New value [%f]'%(self.value(derivs=False)),self.name)
+
+    def wrap_policy_params(self,p):
+        # flatten out and concatenate the parameters
+        P = []
+        for pi in p:
+            P.append(pi.T.flatten())
+        P = np.concatenate(P)
+        return P
+        
+    def unwrap_policy_params(self,P):
+        # get the correct sizes for the parameters
+        params_ = self.policy.get_params(symbolic=False)
+        p = []
+        i = 0
+        for pi in params_:
+            # get the number of elemebt for current parameter
+            npi = pi.size
+            # select corresponding elements and reshape into appropriate shape
+            p.append( P[i:i+npi].reshape(pi.T.shape).T )
+            # set index to the beginning  of next parameter
+            i += npi
+        return p
 
     def loss(self, policy_parameters):
         # set policy parameters
-        self.policy.update(policy_parameters)
+        self.policy.set_params(self.unwrap_policy_params(policy_parameters))
 
         # compute value + derivatives
-        v,dv = self.value_d()
+        v,dv = self.value(derivs=True)
 
+        if theano.config.floatX == 'float32':
+            v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
+        #print ' '
+        print_with_stamp('Current value: %s'%(str(v)),self.name,True)
+        #print dv
+        #print ''
+        #raw_input()
         return v,dv

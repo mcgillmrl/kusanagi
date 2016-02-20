@@ -1,12 +1,42 @@
 import numpy as np
-from scipy.integrate import ode
+import theano
 from shell.plant import ODEPlant, PlantDraw
-from ghost.cost import Cost, lossGeneric
-from util import augment
-from threading import Thread
-import thirdparty.mtTkinter as tk
-from utils import print_with_stamp
+from ghost.cost import quadratic_saturating_loss
+from utils import print_with_stamp, gTrig_np, gTrig2
 from matplotlib import pyplot as plt
+
+def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
+    angle_dims = params['angle_dims']
+    cw = params['width']
+    if type(cw) is not list:
+        cw = [cw]
+    b = params['expl']
+    ell = params['pendulum_length']
+    target = np.array(params['target'])
+    D = target.size
+    
+    #convert angle dimensions
+    targeta = gTrig_np(target,angle_dims).flatten()
+    Da = targeta.size
+    mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
+    # build cost scaling function
+    Q = np.zeros((Da,Da))
+    Q[0,0] = 1; Q[0,-2] = ell; Q[-2,0] = ell; Q[-2,-2] = ell**2; Q[-1,-1]=ell**2
+    
+    M_cost = [] ; S_cost = []
+    
+    # total cost is the sum of costs with different widths
+    for c in cw:
+        loss_params = {}
+        loss_params['target'] = targeta
+        loss_params['Q'] = Q/c**2
+        m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
+        if b is not None:
+            m_cost += b*theano.tensor.sqrt(s_cost) # UCB  exploration term
+        M_cost.append(m_cost)
+        S_cost.append(s_cost)
+    
+    return sum(M_cost), sum(S_cost)
 
 class Cartpole(ODEPlant):
     def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Cartpole', integrator='dopri5', atol=1e-12, rtol=1e-12):
@@ -33,21 +63,6 @@ class Cartpole(ODEPlant):
         dz[3] = z[2]
 
         return dz
-
-class CartpoleCost(Cost):
-    def __init__(self, target, pendulum_length, angi):
-        D0 = len(target)
-        D1 = D0 + 2*len(angi)
-        Q = self.getQ(pendulum_length,D0,D1)
-        super(CartpoleCost,self).__init__(lossGeneric,target=target,Q=Q,angi=angi)
-
-    def getQ(self, pendulum_length, D0, D1):
-        Q = np.zeros((D1,D1))
-        i = np.array([0,D0])[:,None]; 
-        v = np.array([[1,pendulum_length]])
-        Q[i,i.T] = v.T.dot(v)
-        Q[D0+1,D0+1] = pendulum_length**2
-        return Q
 
 class CartpoleDraw(PlantDraw):
     def __init__(self, cartpole_plant, refresh_period=100, name='CartpoleDraw'):
