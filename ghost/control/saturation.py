@@ -65,7 +65,7 @@ def gSat(m,v,i=None,e=None,derivs=False):
         e = theano.shared(np.array(e), borrow=True).flatten()
     elif e.__class__ is np.array:
         e = theano.shared(e, borrow=True).flatten()
-    
+    e = T.cast(e,m.dtype)
     # construct joint distribution of x and 3*x
     Q = T.vertical_stack(T.eye(D), 3*T.eye(D))
     ma = Q.dot(m)

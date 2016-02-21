@@ -6,8 +6,8 @@ from utils import print_with_stamp,gTrig2
 
 def linear_loss(mx,Sx,params,absolute=True):
     # Quadratic penalty function
-    Q = T.constant(params['Q'])
-    target = T.constant(params['target'])
+    Q = T.constant(params['Q'],dtype=mx.dtype)
+    target = T.constant(params['target'],dtype=mx.dtype)
     delta = mx-target
     SxQ = Sx.dot(Q)
     m_cost = Q.T.dot(delta)
@@ -17,8 +17,8 @@ def linear_loss(mx,Sx,params,absolute=True):
 
 def quadratic_loss(mx,Sx,params):
     # Quadratic penalty function
-    Q = T.constant(params['Q'])
-    target = T.constant(params['target'])
+    Q = T.constant(params['Q'],dtype=mx.dtype)
+    target = T.constant(params['target'],dtype=mx.dtype)
     delta = mx-target
     deltaQ = delta.T.dot(Q)
     SxQ = Sx.dot(Q)
@@ -29,8 +29,8 @@ def quadratic_loss(mx,Sx,params):
 
 def quadratic_saturating_loss(mx,Sx,params):
     # Quadratic penalty function
-    Q = T.constant(params['Q'])
-    target = T.constant(params['target'])
+    Q = T.constant(params['Q'],dtype=mx.dtype)
+    target = T.constant(params['target'],dtype=mx.dtype)
     delta = mx-target
     deltaQ = delta.T.dot(Q)
     SxQ = Sx.dot(Q)

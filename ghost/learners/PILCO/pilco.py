@@ -138,16 +138,16 @@ class PILCO(EpisodicLearner):
             self.dynamics_model.set_dataset(X,Y)
  
 
-        self.dynamics_model.set_loghyp( np.array([[ 5.509997626011774,   5.695797298947197,   5.692015197025450,   5.638201671096178],
-                                                  [ 2.172712533907143,   4.666315918776204,   4.612552250383755,   4.942292180454226],
-                                                  [ 5.146257432313829,   2.296298649465123,   2.456701520947445,   2.614396832176411],
-                                                  [ 2.890900478963427,   0.214158569334003,   0.224852498280747,   0.493471679361221],
-                                                  [ 1.797786347384082,   1.586977710450885,  -0.058171149174515,  -0.345601213254841],
-                                                  [ 4.069820471633279,   3.013197670171895,   2.934665512611971,   3.616775778040698],
-                                                  [-0.984097642284717,   0.137890342258600,   1.299603816102084,  -0.611523812016797],
-                                                  [-4.115382429098694,  -4.115897287345494,  -3.168863634366222,  -4.247869488525884]]).T);
+        #self.dynamics_model.set_loghyp( np.array([[ 5.509997626011774,   5.695797298947197,   5.692015197025450,   5.638201671096178],
+        #                                          [ 2.172712533907143,   4.666315918776204,   4.612552250383755,   4.942292180454226],
+        #                                          [ 5.146257432313829,   2.296298649465123,   2.456701520947445,   2.614396832176411],
+        #                                          [ 2.890900478963427,   0.214158569334003,   0.224852498280747,   0.493471679361221],
+        #                                          [ 1.797786347384082,   1.586977710450885,  -0.058171149174515,  -0.345601213254841],
+        #                                          [ 4.069820471633279,   3.013197670171895,   2.934665512611971,   3.616775778040698],
+        #                                          [-0.984097642284717,   0.137890342258600,   1.299603816102084,  -0.611523812016797],
+        #                                          [-4.115382429098694,  -4.115897287345494,  -3.168863634366222,  -4.247869488525884]]).T);
 
-        #self.dynamics_model.train()
+        self.dynamics_model.train()
         self.dynamics_model.save()
         print_with_stamp('Done training dynamics model',self.name)
 
@@ -161,12 +161,14 @@ class PILCO(EpisodicLearner):
         # setp initial state
         mx = np.array(self.plant.x0)
         Sx = np.array(self.plant.S0)
+
+        H_steps = np.ceil(self.H/self.plant.dt)
         
         if not derivs:
             # self.H is the number of steps to rollout ( finite horizon )
-            ret = self.rollout(mx,Sx,self.H,discount)
+            ret = self.rollout(mx,Sx,H_steps,self.discount)
             return ret[0].sum()
         else:
-            ret = self.policy_gradients(mx,Sx,self.H,discount)
+            ret = self.policy_gradients(mx,Sx,H_steps,self.discount)
             # first return argument is the value of the policy, second are the gradients wrt the policy params wrapped into single vector 
             return [ret[0],self.wrap_policy_params(ret[1:])]

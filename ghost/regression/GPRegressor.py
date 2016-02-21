@@ -191,7 +191,7 @@ class GP(object):
         nlml = [[]]*odims
         dnlml = [[]]*odims
         covs = (cov.SEard, cov.Noise)
-        N = self.X.shape[0]
+        N = T.cast(self.X.shape[0], self.X.dtype)
         for i in xrange(odims):
             # initialise the (before compilation) kernel function
             loghyps = (self.loghyp[i,:idims+1],self.loghyp[i,idims+1])
@@ -205,7 +205,7 @@ class GP(object):
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
-            nlml[i] = 0.5*(Yi.T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + N*T.log(2*np.pi) )
+            nlml[i] = 0.5*(Yi.T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + N*T.log(np.asarray(2*np.pi, self.X.dtype))) 
 
         nlml = T.stack(nlml)
         if self.snr_penalty is not None:
@@ -213,7 +213,7 @@ class GP(object):
             nlml += self.snr_penalty(self.loghyp)
 
         # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml = T.jacobian(nlml.sum(),self.loghyp)
+        dnlml = T.jacobian(nlml.sum(acc_dtype=nlml.dtype),self.loghyp)
 
         # Compile the theano functions
         utils.print_with_stamp('Compiling log likelihood',self.name)
@@ -713,6 +713,7 @@ class RBFGP(GP_UI):
         self.sat_func = sat_func
         if self.sat_func is not None:
             name += '_sat'
+        self.loghyp_full=None
         super(RBFGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,angle_idims=angle_idims,angle_odims=angle_odims,hyperparameter_gradients=True)
 
     def set_state(self,state):
@@ -739,7 +740,7 @@ class RBFGP(GP_UI):
         
         self.loghyp_ = loghyp
         # this creates one theano shared variable for the log hyperparameters
-        if self.loghyp is None:
+        if self.loghyp_full is None:
             self.loghyp_full = S(self.loghyp_,name='loghyp')
             self.loghyp = T.zeros_like(self.loghyp_full)
             self.loghyp = T.set_subtensor(self.loghyp[:,:-2], self.loghyp_full[:,:-2])
