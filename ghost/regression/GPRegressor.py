@@ -103,6 +103,8 @@ class GP(object):
             self.X.set_value(self.X_)
         if self.Y is None:
             self.Y = S(self.Y_,name='Y')
+        else:
+            self.Y.set_value(self.Y_)
 
         # init log hyperparameters
         self.init_loghyp()
@@ -174,12 +176,11 @@ class GP(object):
             # We initialise the kernel matrices (one for each output dimension)
             self.K[i] = self.kernel_func[i](self.X)
             self.iK[i] = matrix_inverse(psd(self.K[i]))
-            Yi = self.Y[:,i]
-            self.beta[i] = self.iK[i].dot(Yi)
+            self.beta[i] = self.iK[i].dot(self.Y[:,i])
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
-            nlml[i] = 0.5*(Yi.T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + N*T.log(np.asarray(2*np.pi, self.X.dtype))) 
+            nlml[i] = 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + N*T.log(np.asarray(2*np.pi, self.X.dtype))) 
 
         nlml = T.stack(nlml)
         if self.snr_penalty is not None:
@@ -201,7 +202,6 @@ class GP(object):
         # Note that this handles n_samples inputsa
         # initialize variable for input vector ( input mean in the case of uncertain inputs )
         mx = T.vector('mx')
-        Sx = None
         Sx = T.matrix('Sx')
         # initialize variable for input covariance 
         input_vars = [mx] if not self.uncertain_inputs else [mx,Sx]
