@@ -49,7 +49,6 @@ class EpisodicLearner(object):
 
     def save(self):
         self.policy.save()
-        self.dynamics_model.save()
         #TODO save filenames of these
 
     def set_state(self,state):
@@ -154,10 +153,11 @@ class EpisodicLearner(object):
         # optimize value wrt to the policy parameters
         print_with_stamp('Training policy parameters.', self.name)# Starting value [%f]'%(self.value(derivs=False)),self.name)
         p0 = self.wrap_policy_params(self.policy.get_params(symbolic=False))
-        opt_res = minimize(self.loss, p0, jac=True, method=self.min_method, tol=1e-6, options={'maxiter': 150})
+        opt_res = minimize(self.loss, p0, jac=True, method=self.min_method, tol=1e-6, options={'maxiter': 100})
         self.policy.set_params(self.unwrap_policy_params(opt_res.x))
         print '' 
         print_with_stamp('Done training. New value [%f]'%(self.value(derivs=False)),self.name)
+        self.save()
 
     def wrap_policy_params(self,p):
         # flatten out and concatenate the parameters
@@ -190,9 +190,6 @@ class EpisodicLearner(object):
 
         if theano.config.floatX == 'float32':
             v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
-        #print ' '
+
         print_with_stamp('Current value: %s'%(str(v)),self.name,True)
-        #print dv
-        #print ''
-        #raw_input()
         return v,dv

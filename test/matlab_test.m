@@ -26,7 +26,7 @@ if size(angi,1) > 0
     end
 end
 
-model.fcn = @gp2d;                % function for GP predictions
+model.fcn = @gp1d;                % function for GP predictions
 model.train = @train;             % function to train dynamics model
 trainOpt = [500 750];                % defines the max. number of line searches
 
@@ -36,14 +36,17 @@ else
     model.inputs = X;
 end
 model.targets = Y;
-model = model.train(model, [], trainOpt);  %  train dynamics GP
-model.hyp'
+model.induce = zeros(100,0,1);    % shared inducing inputs (sparse GP)
+
 Xtest = 10*(pyrand(D,n_test)' -0.5);
 Ytest = zeros(E,n_test)';
 Xatest = zeros(n_test,2*length(angi));
 for i=1:E
     Ytest(:,i) = i*f(Xtest) + 0.01*(pyrand(1,n_test) - 0.5)';
 end
+
+model = model.train(model, [], trainOpt);  %  train dynamics GP
+model.hyp'
 
 for i=1:size(Ytest,1)
     if size(angi,1) > 0
@@ -55,7 +58,7 @@ for i=1:size(Ytest,1)
     end
     disp(['x: ', num2str(XX_),', y: ',num2str(Ytest(i,:))])
     ss = conv2(eye(size(XX_,2)),kk,'same');
-    [M, S, V, dMdm, dSdm, dVdm, dMds, dSds, dVds, dMdi, dSdi, dVdi, dMdt, dSdt, dVdt, dMdX, dSdX, dVdX] = model.fcn(model, XX_', ss);
+    [M, S, V, dMdm, dSdm, dVdm, dMds, dSds, dVds] = model.fcn(model, XX_', ss);
     M'
     S
     V

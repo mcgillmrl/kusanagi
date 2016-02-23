@@ -28,14 +28,12 @@ def test_random(gp_type='GP',angi=[0,1]):
     elif gp_type == 'RBFGP':
         gp = RBFGP(Xd,Yd, profile=False)
     elif gp_type == 'SPGP':
-        gp = SPGP(Xd,Yd, profile=False, n_inducing = 50)
+        gp = SPGP(Xd,Yd, profile=False, n_inducing = 100)
     elif gp_type == 'SPGP_UI':
-        gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 50)
+        gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 100)
     else:
         gp = GP(Xd,Yd, profile=False)
     
-    gp.train()
-    gp.save()
     Xd= 10*(np.random.rand(n_test,idims) - 0.5)
     Yd = np.empty((n_test,odims))
     for i in xrange(odims):
@@ -45,6 +43,9 @@ def test_random(gp_type='GP',angi=[0,1]):
         ss = convolve2d(np.eye(idims),kk,'same')
         Xd,bbb = gTrig2_np(Xd,np.tile(ss,(n_test,1)).reshape(n_test,idims,idims), angi, idims)
     ss = convolve2d(np.eye(Xd.shape[1]),kk,'same')
+
+    gp.train()
+    gp.save()
 
     for i in xrange(n_test):
         res = gp.predict(Xd[i,:],ss,derivs=False)
@@ -286,4 +287,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('RBFGP')
+    test_random('SPGP_UI')

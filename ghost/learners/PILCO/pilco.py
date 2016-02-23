@@ -1,7 +1,7 @@
 import numpy as np
 from utils import print_with_stamp,gTrig_np,gTrig2
 from ghost.learners.EpisodicLearner import *
-from ghost.regression.GPRegressor import GP_UI
+from ghost.regression.GPRegressor import GP_UI, SPGP_UI
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
@@ -126,7 +126,7 @@ class PILCO(EpisodicLearner):
             self.Sx0 = np.cov(x0.T)[None,:,:]
         else:
             self.mx0 = x0[None,:]
-            self.Sx0 = 1e-2*np.eye(len(x0))[None,:,:]
+            self.Sx0 = 1e-2*np.eye(self.mx0.size)[None,:,:]
 
         if self.wrap_angles:
             # wrap angle differences to [-pi,pi]
@@ -136,31 +136,28 @@ class PILCO(EpisodicLearner):
             self.dynamics_model = GP_UI(X,Y)
         else:
             self.dynamics_model.set_dataset(X,Y)
+
+        # if we reach a large dataset, switch to SPGP
+        print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(X.shape,Y.shape),self.name)
+        if self.dynamics_model.should_recompile:
+            # reinitialize log likelihood
+            self.dynamics_model.init_log_likelihood()
+
+            # reinitialize rollot and policy gradients
+            self.init_rollout(derivs=True)
  
-
-        #self.dynamics_model.set_loghyp( np.array([[ 5.509997626011774,   5.695797298947197,   5.692015197025450,   5.638201671096178],
-        #                                          [ 2.172712533907143,   4.666315918776204,   4.612552250383755,   4.942292180454226],
-        #                                          [ 5.146257432313829,   2.296298649465123,   2.456701520947445,   2.614396832176411],
-        #                                          [ 2.890900478963427,   0.214158569334003,   0.224852498280747,   0.493471679361221],
-        #                                          [ 1.797786347384082,   1.586977710450885,  -0.058171149174515,  -0.345601213254841],
-        #                                          [ 4.069820471633279,   3.013197670171895,   2.934665512611971,   3.616775778040698],
-        #                                          [-0.984097642284717,   0.137890342258600,   1.299603816102084,  -0.611523812016797],
-        #                                          [-4.115382429098694,  -4.115897287345494,  -3.168863634366222,  -4.247869488525884]]).T);
-
         self.dynamics_model.train()
         self.dynamics_model.save()
         print_with_stamp('Done training dynamics model',self.name)
 
     def value(self, derivs=False):
-        #print_with_stamp('Computing value of current policy',self.name)
-
         # compile the belef state propagation
         if self.rollout is None or self.policy_gradients is None:
             self.init_rollout(derivs=derivs)
-        
+
         # setp initial state
-        mx = np.array(self.plant.x0)
-        Sx = np.array(self.plant.S0)
+        mx = np.array(self.plant.x0).squeeze()
+        Sx = np.array(self.plant.S0).squeeze()
 
         H_steps = np.ceil(self.H/self.plant.dt)
         

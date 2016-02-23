@@ -1,6 +1,7 @@
 import os,sys
 from datetime import datetime
 
+import random
 import numpy as np
 import theano
 import theano.tensor as T
@@ -52,63 +53,24 @@ def print_with_stamp(message, name=None, same_line=False):
         print ''
     sys.stdout.flush()
 
-def kmeans(X,W,learning_rate=0.001):
-    #find the closest vector from W to each vector in X
-    Xm = X - X.mean(0)
-    Wm = W - X.mean(0)
-    sq_D = maha(Xm,Wm)
-    # get the closest element from Wm for each Xm
-    Dmin = T.sqrt(sq_D.min(1))
+def kmeanspp(X,k):
+    import random
+    N,D = X.shape
+    c = [ X[random.randint(0,N)] ]
+    d = np.full((k,N),np.inf)
+    while len(c) < k:
+        i = len(c) - 1
+        # get distance from dataset to latest center
+        d[i] =  np.sum((X-c[i])**2,1)
+        # get minimum distances
+        min_dists = d[:i+1].min(0)
+        # select next center with probability proportional to the inverse minimum distance
+        selection_prob = np.cumsum(min_dists/min_dists.sum())
+        r = random.uniform(0,1)
+        j = np.searchsorted(selection_prob,r)
+        c.append(X[j])
 
-    n = T.cast(X.shape[0], theano.config.floatX)
-    err = T.sum(Dmin)
-    # compute updates to the vectors in W
-    direction = T.stacklists(T.grad(err,[W])).reshape(W.shape)
-    updts = [(W, W - learning_rate*direction)]
-    # compute the error (i.e. the total distance from data to centers)
-    return err, updts
-
-def get_kmeans_func(W_):
-    ''' Compiles the kmeans function for the given data vector'''
-    if theano.config.floatX == 'float32':
-        X = theano.tensor.fmatrix('X')
-        learning_rate = theano.tensor.fscalar('alpha')
-    else: 
-        X = theano.tensor.dmatrix('X')
-        learning_rate = theano.tensor.dscalar('alpha')
-
-    if isinstance(W_,T.sharedvar.TensorSharedVariable):
-        W = W_
-    else:
-        W = theano.shared(W_, name='W', borrow=True)
-        
-    error, updts = kmeans(X,W,learning_rate)
-
-    km = theano.function(inputs= [X,learning_rate], outputs=error,updates=updts, allow_input_downcast=True)
-    return km,W
-
-def get_kmeans_func2(X_,W_):
-    if isinstance(W_,T.sharedvar.TensorSharedVariable):
-        W = W_
-    else:
-        W = theano.shared(W_, name='W', borrow=True)
-    if isinstance(X_,T.sharedvar.TensorSharedVariable):
-        X = X_
-    else:
-        X = theano.shared(X_, name='X', borrow=True)
-
-    #find the closest vector from W to each vector in X
-    Xm = X - X.mean(0)
-    Wm = W - X.mean(0)
-    sq_D = maha(Xm,Wm)
-    # get the closest element from Wm for each Xm
-    Dmin = T.sqrt(sq_D.min(1))
-
-    n = T.cast(X.shape[0], theano.config.floatX)
-    err = T.sum(Dmin)
-
-    km = theano.function([],[err,T.stacklists(T.grad(err,[W])).flatten()], allow_input_downcast=True)
-    return km,W,X
+    return np.array(c)
 
 def gTrig(x,angi,D):
     Da = 2*len(angi)

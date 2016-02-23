@@ -6,7 +6,7 @@ from shell.toy.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import RandPolicy, RBFPolicy
 
 if __name__ == '__main__':
-    np.random.seed(31337)
+    #np.random.seed(31337)
     np.set_printoptions(linewidth=500)
     # initliaze plant
     dt = 0.1                                                         # simulation time step
@@ -22,17 +22,11 @@ if __name__ == '__main__':
     plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
     draw_cp.start()
-    def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
-        draw_cp.stop()
-        plant.stop()
-        sys.exit(0)
-    signal.signal(signal.SIGINT, signal_handler)
 
     # initialize policy
     angle_dims = [3]
     p1 = RandPolicy([10])
     p2 = RBFPolicy(x0,S0,[10],10, angle_dims)
-    p2.model.set_loghyp(np.log(np.tile(np.array([1,1,1,0.7,0.7,1,0.01]),(p2.maxU.size,1))))
 
     # initialize cost function
     cost_parameters = {}
@@ -49,12 +43,22 @@ if __name__ == '__main__':
     N = 10                                                           # learning iterations
     learner = PILCO(plant, p1, cost, angle_dims, async_plant=False)
     
+    def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
+        draw_cp.stop()
+        plant.stop()
+        sys.exit(0)
+    signal.signal(signal.SIGINT, signal_handler)
+
     # gather data with random trials
-    for i in xrange(J):
+    for i in xrange(J-1):
         plant.reset_state()
         learner.apply_controller(H=T)
     
+    # apply the controller at least once
     learner.policy = p2
+    plant.reset_state()
+    learner.apply_controller(H=T)
+
     for i in xrange(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()
