@@ -90,12 +90,12 @@ class PILCO(EpisodicLearner):
                 dretvars.append( theano.tensor.grad(mV_.sum(), p ) ) # we are only interested in the derivative of the sum of expected values
 
             print_with_stamp('Compiling belief state propagation',self.name)
-            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True),updates=updts)
+            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=False),updates=updts)
             print_with_stamp('Compiling policy gradients',self.name)
-            self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True),updates=updts)
+            self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=False),updates=updts)
         else:
             print_with_stamp('Compiling belief state propagation',self.name)
-            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True),updates=updts)
+            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=False),updates=updts)
         print_with_stamp('Done compiling.',self.name)
 
     def train_dynamics(self):
