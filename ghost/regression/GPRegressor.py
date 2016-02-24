@@ -10,7 +10,6 @@ from theano import function as F, shared as S
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.tensor.nlinalg import matrix_dot
 from theano.sandbox.linalg import psd,matrix_inverse,det
-from theano.compile.nanguardmode import NanGuardMode
 
 import cov
 import SNRpenalty
@@ -217,7 +216,7 @@ class GP(object):
         if not derivs:
             # compile prediction
             utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-            self.predict_ = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True), allow_input_downcast=True)
+            self.predict_ = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             self.state_changed = True # for saving
         else:
             # compute the derivatives wrt the input vector ( or input mean in the case of uncertain inputs)
@@ -908,3 +907,8 @@ class SSGP(GP):
         S = T.diag(T.stack(variance).T.flatten())
 
         return M,S
+
+class SSGP_UI(SSGP, GP_UI):
+    ''' Sparse Spectral Gaussian Process Regression with Uncertain Inputs'''
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=500,  uncertain_inputs=True, hyperparameter_gradients=False):
+        super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
