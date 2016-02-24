@@ -81,8 +81,11 @@ def gTrig(x,angi,D):
     xang = T.set_subtensor(xang[:,1::2], T.cos(xi))
 
     non_angle_dims = list(set(range(D)).difference(angi))
-    xnang = x[:,non_angle_dims]
-    m = T.concatenate([xnang,xang],axis=1)
+    if len(non_angle_dims)>0:
+        xnang = x[:,non_angle_dims]
+        m = T.concatenate([xnang,xang],axis=1)
+    else:
+        m = xang
     return m
 
 def gTrig2(m, v, angi, D, derivs=False):
@@ -238,3 +241,24 @@ def get_compiled_gTrig(angi,D,derivs=True):
 
     gt = gTrig2(m, v, angi, D, derivs=derivs)
     return theano.function([m,v],gt)
+
+def wrap_params(p_list):
+    # flatten out and concatenate the parameters
+    P = []
+    for pi in p_list:
+        P.append(pi.flatten())
+    P = np.concatenate(P)
+    return P
+    
+def unwrap_params(P,parameter_shapes):
+    # get the correct sizes for the parameters
+    p = []
+    i = 0
+    for pshape in parameter_shapes:
+        # get the number of elemebt for current parameter
+        npi = reduce(lambda x,y: x*y, pshape)
+        # select corresponding elements and reshape into appropriate shape
+        p.append( P[i:i+npi].reshape(pshape) )
+        # set index to the beginning  of next parameter
+        i += npi
+    return p

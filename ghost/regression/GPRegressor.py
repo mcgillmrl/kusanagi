@@ -10,11 +10,12 @@ from theano import function as F, shared as S
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.tensor.nlinalg import matrix_dot
 from theano.sandbox.linalg import psd,matrix_inverse,det
+from theano.compile.nanguardmode import NanGuardMode
 
 import cov
 import SNRpenalty
 import utils
-from utils import gTrig, gTrig2,gTrig_np
+from utils import gTrig, gTrig2,gTrig_np, wrap_params, unwrap_params
 
 class GP(object):
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=False, uncertain_inputs=False, hyperparameter_gradients=False, snr_penalty=SNRpenalty.SEard):
@@ -216,7 +217,7 @@ class GP(object):
         if not derivs:
             # compile prediction
             utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-            self.predict_ = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+            self.predict_ = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True), allow_input_downcast=True)
             self.state_changed = True # for saving
         else:
             # compute the derivatives wrt the input vector ( or input mean in the case of uncertain inputs)
@@ -289,7 +290,6 @@ class GP(object):
         return res
 
     def train(self):
-        init_hyp = self.loghyp_.copy()
         utils.print_with_stamp('Current hyperparameters:',self.name)
         loghyp0 = self.loghyp_.copy()
         print (loghyp0)
@@ -300,8 +300,8 @@ class GP(object):
             opt_res = minimize(self.loss, loghyp0, jac=True, method='CG', tol=1e-9, options={'maxiter': 500})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
-        self.state_changed = not np.allclose(init_hyp,loghyp,1e-6,1e-9)
-        np.copyto(self.loghyp_,loghyp)
+        self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
+        self.set_loghyp(loghyp)
         utils.print_with_stamp('New hyperparameters:',self.name)
         print (self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
@@ -407,7 +407,7 @@ class GP_UI(GP):
         return M,S,V
         
 class SPGP(GP):
-    def __init__(self, X_dataset, Y_dataset, name = 'SPGP',profile=False, n_inducing = 100, uncertain_inputs=False, hyperparameter_gradients=False):
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP',profile=False, n_basis = 100, uncertain_inputs=False, hyperparameter_gradients=False):
         self.X_sp_ = None # inducing inputs (data)
         self.X_sp = None # inducing inputs (symbolic variable)
         self.nlml_sp = None
@@ -416,16 +416,15 @@ class SPGP(GP):
         self.Kmm = None
         self.Bmm = None
         self.should_recompile = False
-        self.n_inducing = n_inducing
+        self.n_basis = n_basis
         # intialize parent class params
         super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def init_pseudo_inputs(self):
-        assert self.N > self.n_inducing, "Dataset must have more than n_inducing [ %n ] to enable inference with sparse pseudo inputs"%(self.n_inducing)
-        utils.print_with_stamp('Using sparse pseudo inputs. You should reinitiialise tthe log likelihood and predictions.',self.name)
+        assert self.N > self.n_basis, "Dataset must have more than n_basis [ %n ] to enable inference with sparse pseudo inputs"%(self.n_basis)
         self.should_recompile = True
         # pick initial cluster centers from dataset
-        self.X_sp_ = utils.kmeanspp(self.X_,self.n_inducing)
+        self.X_sp_ = utils.kmeanspp(self.X_,self.n_basis)
         if theano.config.floatX == 'float32':
             self.X_sp_ = self.X_sp_.astype(np.float32)
 
@@ -441,16 +440,29 @@ class SPGP(GP):
     def set_dataset(self,X_dataset,Y_dataset):
         # set the dataset on the parent class
         super(SPGP, self).set_dataset(X_dataset,Y_dataset)
-        if self.N > self.n_inducing:
+        if self.N <= self.n_basis:
+            utils.print_with_stamp('Dataset is not large enough for using pseudo inputs. Training full GP.',self.name)
+            self.X_sp = None
+            self.X_sp_ = None
+            self.nlml_sp = None
+            self.dnlml_sp = None
+            self.beta_sp = None
+            self.Kmm = None
+            self.Bmm = None
+            self.should_recompile = False
+
+        if self.N > self.n_basis and self.X_sp is None:
+            utils.print_with_stamp('Dataset is large enough for using pseudo inputs. You should reinitiialise the log likelihood and predictions.',self.name)
             # init the shared variable for the pseudo inputs
             self.init_pseudo_inputs()
+            self.should_recompile = True
         
     def init_log_likelihood(self):
         # initialize the log likelihood of the GP class
         super(SPGP, self).init_log_likelihood()
         # here nlml and dnlml have already been innitialised, sow e can replace nlml and dnlml
-        # only if we have enough data to train the pseudo inputs ( i.e. self.N > self.n_inducing)
-        if self.N > self.n_inducing:
+        # only if we have enough data to train the pseudo inputs ( i.e. self.N > self.n_basis)
+        if self.N > self.n_basis:
             utils.print_with_stamp('Initialising FITC log likelihood',self.name)
             self.should_recompile = False
             odims = self.E
@@ -503,7 +515,7 @@ class SPGP(GP):
             self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             
     def predict_symbolic(self,mx,Sx):
-        if self.N < self.n_inducing:
+        if self.N < self.n_basis:
             # stick with the full GP
             return super(SPGP, self).predict_symbolic()
 
@@ -546,13 +558,13 @@ class SPGP(GP):
         # train the full GP
         super(SPGP, self).train()
 
-        if self.N > self.n_inducing:
+        if self.N > self.n_basis:
             # train the pseudo input locations
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
-            opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+            opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
             print ''
             X_sp = opt_res.x.reshape(self.X_sp_.shape)
-            np.copyto(self.X_sp_,X_sp)
+            self.set_X_sp(X_sp)
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
 
     def set_state(self,state):
@@ -564,6 +576,7 @@ class SPGP(GP):
         self.nlml_sp = state[-2]
         self.dnlml_sp = state[-1]
         super(SPGP,self).set_state(state[:-7])
+        self.should_recompile = False
 
     def get_state(self):
         state = super(SPGP,self).get_state()
@@ -577,11 +590,11 @@ class SPGP(GP):
         return state
 
 class SPGP_UI(SPGP,GP_UI):
-    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False, n_inducing = 100, hyperparameter_gradients=False):
-        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,n_inducing=n_inducing,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
+    def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False, n_basis = 100, hyperparameter_gradients=False):
+        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
     def predict_symbolic(self,mx,Sx):
-        if self.N < self.n_inducing:
+        if self.N < self.n_basis:
             # stick with the full GP
             return GP_UI.predict_symbolic(self,mx,Sx)
 
@@ -632,7 +645,7 @@ class SPGP_UI(SPGP,GP_UI):
                 # Eq 2.55
                 m2 = matrix_dot(self.beta_sp[i], Q, self.beta_sp[j].T)
                 if i == j:
-                    iKi = matrix_inverse(psd(self.Kmm[i])).dot(T.eye(self.n_inducing)) - matrix_inverse(psd(self.Bmm[i])).dot(T.eye(self.n_inducing))
+                    iKi = matrix_inverse(psd(self.Kmm[i])).dot(T.eye(self.n_basis)) - matrix_inverse(psd(self.Bmm[i])).dot(T.eye(self.n_basis))
                     m2 =  m2 - T.sum(iKi*Q) + T.exp(2*self.loghyp[i,idims])
                 else:
                     M2[j*odims+i] = m2.flatten()
@@ -754,3 +767,144 @@ class RBFGP(GP_UI):
             V = V.dot(U)
 
         return M,S,V
+
+class SSGP(GP):
+    ''' Sparse Spectral Gaussian Process Regression'''
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_basis=500,  uncertain_inputs=False, hyperparameter_gradients=False):
+        self.sr = None
+        self.sr_ = None
+        self.A = None
+        self.iA = None
+        self.beta_ss = None
+        self.nlml_ss = None
+        self.dnlml_ss = None
+        self.n_basis = n_basis
+        super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+
+    def init_log_likelihood(self):
+        super(SSGP, self).init_log_likelihood()
+        utils.print_with_stamp('Initialising expression graph for sparse spectral log likelihood',self.name)
+        idims = self.D
+        odims = self.E
+
+        self.A = [[]]*odims
+        self.iA = [[]]*odims
+        self.beta_ss = [[]]*odims
+        nlml_ss = [[]]*odims
+        
+        # sample initial spectral points
+        ll = self.loghyp_[:,:idims] # length scale hyperparameters
+        self.sr_ = (np.random.randn(self.n_basis,ll.shape[0],ll.shape[1])*ll).transpose(1,0,2)
+        self.sr = S(self.sr_,name='sr')
+        N = self.X.shape[0]
+        for i in xrange(odims):
+            sr = self.sr[i]
+            M = sr.shape[0]
+
+            sf2 = T.exp(2*self.loghyp[i,idims])
+            sn2 = T.exp(2*self.loghyp[i,idims+1])
+            # sr.T.dot(x) for all sr ( n_basis x *D) and X (N x D). size n_basis x N
+            srdotX = (2*np.pi)*sr.dot(self.X.T)
+            # convert to sin cos
+            phi_f = T.zeros((2*M,N))
+            phi_f = T.set_subtensor(phi_f[::2,:], T.sin(srdotX))
+            phi_f = T.set_subtensor(phi_f[1::2,:], T.cos(srdotX))
+
+            self.A[i] = phi_f.dot(phi_f.T) + (M*sn2/sf2)*T.eye(2*M)
+            self.iA[i] = matrix_inverse(psd(self.A[i]))
+            Yi = self.Y[:,i]
+            self.beta_ss[i] = self.iA[i].dot(phi_f).dot(Yi)
+            nlml_ss[i] = 0.5*( Yi.dot(Yi) - Yi.T.dot(phi_f.T).dot(self.beta_ss[i]) )/sn2 + 0.5*T.log(det(psd(self.A[i]))) - M*T.log((M*sn2)/sf2) + 0.5*N*T.log(2*np.pi*sn2)
+        
+        nlml_ss = T.stack(nlml_ss)
+        if self.snr_penalty is not None:
+            penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
+            nlml_ss += self.snr_penalty(self.loghyp)
+
+        # Compute the gradients for the sum of nlml for all output dimensions
+        dnlml_wrt_lh = T.jacobian(nlml_ss.sum(),self.loghyp)
+        dnlml_wrt_sr = T.jacobian(nlml_ss.sum(),self.sr)
+
+        utils.print_with_stamp('Compiling sparse spectral log likelihood',self.name)
+        self.nlml_ss = F((),nlml_ss,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+        utils.print_with_stamp('Compiling jacobian of sparse spectral log likelihood',self.name)
+        self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_sr),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+
+    def set_spectral_samples(self,sr):
+        sr = sr.reshape(self.sr_.shape)
+        if theano.config.floatX == 'float32':
+            sr = sr.astype(np.float32)
+        np.copyto(self.sr_,sr)
+        self.sr.set_value(self.sr_)
+
+    def loss_ss(self, params, parameter_shapes):
+        loghyp,sr = unwrap_params(params,parameter_shapes)
+        self.set_loghyp(loghyp)
+        self.set_spectral_samples(sr)
+        nlml,dnlml_lh,dnlml_sr = self.dnlml_ss()
+        nlml = nlml.sum()
+        dnlml = wrap_params([dnlml_lh,dnlml_sr])
+        # on a 64bit system, scipy optimize complains if we pass a 32 bit float
+        res = (nlml.astype(np.float64), dnlml.astype(np.float64))
+        #utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
+        utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
+        return res
+
+    def train(self):
+        # train the full GP
+        super(SSGP, self).train()
+
+        # initialize spectral samples
+        idims = self.D
+        ll = self.loghyp_[:,:idims] # length scale hyperparameters
+
+        # try a couple spectral samples and pick the one with the lowest nlml
+        nlml = self.nlml_ss().sum()
+        best_sr = self.sr_.copy()
+        for i in xrange(100):
+            self.set_spectral_samples( (np.random.randn(self.n_basis,ll.shape[0],ll.shape[1])*ll).transpose(1,0,2) )
+            nlml_i = self.nlml_ss().sum()
+            if nlml_i < nlml:
+                nlml = nlml_i
+                best_sr = self.sr_.copy()
+        self.set_spectral_samples( best_sr )
+
+        # train the pseudo input locations
+        utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss())),self.name)
+        # wrap loghyp plus sr (save shapes)
+        p0 = [self.loghyp_,self.sr_]
+        parameter_shapes = [p.shape for p in p0]
+        opt_res = minimize(self.loss_ss, wrap_params(p0), args=parameter_shapes, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        print ''
+        loghyp,sr = unwrap_params(opt_res.x,parameter_shapes)
+        self.set_loghyp(loghyp)
+        self.set_spectral_samples(sr)
+        utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss())),self.name)
+
+    def predict_symbolic(self,mx,Sx):
+        odims = self.E
+        idims = self.D
+
+        # compute the mean and variance for each output dimension
+        mean = [[]]*odims
+        variance = [[]]*odims
+        for i in xrange(odims):
+            sr = self.sr[i]
+            M = sr.shape[0]
+            sf2 = T.exp(2*self.loghyp[i,idims])
+            sn2 = T.exp(2*self.loghyp[i,idims+1])
+            # sr.T.dot(x) for all sr and X. size n_basis x N
+            srdotX = (2*np.pi)*(sr.dot(mx))
+            # convert to sin cos
+            phi_x = T.zeros((2*M,))
+            phi_x = T.set_subtensor(phi_x[::2], T.sin(srdotX))
+            phi_x = T.set_subtensor(phi_x[1::2], T.cos(srdotX))
+
+            mean[i] = phi_x.T.dot(self.beta_ss[i])
+            variance[i] = sn2 - sn2*(phi_x.T.dot( self.iA[i] ).dot(phi_x) ) #TODO verify this computation
+
+        # reshape output variables
+        M = T.stack(mean).T
+        S = T.diag(T.stack(variance).T.flatten())
+
+        return M,S

@@ -42,7 +42,7 @@ if __name__ == '__main__':
     cost = partial(cartpole_loss, params=cost_parameters)
 
     # initialize learner
-    T = 4.0                                                          # controller horizon
+    T = 8.0                                                          # controller horizon
     J = 25                                                           # number of random initial trials
     learner = PILCO(plant, p, cost, angle_dims, async_plant=False)
     

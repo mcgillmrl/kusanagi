@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.optimize import minimize, basinhopping
 import theano
-from utils import print_with_stamp,gTrig_np
+from utils import print_with_stamp,gTrig_np,wrap_params,unwrap_params
 from time import time, sleep
 
 class ExperienceDataset(object):
@@ -152,44 +152,23 @@ class EpisodicLearner(object):
             self.H = H
         # optimize value wrt to the policy parameters
         print_with_stamp('Training policy parameters.', self.name)# Starting value [%f]'%(self.value(derivs=False)),self.name)
-        p0 = self.wrap_policy_params(self.policy.get_params(symbolic=False))
-        opt_res = minimize(self.loss, p0, jac=True, method=self.min_method, tol=1e-6, options={'maxiter': 100})
-        self.policy.set_params(self.unwrap_policy_params(opt_res.x))
+        p0 = self.policy.get_params(symbolic=False)
+        parameter_shapes = [p.shape for p in p0]
+        opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method=self.min_method, tol=1e-9, options={'maxiter': 150})
+        self.policy.set_params(unwrap_params(opt_res.x,parameter_shapes))
         print '' 
         print_with_stamp('Done training. New value [%f]'%(self.value(derivs=False)),self.name)
         self.save()
 
-    def wrap_policy_params(self,p):
-        # flatten out and concatenate the parameters
-        P = []
-        for pi in p:
-            P.append(pi.T.flatten())
-        P = np.concatenate(P)
-        return P
-        
-    def unwrap_policy_params(self,P):
-        # get the correct sizes for the parameters
-        params_ = self.policy.get_params(symbolic=False)
-        p = []
-        i = 0
-        for pi in params_:
-            # get the number of elemebt for current parameter
-            npi = pi.size
-            # select corresponding elements and reshape into appropriate shape
-            p.append( P[i:i+npi].reshape(pi.T.shape).T )
-            # set index to the beginning  of next parameter
-            i += npi
-        return p
-
-    def loss(self, policy_parameters):
+    def loss(self, policy_parameters, parameter_shapes):
         # set policy parameters
-        self.policy.set_params(self.unwrap_policy_params(policy_parameters))
+        self.policy.set_params( unwrap_params(policy_parameters, parameter_shapes) )
 
         # compute value + derivatives
         v,dv = self.value(derivs=True)
-
+        dv = wrap_params(dv)
         if theano.config.floatX == 'float32':
             v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
-
+        
         print_with_stamp('Current value: %s'%(str(v)),self.name,True)
         return v,dv

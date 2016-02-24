@@ -4,9 +4,10 @@ from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI, SPGP_UI
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
+from theano.compile.nanguardmode import NanGuardMode
 
 class PILCO(EpisodicLearner):
-    def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
+    def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=True):
         super(PILCO, self).__init__(plant, policy, cost, angle_idims, discount, experience, async_plant, name)
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
@@ -89,12 +90,12 @@ class PILCO(EpisodicLearner):
                 dretvars.append( theano.tensor.grad(mV_.sum(), p ) ) # we are only interested in the derivative of the sum of expected values
 
             print_with_stamp('Compiling belief state propagation',self.name)
-            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
+            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True),updates=updts)
             print_with_stamp('Compiling policy gradients',self.name)
-            self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)
+            self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True),updates=updts)
         else:
             print_with_stamp('Compiling belief state propagation',self.name)
-            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
+            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True),updates=updts)
         print_with_stamp('Done compiling.',self.name)
 
     def train_dynamics(self):
@@ -133,7 +134,7 @@ class PILCO(EpisodicLearner):
             Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
 
         if self.dynamics_model is None:
-            self.dynamics_model = SPGP_UI(X,Y,n_inducing=300)
+            self.dynamics_model = SPGP_UI(X,Y,n_basis=300)
         else:
             self.dynamics_model.set_dataset(X,Y)
 
@@ -167,5 +168,5 @@ class PILCO(EpisodicLearner):
             return ret[0].sum()
         else:
             ret = self.policy_gradients(mx,Sx,H_steps,self.discount)
-            # first return argument is the value of the policy, second are the gradients wrt the policy params wrapped into single vector 
-            return [ret[0],self.wrap_policy_params(ret[1:])]
+            # first return argument is the value of the policy, second are the gradients wrt the policy params
+            return [ret[0], ret[1:]]

@@ -28,9 +28,11 @@ def test_random(gp_type='GP',angi=[0,1]):
     elif gp_type == 'RBFGP':
         gp = RBFGP(Xd,Yd, profile=False)
     elif gp_type == 'SPGP':
-        gp = SPGP(Xd,Yd, profile=False, n_inducing = 100)
+        gp = SPGP(Xd,Yd, profile=False, n_basis = 100)
     elif gp_type == 'SPGP_UI':
-        gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 100)
+        gp = SPGP_UI(Xd,Yd, profile=False, n_basis = 100)
+    elif gp_type == 'SSGP':
+        gp = SSGP(Xd,Yd, profile=False, n_basis = 100)
     else:
         gp = GP(Xd,Yd, profile=False)
     
@@ -45,7 +47,7 @@ def test_random(gp_type='GP',angi=[0,1]):
     ss = convolve2d(np.eye(Xd.shape[1]),kk,'same')
 
     gp.train()
-    gp.save()
+    #gp.save()
 
     for i in xrange(n_test):
         res = gp.predict(Xd[i,:],ss,derivs=False)
@@ -95,9 +97,9 @@ def test_sonar(gp_type='GP'):
     if gp_type == 'GP_UI':
         gp = GP_UI(Xd,Yd, profile=False)
     elif gp_type == 'SPGP':
-        gp = SPGP(Xd,Yd, profile=False, n_inducing = 50)
+        gp = SPGP(Xd,Yd, profile=False, n_basis = 50)
     elif gp_type == 'SPGP_UI':
-        gp = SPGP_UI(Xd,Yd, profile=False, n_inducing = 50)
+        gp = SPGP_UI(Xd,Yd, profile=False, n_basis = 50)
     else:
         gp = GP(Xd,Yd, profile=False)
     utils.print_with_stamp('training','main')
