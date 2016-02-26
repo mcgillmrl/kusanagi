@@ -156,7 +156,7 @@ class GP(object):
         self.set_loghyp(loghyp)
 
     def init_log_likelihood(self):
-        utils.print_with_stamp('Initialising expression graph for log likelihood',self.name)
+        utils.print_with_stamp('Initialising expression graph for full GP log likelihood',self.name)
         idims = self.D
         odims = self.E
 
@@ -191,9 +191,9 @@ class GP(object):
         dnlml = T.jacobian(nlml.sum(),self.loghyp)
 
         # Compile the theano functions
-        utils.print_with_stamp('Compiling log likelihood',self.name)
+        utils.print_with_stamp('Compiling full GP log likelihood',self.name)
         self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-        utils.print_with_stamp('Compiling jacobian of log likelihood',self.name)
+        utils.print_with_stamp('Compiling jacobian of full GP log likelihood',self.name)
         self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
         self.state_changed = True # for saving
     
@@ -791,10 +791,11 @@ class SSGP(GP):
         self.beta_ss = [[]]*odims
         nlml_ss = [[]]*odims
         
-        # sample initial spectral points
-        ll = np.exp(-self.loghyp_[:,:idims]) # inverse length scale hyperparameters
-        self.sr_ = (np.random.randn(self.n_basis,ll.shape[0],ll.shape[1])*ll).transpose(1,0,2)
-        self.sr = S(self.sr_,name='sr')
+        # sample initial unscaled spectral points
+        self.w_ = np.random.randn(self.n_basis,odims,idims)
+        self.w = S(self.w_,name='sr')
+        self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+
         N = self.X.shape[0]
         for i in xrange(odims):
             sr = self.sr[i]
@@ -821,24 +822,24 @@ class SSGP(GP):
 
         # Compute the gradients for the sum of nlml for all output dimensions
         dnlml_wrt_lh = T.jacobian(nlml_ss.sum(),self.loghyp)
-        dnlml_wrt_sr = T.jacobian(nlml_ss.sum(),self.sr)
+        dnlml_wrt_w = T.jacobian(nlml_ss.sum(),self.w)
 
         utils.print_with_stamp('Compiling sparse spectral log likelihood',self.name)
         self.nlml_ss = F((),nlml_ss,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
         utils.print_with_stamp('Compiling jacobian of sparse spectral log likelihood',self.name)
-        self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_sr),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+        self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
 
-    def set_spectral_samples(self,sr):
-        sr = sr.reshape(self.sr_.shape)
+    def set_spectral_samples(self,w):
+        w = w.reshape(self.unscaled_sr_.shape)
         if theano.config.floatX == 'float32':
-            sr = sr.astype(np.float32)
-        np.copyto(self.sr_,sr)
-        self.sr.set_value(self.sr_)
+            w = w.astype(np.float32)
+        np.copyto(self.w_,w)
+        self.w.set_value(self.w_)
 
     def loss_ss(self, params, parameter_shapes):
-        loghyp,sr = unwrap_params(params,parameter_shapes)
+        loghyp,w = unwrap_params(params,parameter_shapes)
         self.set_loghyp(loghyp)
-        self.set_spectral_samples(sr)
+        self.set_spectral_samples(w)
         nlml,dnlml_lh,dnlml_sr = self.dnlml_ss()
         nlml = nlml.sum()
         dnlml = wrap_params([dnlml_lh,dnlml_sr])
@@ -854,30 +855,30 @@ class SSGP(GP):
 
         # initialize spectral samples
         idims = self.D
-        ll = np.exp(-self.loghyp_[:,:idims]) # inverse length scale hyperparameters
-        self.set_spectral_samples( (np.random.randn(self.n_basis,ll.shape[0],ll.shape[1])*ll).transpose(1,0,2) )
+        odims = self.E
+        self.set_spectral_samples( np.random.randn(self.n_basis,odims,idims) )
 
         # try a couple spectral samples and pick the one with the lowest nlml
         nlml = self.nlml_ss()
-        best_sr = self.sr_.copy()
+        best_w = self.w_.copy()
         for i in xrange(50):
-            self.set_spectral_samples( (np.random.randn(self.n_basis,ll.shape[0],ll.shape[1])*ll).transpose(1,0,2) )
+            self.set_spectral_samples( np.random.randn(self.n_basis,odims,idims) )
             nlml_i = self.nlml_ss()
             if np.all(nlml_i < nlml):
                 nlml = nlml_i
-                best_sr = self.sr_.copy()
-        self.set_spectral_samples( best_sr )
+                best_w = self.w_.copy()
+        self.set_spectral_samples( best_w )
 
         # train the pseudo input locations
         utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss())),self.name)
         # wrap loghyp plus sr (save shapes)
-        p0 = [self.loghyp_,self.sr_]
+        p0 = [self.loghyp_,self.w_]
         parameter_shapes = [p.shape for p in p0]
         opt_res = minimize(self.loss_ss, wrap_params(p0), args=parameter_shapes, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
         print ''
-        loghyp,sr = unwrap_params(opt_res.x,parameter_shapes)
+        loghyp,w = unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
-        self.set_spectral_samples(sr)
+        self.set_spectral_samples(w)
         utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss())),self.name)
 
     def predict_symbolic(self,mx,Sx):
@@ -949,8 +950,8 @@ class SSGP_UI(SSGP, GP_UI):
             c = T.zeros((D,2*Ms))
             c = T.set_subtensor( c[:,::2], ( T.outer(mx, T.sin( srdotx[i] ) ) + sr[i].T*T.cos( srdotx[i] ) )*e )
             c = T.set_subtensor( c[:,1::2], ( T.outer(mx, T.cos( srdotx[i] ) ) - sr[i].T*T.sin( srdotx[i] ) )*e )
-            v = c.dot(self.beta_ss[i]).flatten() - mx*M[i]
-            V.append( v )
+            v = c.dot(self.beta_ss[i]).flatten() #- mx*M[i]
+            V.append( matrix_inverse(Sx).dot(v) )
             
             # predictive covariance
             for j in xrange(i+1):
