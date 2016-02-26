@@ -830,7 +830,7 @@ class SSGP(GP):
         self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
 
     def set_spectral_samples(self,w):
-        w = w.reshape(self.unscaled_sr_.shape)
+        w = w.reshape(self.w_.shape)
         if theano.config.floatX == 'float32':
             w = w.astype(np.float32)
         np.copyto(self.w_,w)
