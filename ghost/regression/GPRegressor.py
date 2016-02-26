@@ -525,10 +525,10 @@ class SPGP(GP):
         variance = [[]]*odims
         for i in xrange(odims):
             k = self.kernel_func[i](mx[None,:],self.X_sp)
-            mean[i] = k.dot(self.beta_sp[i])
+            mean[i] = k.dot(self.beta_sp[i]).flatten()
             iK = matrix_inverse(psd(self.Kmm[i]))
             iB = matrix_inverse(psd(self.Bmm[i]))
-            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False).flatten() - k.dot( iK - iB).dot(k.T)
+            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False).flatten() - k.dot( iK - iB).dot(k.T).flatten()
 
         # reshape the prediction output variables
         M = T.stack(mean).T
@@ -792,18 +792,17 @@ class SSGP(GP):
         nlml_ss = [[]]*odims
         
         # sample initial spectral points
-        ll = self.loghyp_[:,:idims] # length scale hyperparameters
+        ll = np.exp(-self.loghyp_[:,:idims]) # inverse length scale hyperparameters
         self.sr_ = (np.random.randn(self.n_basis,ll.shape[0],ll.shape[1])*ll).transpose(1,0,2)
         self.sr = S(self.sr_,name='sr')
         N = self.X.shape[0]
         for i in xrange(odims):
             sr = self.sr[i]
             M = sr.shape[0]
-
             sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
             # sr.T.dot(x) for all sr ( n_basis x *D) and X (N x D). size n_basis x N
-            srdotX = (2*np.pi)*sr.dot(self.X.T)
+            srdotX = sr.dot(self.X.T)
             # convert to sin cos
             phi_f = T.zeros((2*M,N))
             phi_f = T.set_subtensor(phi_f[::2,:], T.sin(srdotX))
@@ -855,15 +854,16 @@ class SSGP(GP):
 
         # initialize spectral samples
         idims = self.D
-        ll = self.loghyp_[:,:idims] # length scale hyperparameters
+        ll = np.exp(-self.loghyp_[:,:idims]) # inverse length scale hyperparameters
+        self.set_spectral_samples( (np.random.randn(self.n_basis,ll.shape[0],ll.shape[1])*ll).transpose(1,0,2) )
 
         # try a couple spectral samples and pick the one with the lowest nlml
-        nlml = self.nlml_ss().sum()
+        nlml = self.nlml_ss()
         best_sr = self.sr_.copy()
-        for i in xrange(100):
+        for i in xrange(50):
             self.set_spectral_samples( (np.random.randn(self.n_basis,ll.shape[0],ll.shape[1])*ll).transpose(1,0,2) )
-            nlml_i = self.nlml_ss().sum()
-            if nlml_i < nlml:
+            nlml_i = self.nlml_ss()
+            if np.all(nlml_i < nlml):
                 nlml = nlml_i
                 best_sr = self.sr_.copy()
         self.set_spectral_samples( best_sr )
@@ -893,7 +893,7 @@ class SSGP(GP):
             sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
             # sr.T.dot(x) for all sr and X. size n_basis x N
-            srdotX = (2*np.pi)*(sr.dot(mx))
+            srdotX = sr.dot(mx)
             # convert to sin cos
             phi_x = T.zeros((2*M,))
             phi_x = T.set_subtensor(phi_x[::2], T.sin(srdotX))
@@ -911,4 +911,82 @@ class SSGP(GP):
 class SSGP_UI(SSGP, GP_UI):
     ''' Sparse Spectral Gaussian Process Regression with Uncertain Inputs'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=500,  uncertain_inputs=True, hyperparameter_gradients=False):
-        super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
+        SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
+
+    def predict_symbolic(self,mx,Sx):
+        if self.N < self.n_basis:
+            # stick with the full GP
+            return GP_UI.predict_symbolic(self,mx,Sx)
+
+        idims = self.D
+        odims = self.E
+
+        M = [] # mean
+        V = [] # inv(Sx).dot(input_output_cov)
+        M2 = [[]]*(odims**2) # second moment
+        sr=[[]]*odims
+        srdotx=[[]]*odims
+        for i in xrange(odims):
+            # get the spectral samples for dimension i
+            sr[i] = self.sr[i]         # Ms x D
+            srdotx[i] = sr[i].dot(mx)  # Ms x 1
+            # initalize some variables
+            Ms = sr[i].shape[0]
+            D = mx.shape[0]
+            sf2 = T.exp(2*self.loghyp[i,idims])
+            sn2 = T.exp(2*self.loghyp[i,idims+1])
+
+            # compute the Mx1 vector of input covariance dependent weights
+            e = T.exp(-0.5*T.sum((sr[i].dot(Sx))*sr[i],1))
+            # compute the mean vector
+            mphi_i = T.zeros((2*Ms,))
+            mphi_i = T.set_subtensor( mphi_i[::2], T.sin( srdotx[i] )*e )
+            mphi_i = T.set_subtensor( mphi_i[1::2], T.cos( srdotx[i] )*e )
+
+            M.append(mphi_i.dot(self.beta_ss[i]).flatten())
+
+            # inv(s) times input output covariance
+            c = T.zeros((D,2*Ms))
+            c = T.set_subtensor( c[:,::2], ( T.outer(mx, T.sin( srdotx[i] ) ) + sr[i].T*T.cos( srdotx[i] ) )*e )
+            c = T.set_subtensor( c[:,1::2], ( T.outer(mx, T.cos( srdotx[i] ) ) - sr[i].T*T.sin( srdotx[i] ) )*e )
+            v = c.dot(self.beta_ss[i]).flatten() - mx*M[i]
+            V.append( v )
+            
+            # predictive covariance
+            for j in xrange(i+1):
+                # compute the second moments of the spectral feature vectors
+                srdotx_m_ij = (srdotx[i][:,None] - srdotx[j][None,:])   # MsxMs
+                srdotx_p_ij = (srdotx[i][:,None] + srdotx[j][None,:])   # MsxMs
+                sr_m_ij = (sr[i][:,None,:] - sr[j][None,:,:])           # MsxMsxD
+                sr_p_ij = (sr[i][:,None,:] - sr[j][None,:,:])           # MsxMsxD
+                em =  T.exp(-0.5*T.sum(sr_m_ij.dot(Sx)*sr_m_ij,2))      # MsxMs
+                ep =  T.exp(-0.5*T.sum(sr_p_ij.dot(Sx)*sr_p_ij,2))      # MsxMs
+                sm = T.sin( srdotx_m_ij )*em
+                sp = T.sin( srdotx_p_ij )*ep
+                cm = T.cos( srdotx_m_ij )*em
+                cp = T.cos( srdotx_p_ij )*ep
+                
+                # Populate the second moment matrix of the feature vector
+                Qij = T.zeros((2*Ms,2*Ms))
+                Qij = T.set_subtensor( Qij[::2,::2] , 0.5*(cm - cp) )
+                Qij = T.set_subtensor( Qij[::2,1::2] , 0.5*(sm + sp) )
+                Qij = T.set_subtensor( Qij[1::2,1::2] , 0.5*(cm + cp) )
+                Qij = T.set_subtensor( Qij[1::2,::2] , 0.5*(sp - sm) )
+
+                # Compute the second moment of the output
+                m2 = matrix_dot(self.beta_ss[i], Qij, self.beta_ss[j].T)
+
+                if i == j:
+                    # if i==j we need to add the trace term
+                    m2 =  m2 + sn2*(1 + T.sum(self.iA[i]*Qij))
+                else:
+                    M2[j*odims+i] = m2.flatten()
+                M2[i*odims+j] = m2.flatten()
+
+        M = T.stack(M).T.flatten()
+        V = T.stack(V).T
+        M2 = T.stack(M2).T
+        S = M2.reshape((odims,odims))
+        S = S - (M[:,None]*M[None,:])
+
+        return M,S,V

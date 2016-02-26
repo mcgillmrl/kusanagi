@@ -7,7 +7,7 @@ def test_random(gp_type='GP',angi=[0,1]):
     # test function
     def f(X):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
-        return np.exp(-500*(np.sum(0.0001*(X**2),1)))
+        return np.exp(-500*(np.sum(0.0001*(X**2),1)))*np.sin(X.sum(1))
 
     n_samples = 1000
     n_test = 10
@@ -15,6 +15,7 @@ def test_random(gp_type='GP',angi=[0,1]):
     odims = 2
     np.random.seed(31337)
     
+    #  ================== train dataset ==================
     Xd = 10*(np.random.rand(n_samples,idims) - 0.5)
     Yd = np.empty((n_samples,odims))
     for i in xrange(odims):
@@ -23,6 +24,16 @@ def test_random(gp_type='GP',angi=[0,1]):
     if len(angi)>0:
         ss = convolve2d(np.eye(idims),kk,'same')
         Xd,bbb = gTrig2_np(Xd,np.tile(ss,(n_samples,1)).reshape(n_samples,idims,idims), angi, idims)
+    #  ================== test  dataset ==================
+    Xtest = 10*(np.random.rand(n_test,idims) - 0.5)
+    Ytest = np.empty((n_test,odims))
+    for i in xrange(odims):
+        Ytest[:,i] =  (i+1)*f(Xtest) + 0.01*(np.random.rand(n_test)-0.5)
+
+    if len(angi)>0:
+        ss = convolve2d(np.eye(idims),kk,'same')
+        Xtest,bbb = gTrig2_np(Xtest,np.tile(ss,(n_test,1)).reshape(n_test,idims,idims), angi, idims)
+
     if gp_type == 'GP_UI':
         gp = GP_UI(Xd,Yd, profile=False)
     elif gp_type == 'RBFGP':
@@ -33,26 +44,19 @@ def test_random(gp_type='GP',angi=[0,1]):
         gp = SPGP_UI(Xd,Yd, profile=False, n_basis = 100)
     elif gp_type == 'SSGP':
         gp = SSGP(Xd,Yd, profile=False, n_basis = 100)
+    elif gp_type == 'SSGP_UI':
+        gp = SSGP_UI(Xd,Yd, profile=False, n_basis = 50)
     else:
         gp = GP(Xd,Yd, profile=False)
-    
-    Xd= 10*(np.random.rand(n_test,idims) - 0.5)
-    Yd = np.empty((n_test,odims))
-    for i in xrange(odims):
-        Yd[:,i] =  (i+1)*f(Xd) + 0.01*(np.random.rand(n_test)-0.5)
-
-    if len(angi)>0:
-        ss = convolve2d(np.eye(idims),kk,'same')
-        Xd,bbb = gTrig2_np(Xd,np.tile(ss,(n_test,1)).reshape(n_test,idims,idims), angi, idims)
-    ss = convolve2d(np.eye(Xd.shape[1]),kk,'same')
 
     gp.train()
     #gp.save()
 
+    ss = convolve2d(np.eye(Xtest.shape[1]),kk,'same')
     for i in xrange(n_test):
-        res = gp.predict(Xd[i,:],ss,derivs=False)
-        print Xd[i,:],','
-        print Yd[i,:],','
+        res = gp.predict(Xtest[i,:],ss,derivs=False)
+        print Xtest[i,:],','
+        print Ytest[i,:],','
         for j in xrange(len(res)):
            print res[j],','
         print '---'
@@ -289,4 +293,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('SPGP_UI')
+    test_random('SSGP_UI')

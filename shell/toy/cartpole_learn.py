@@ -50,15 +50,11 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
 
     # gather data with random trials
-    for i in xrange(J-1):
+    for i in xrange(J):
         plant.reset_state()
         learner.apply_controller(H=T)
     
-    # apply the controller at least once
     learner.policy = p2
-    plant.reset_state()
-    learner.apply_controller(H=T)
-
     for i in xrange(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()

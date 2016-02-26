@@ -1,7 +1,7 @@
 import numpy as np
 from utils import print_with_stamp,gTrig_np,gTrig2
 from ghost.learners.EpisodicLearner import *
-from ghost.regression.GPRegressor import GP_UI, SPGP_UI
+from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.compile.nanguardmode import NanGuardMode
@@ -134,7 +134,9 @@ class PILCO(EpisodicLearner):
             Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
 
         if self.dynamics_model is None:
-            self.dynamics_model = SPGP_UI(X,Y,n_basis=300)
+            self.dynamics_model = GP_UI(X,Y)
+            #self.dynamics_model = SPGP_UI(X,Y,n_basis=300)
+            #self.dynamics_model = SSGP_UI(X,Y,n_basis=50)
         else:
             self.dynamics_model.set_dataset(X,Y)
 
