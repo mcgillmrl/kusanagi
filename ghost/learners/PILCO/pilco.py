@@ -134,9 +134,9 @@ class PILCO(EpisodicLearner):
             Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
 
         if self.dynamics_model is None:
-            self.dynamics_model = GP_UI(X,Y)
-            #self.dynamics_model = SPGP_UI(X,Y,n_basis=300)
-            #self.dynamics_model = SSGP_UI(X,Y,n_basis=50)
+            #self.dynamics_model = GP_UI(X,Y)
+            #self.dynamics_model = SPGP_UI(X,Y,n_basis=100)
+            self.dynamics_model = SSGP_UI(X,Y,n_basis=100)
         else:
             self.dynamics_model.set_dataset(X,Y)
 

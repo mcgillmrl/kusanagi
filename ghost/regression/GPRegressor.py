@@ -245,12 +245,12 @@ class GP(object):
         mean = [[]]*odims
         variance = [[]]*odims
         for i in xrange(odims):
-            k = self.kernel_func[i](mx[None,:],self.X).flatten()
+            k = self.kernel_func[i](mx[None,:],self.X)
             mean[i] = k.dot(self.beta[i])
-            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False).flatten() - k.dot( self.iK[i] ).dot(k.T)  #TODO verify this computation
+            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False) - k.dot( self.iK[i] ).dot(k.T)  #TODO verify this computation
 
         # reshape output variables
-        M = T.stack(mean).T
+        M = T.stack(mean).T.flatten()
         S = T.diag(T.stack(variance).T.flatten())
 
         return M,S
@@ -525,13 +525,13 @@ class SPGP(GP):
         variance = [[]]*odims
         for i in xrange(odims):
             k = self.kernel_func[i](mx[None,:],self.X_sp)
-            mean[i] = k.dot(self.beta_sp[i]).flatten()
+            mean[i] = k.dot(self.beta_sp[i])
             iK = matrix_inverse(psd(self.Kmm[i]))
             iB = matrix_inverse(psd(self.Bmm[i]))
-            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False).flatten() - k.dot( iK - iB).dot(k.T).flatten()
+            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False) - k.dot( iK - iB).dot(k.T)
 
         # reshape the prediction output variables
-        M = T.stack(mean).T
+        M = T.stack(mean).T.flatten()
         S = T.diag(T.stack(variance).T.flatten())
 
         return M,S
@@ -770,8 +770,8 @@ class RBFGP(GP_UI):
 class SSGP(GP):
     ''' Sparse Spectral Gaussian Process Regression'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_basis=500,  uncertain_inputs=False, hyperparameter_gradients=False):
-        self.sr = None
-        self.sr_ = None
+        self.w = None
+        self.w_ = None
         self.A = None
         self.iA = None
         self.beta_ss = None
@@ -779,6 +779,28 @@ class SSGP(GP):
         self.dnlml_ss = None
         self.n_basis = n_basis
         super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+
+    def set_state(self,state):
+        self.w = state[-7]
+        self.w_ = state[-6]
+        self.beta_ss = state[-5]
+        self.A = state[-4]
+        self.iA = state[-3]
+        self.nlml_ss = state[-2]
+        self.dnlml_ss = state[-1]
+        super(SSGP,self).set_state(state[:-7])
+        self.should_recompile = False
+
+    def get_state(self):
+        state = super(SSGP,self).get_state()
+        state.append(self.w)
+        state.append(self.w_)
+        state.append(self.beta_ss)
+        state.append(self.A)
+        state.append(self.iA)
+        state.append(self.nlml_ss)
+        state.append(self.dnlml_ss)
+        return state
 
     def init_log_likelihood(self):
         super(SSGP, self).init_log_likelihood()
@@ -805,9 +827,7 @@ class SSGP(GP):
             # sr.T.dot(x) for all sr ( n_basis x *D) and X (N x D). size n_basis x N
             srdotX = sr.dot(self.X.T)
             # convert to sin cos
-            phi_f = T.zeros((2*M,N))
-            phi_f = T.set_subtensor(phi_f[::2,:], T.sin(srdotX))
-            phi_f = T.set_subtensor(phi_f[1::2,:], T.cos(srdotX))
+            phi_f = T.vertical_stack(T.sin(srdotX), T.cos(srdotX))
 
             self.A[i] = phi_f.dot(phi_f.T) + (M*sn2/sf2)*T.eye(2*M)
             self.iA[i] = matrix_inverse(psd(self.A[i]))
@@ -856,12 +876,11 @@ class SSGP(GP):
         # initialize spectral samples
         idims = self.D
         odims = self.E
-        self.set_spectral_samples( np.random.randn(self.n_basis,odims,idims) )
 
         # try a couple spectral samples and pick the one with the lowest nlml
         nlml = self.nlml_ss()
         best_w = self.w_.copy()
-        for i in xrange(50):
+        for i in xrange(100):
             self.set_spectral_samples( np.random.randn(self.n_basis,odims,idims) )
             nlml_i = self.nlml_ss()
             if np.all(nlml_i < nlml):
@@ -874,7 +893,7 @@ class SSGP(GP):
         # wrap loghyp plus sr (save shapes)
         p0 = [self.loghyp_,self.w_]
         parameter_shapes = [p.shape for p in p0]
-        opt_res = minimize(self.loss_ss, wrap_params(p0), args=parameter_shapes, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+        opt_res = minimize(self.loss_ss, wrap_params(p0), args=parameter_shapes, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
         print ''
         loghyp,w = unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
@@ -890,21 +909,18 @@ class SSGP(GP):
         variance = [[]]*odims
         for i in xrange(odims):
             sr = self.sr[i]
-            M = sr.shape[0]
             sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
             # sr.T.dot(x) for all sr and X. size n_basis x N
             srdotX = sr.dot(mx)
             # convert to sin cos
-            phi_x = T.zeros((2*M,))
-            phi_x = T.set_subtensor(phi_x[::2], T.sin(srdotX))
-            phi_x = T.set_subtensor(phi_x[1::2], T.cos(srdotX))
+            phi_x = T.concatenate([ T.sin(srdotX), T.cos(srdotX) ])
 
             mean[i] = phi_x.T.dot(self.beta_ss[i])
             variance[i] = sn2 - sn2*(phi_x.T.dot( self.iA[i] ).dot(phi_x) ) #TODO verify this computation
 
         # reshape output variables
-        M = T.stack(mean).T
+        M = T.stack(mean).T.flatten()
         S = T.diag(T.stack(variance).T.flatten())
 
         return M,S
@@ -940,18 +956,13 @@ class SSGP_UI(SSGP, GP_UI):
             # compute the Mx1 vector of input covariance dependent weights
             e = T.exp(-0.5*T.sum((sr[i].dot(Sx))*sr[i],1))
             # compute the mean vector
-            mphi_i = T.zeros((2*Ms,))
-            mphi_i = T.set_subtensor( mphi_i[::2], T.sin( srdotx[i] )*e )
-            mphi_i = T.set_subtensor( mphi_i[1::2], T.cos( srdotx[i] )*e )
-
-            M.append(mphi_i.dot(self.beta_ss[i]).flatten())
+            mphi_i = T.concatenate( [ T.sin( srdotx[i] )*e, T.cos( srdotx[i] )*e ] ) # 2*Ms x 1
+            M.append( mphi_i.T.dot(self.beta_ss[i]).flatten() )
 
             # inv(s) times input output covariance
-            c = T.zeros((D,2*Ms))
-            c = T.set_subtensor( c[:,::2], ( T.outer(mx, T.sin( srdotx[i] ) ) + sr[i].T*T.cos( srdotx[i] ) )*e )
-            c = T.set_subtensor( c[:,1::2], ( T.outer(mx, T.cos( srdotx[i] ) ) - sr[i].T*T.sin( srdotx[i] ) )*e )
-            v = c.dot(self.beta_ss[i]).flatten() #- mx*M[i]
-            V.append( matrix_inverse(Sx).dot(v) )
+            c = T.horizontal_stack( ( T.outer( mx, T.sin( srdotx[i] ) ) + Sx.dot(sr[i].T)*T.cos( srdotx[i] ) )*e , ( T.outer( mx, T.cos( srdotx[i] ) ) - Sx.dot(sr[i].T)*T.sin( srdotx[i] ) )*e ) # D x 2*Ms
+            v = c.dot(self.beta_ss[i]) - mx*M[i]
+            V.append( matrix_inverse(Sx).dot(v).flatten() )
             
             # predictive covariance
             for j in xrange(i+1):
@@ -959,7 +970,7 @@ class SSGP_UI(SSGP, GP_UI):
                 srdotx_m_ij = (srdotx[i][:,None] - srdotx[j][None,:])   # MsxMs
                 srdotx_p_ij = (srdotx[i][:,None] + srdotx[j][None,:])   # MsxMs
                 sr_m_ij = (sr[i][:,None,:] - sr[j][None,:,:])           # MsxMsxD
-                sr_p_ij = (sr[i][:,None,:] - sr[j][None,:,:])           # MsxMsxD
+                sr_p_ij = (sr[i][:,None,:] + sr[j][None,:,:])           # MsxMsxD
                 em =  T.exp(-0.5*T.sum(sr_m_ij.dot(Sx)*sr_m_ij,2))      # MsxMs
                 ep =  T.exp(-0.5*T.sum(sr_p_ij.dot(Sx)*sr_p_ij,2))      # MsxMs
                 sm = T.sin( srdotx_m_ij )*em
@@ -969,10 +980,10 @@ class SSGP_UI(SSGP, GP_UI):
                 
                 # Populate the second moment matrix of the feature vector
                 Qij = T.zeros((2*Ms,2*Ms))
-                Qij = T.set_subtensor( Qij[::2,::2] , 0.5*(cm - cp) )
-                Qij = T.set_subtensor( Qij[::2,1::2] , 0.5*(sm + sp) )
-                Qij = T.set_subtensor( Qij[1::2,1::2] , 0.5*(cm + cp) )
-                Qij = T.set_subtensor( Qij[1::2,::2] , 0.5*(sp - sm) )
+                Qij = T.set_subtensor( Qij[:Ms,:Ms] , 0.5*(cm - cp) )
+                Qij = T.set_subtensor( Qij[:Ms,Ms:] , 0.5*(sm + sp) )
+                Qij = T.set_subtensor( Qij[Ms:,:Ms] , 0.5*(sp - sm) )
+                Qij = T.set_subtensor( Qij[Ms:,Ms:] , 0.5*(cm + cp) )
 
                 # Compute the second moment of the output
                 m2 = matrix_dot(self.beta_ss[i], Qij, self.beta_ss[j].T)
@@ -984,7 +995,7 @@ class SSGP_UI(SSGP, GP_UI):
                     M2[j*odims+i] = m2.flatten()
                 M2[i*odims+j] = m2.flatten()
 
-        M = T.stack(M).T.flatten()
+        M = T.concatenate(M)
         V = T.stack(V).T
         M2 = T.stack(M2).T
         S = M2.reshape((odims,odims))

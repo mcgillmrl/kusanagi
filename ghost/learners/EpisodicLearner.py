@@ -152,9 +152,10 @@ class EpisodicLearner(object):
             self.H = H
         # optimize value wrt to the policy parameters
         print_with_stamp('Training policy parameters.', self.name)# Starting value [%f]'%(self.value(derivs=False)),self.name)
+        print_with_stamp('Current value [%f]'%(self.value(derivs=True))[0],self.name) 
         p0 = self.policy.get_params(symbolic=False)
         parameter_shapes = [p.shape for p in p0]
-        opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method=self.min_method, tol=1e-9, options={'maxiter': 150})
+        opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method=self.min_method, tol=1e-12, options={'maxiter': 150})
         self.policy.set_params(unwrap_params(opt_res.x,parameter_shapes))
         print '' 
         print_with_stamp('Done training. New value [%f]'%(self.value(derivs=False)),self.name)

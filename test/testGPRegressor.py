@@ -43,9 +43,9 @@ def test_random(gp_type='GP',angi=[0,1]):
     elif gp_type == 'SPGP_UI':
         gp = SPGP_UI(Xd,Yd, profile=False, n_basis = 100)
     elif gp_type == 'SSGP':
-        gp = SSGP(Xd,Yd, profile=False, n_basis = 100)
+        gp = SSGP(Xd,Yd, profile=False, n_basis = 10)
     elif gp_type == 'SSGP_UI':
-        gp = SSGP_UI(Xd,Yd, profile=False, n_basis = 50)
+        gp = SSGP_UI(Xd,Yd, profile=False, n_basis = 10)
     else:
         gp = GP(Xd,Yd, profile=False)
 
@@ -293,4 +293,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('SSGP_UI')
+    test_random('GP_UI')

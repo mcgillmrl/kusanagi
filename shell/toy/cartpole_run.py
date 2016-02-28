@@ -4,6 +4,7 @@ from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.toy.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import RandPolicy, RBFPolicy
+from utils import gTrig_np
 
 if __name__ == '__main__':
     #np.random.seed(31337)
@@ -17,8 +18,8 @@ if __name__ == '__main__':
     model_parameters['b'] = 0.1
     model_parameters['g'] = 9.82
     x0 = [0,0,0,0]                                                   # initial state mean
-    S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
-    measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
+    S0 = np.eye(4)*(0.35**2)                                          # initial state covariance
+    measurement_noise = np.diag(np.ones(len(x0))*0.02**2)            # model measurement noise (randomizes the output of the plant)
     plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
     draw_cp.start()
@@ -42,8 +43,8 @@ if __name__ == '__main__':
     cost = partial(cartpole_loss, params=cost_parameters)
 
     # initialize learner
-    T = 8.0                                                          # controller horizon
-    J = 25                                                           # number of random initial trials
+    T = 5.0                                                          # controller horizon
+    J = 30                                                           # number of random initial trials
     learner = PILCO(plant, p, cost, angle_dims, async_plant=False)
     
     # gather data with random trials
@@ -52,3 +53,25 @@ if __name__ == '__main__':
         learner.apply_controller(H=T)
 
     draw_cp.stop()
+    
+    X = []
+    Y = []
+    x0 = []
+    n_episodes = len(learner.experience.states)
+    # construct training dataset
+    for i in xrange(n_episodes):
+        x = np.array(learner.experience.states[i])
+        u = np.array(learner.experience.actions[i])
+        x0.append(x[0])
+
+        # inputs are states, concatenated with actions (except for the last entry)
+        x_ = gTrig_np(x, learner.angle_idims)
+        X.append( np.hstack((x_[:-1],u[:-1])) )
+        # outputs are changes in state
+        Y.append( x[1:] - x[:-1] )
+
+    X = np.vstack(X)
+    Y = np.vstack(Y)
+    x0 = np.array(x0)
+
+    np.savez('cartpole',X=X,Y=Y,x0=x0)
