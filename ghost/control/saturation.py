@@ -9,9 +9,9 @@ def gSin(m,v,i=None,e=None,derivs=False):
     if e is None:
         e = T.ones((D,))
     elif e.__class__ is list:
-        e = theano.shared(np.array(e), borrow=True).flatten()
+        e = theano.tensor.as_tensor_variable(np.array(e)).flatten()
     elif e.__class__ is np.array:
-        e = theano.shared(e, borrow=True).fltten()
+        e = theano.tensor.as_tensor_variable(e).flatten()
 
     Di = i.shape[0]
 
@@ -62,9 +62,9 @@ def gSat(m,v,i=None,e=None,derivs=False):
     if e is None:
         e = T.ones((D,))
     elif e.__class__ is list:
-        e = theano.shared(np.array(e), borrow=True).flatten()
+        e = theano.tensor.as_tensor_variable(np.array(e)).flatten()
     elif e.__class__ is np.array:
-        e = theano.shared(e, borrow=True).flatten()
+        e = theano.tensor.as_tensor_variable(e).flatten()
     e = T.cast(e,m.dtype)
     # construct joint distribution of x and 3*x
     Q = T.vertical_stack(T.eye(D), 3*T.eye(D))

@@ -27,11 +27,11 @@ class ODEPlant(object):
         self.x = np.array(self.solver.y)
 
     def apply_control(self,u):
-        self.u = np.array(u)[:,None]
+        self.u = np.array(u,dtype=np.float64)[:,None]
 
     def set_state(self, x):
         if (self.x is None or np.linalg.norm(x-self.x) > 1e-12):
-            self.x = np.array(x).flatten()[:,None]
+            self.x = np.array(x,dtype=np.float64).flatten()[:,None]
             self.solver = self.solver.set_initial_value(x)
 
     def get_state(self):
@@ -76,6 +76,7 @@ class ODEPlant(object):
         print_with_stamp('Stopped simulation loop',self.name)
     
     def reset_state(self):
+        print_with_stamp('Reset to inital state',self.name)
         if self.S0 is None:
             self.set_state(self.x0)
         else:

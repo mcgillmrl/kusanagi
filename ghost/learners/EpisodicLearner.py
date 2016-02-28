@@ -46,31 +46,15 @@ class EpisodicLearner(object):
         # TODO use saved filenames to load the appropriate policy and dynamics model
         # TODO load experience dataset
         pass
-
     def save(self):
         self.policy.save()
         #TODO save filenames of these
-
     def set_state(self,state):
-        self.X_shared = state[0]
-        self.Y_shared = state[1]
-        self.X = state[2]
-        self.Y = state[3]
-        self.angle_idims = state[4]
-        self.angle_odims = state[5]
-        self.loghyp = state[6]
-        self.K = state[7]
-        self.iK = state[8]
-        self.beta = state[9]
-        self.set_dataset(state[10],state[11])
-        self.set_loghyp(state[12])
-        self.nlml = state[13]
-        self.dnlml = state[14]
-        self.predict_ = state[15]
-        self.predict_d_ = state[16]
-
+        #TODO 
+        pass
     def get_state(self):
-        return (self.X_shared,self.Y_shared,self.X,self.Y,self.angle_idims,self.angle_odims,self.loghyp,self.K,self.iK,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_)
+        #TODO
+        pass
 
     def init_cost(self,cost):
         self.cost_symbolic = cost
@@ -155,7 +139,11 @@ class EpisodicLearner(object):
         print_with_stamp('Current value [%f]'%(self.value(derivs=True))[0],self.name) 
         p0 = self.policy.get_params(symbolic=False)
         parameter_shapes = [p.shape for p in p0]
-        opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method=self.min_method, tol=1e-12, options={'maxiter': 150})
+        try:
+            opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method=self.min_method, tol=1e-9, options={'maxiter': 150})
+        except ValueError:
+            opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method='CG', tol=1e-9, options={'maxiter': 150})
+
         self.policy.set_params(unwrap_params(opt_res.x,parameter_shapes))
         print '' 
         print_with_stamp('Done training. New value [%f]'%(self.value(derivs=False)),self.name)

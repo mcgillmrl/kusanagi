@@ -85,10 +85,10 @@ class LocalLinearPolicy:
         self.b_ = np.zeros(t, u_nominal[0].shape[0])
         self.A_ = np.zeros(t, u_nominal[0].shape[0], z_nominal[0].shape[0])
 
-        self.A = theano.shared(self.A_)
-        self.b = theano.shared(self.b_)
-        self.u_nominal = theano.shared(self.u_nominal_)
-        self.z_nominal = theano.shared(self.z_nominal_)
+        self.A = theano.shared(self.A_,borrow=True)
+        self.b = theano.shared(self.b_,borrow=True)
+        self.u_nominal = theano.shared(self.u_nominal_,borrow=True)
+        self.z_nominal = theano.shared(self.z_nominal_,borrow=True)
 
     def evaluate(self, t, m, s=None, derivs=False, symbolic=False):
         D = m.shape[0]

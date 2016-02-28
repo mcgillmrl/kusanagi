@@ -18,8 +18,8 @@ if __name__ == '__main__':
     model_parameters['b'] = 0.1
     model_parameters['g'] = 9.82
     x0 = [0,0,0,0]                                                   # initial state mean
-    S0 = np.eye(4)*(0.35**2)                                          # initial state covariance
-    measurement_noise = np.diag(np.ones(len(x0))*0.02**2)            # model measurement noise (randomizes the output of the plant)
+    S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
+    measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
     plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
     draw_cp.start()

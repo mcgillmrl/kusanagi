@@ -47,7 +47,7 @@ class GP(object):
 
         #symbolic varianbles
         self.X_ = None; self.Y_ = None; self.loghyp_=None
-        self.X_shared = None; self.Y_shared = None; self.loghyp = None
+        self.loghyp = None
         self.X = None; self.Y = None
         self.K = None; self.iK = None; self.beta = None;
         self.nlml = None
@@ -98,13 +98,13 @@ class GP(object):
 
         # now we create symbolic shared variables
         if self.X is None:
-            self.X = S(self.X_,name='X')
+            self.X = S(self.X_,name='X',borrow=True)
         else:
-            self.X.set_value(self.X_)
+            self.X.set_value(self.X_,borrow=True)
         if self.Y is None:
-            self.Y = S(self.Y_,name='Y')
+            self.Y = S(self.Y_,name='Y',borrow=True)
         else:
-            self.Y.set_value(self.Y_)
+            self.Y.set_value(self.Y_,borrow=True)
 
         # init log hyperparameters
         self.init_loghyp()
@@ -136,9 +136,9 @@ class GP(object):
         self.loghyp_ = loghyp
         # this creates one theano shared variable for the log hyperparameters
         if self.loghyp is None:
-            self.loghyp = S(self.loghyp_,name='loghyp')
+            self.loghyp = S(self.loghyp_,name='loghyp',borrow=True)
         else:
-            self.loghyp.set_value(self.loghyp_)
+            self.loghyp.set_value(self.loghyp_,borrow=True)
 
     def get_params(self, symbolic=True):
         if symbolic:
@@ -432,9 +432,9 @@ class SPGP(GP):
         self.X_sp_, dist = kmeans(self.X_, self.X_sp_, iter=200,thresh=1e-12)
         # initialize symbolic tensor variable if necessary
         if self.X_sp is None:
-            self.X_sp = S(self.X_sp_)
+            self.X_sp = S(self.X_sp_,borrow=True)
         else:
-            self.X_sp.set_value(self.X_sp_)
+            self.X_sp.set_value(self.X_sp_,borrow=True)
 
     def set_dataset(self,X_dataset,Y_dataset):
         # set the dataset on the parent class
@@ -541,7 +541,7 @@ class SPGP(GP):
         if theano.config.floatX == 'float32':
             X_sp = X_sp.astype(np.float32)
         np.copyto(self.X_sp_,X_sp)
-        self.X_sp.set_value(self.X_sp_)
+        self.X_sp.set_value(self.X_sp_,borrow=True)
 
     def loss_sp(self,X_sp):
         self.set_X_sp(X_sp)
@@ -692,12 +692,12 @@ class RBFGP(GP_UI):
         self.loghyp_ = loghyp
         # this creates one theano shared variable for the log hyperparameters
         if self.loghyp_full is None:
-            self.loghyp_full = S(self.loghyp_,name='loghyp')
+            self.loghyp_full = S(self.loghyp_,name='loghyp',borrow=True)
             self.loghyp = T.zeros_like(self.loghyp_full)
             self.loghyp = T.set_subtensor(self.loghyp[:,:-2], self.loghyp_full[:,:-2])
             self.loghyp = T.set_subtensor(self.loghyp[:,-2:], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:]))
         else:
-            self.loghyp_full.set_value(self.loghyp_)
+            self.loghyp_full.set_value(self.loghyp_,borrow=True)
 
     def predict_symbolic(self,mx,Sx):
         idims = self.D
@@ -769,7 +769,7 @@ class RBFGP(GP_UI):
 
 class SSGP(GP):
     ''' Sparse Spectral Gaussian Process Regression'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_basis=500,  uncertain_inputs=False, hyperparameter_gradients=False):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, hyperparameter_gradients=False):
         self.w = None
         self.w_ = None
         self.A = None
@@ -815,7 +815,7 @@ class SSGP(GP):
         
         # sample initial unscaled spectral points
         self.w_ = np.random.randn(self.n_basis,odims,idims)
-        self.w = S(self.w_,name='sr')
+        self.w = S(self.w_,name='sr',borrow=True)
         self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
 
         N = self.X.shape[0]
@@ -854,7 +854,7 @@ class SSGP(GP):
         if theano.config.floatX == 'float32':
             w = w.astype(np.float32)
         np.copyto(self.w_,w)
-        self.w.set_value(self.w_)
+        self.w.set_value(self.w_,borrow=True)
 
     def loss_ss(self, params, parameter_shapes):
         loghyp,w = unwrap_params(params,parameter_shapes)
@@ -873,13 +873,13 @@ class SSGP(GP):
         # train the full GP
         super(SSGP, self).train()
 
-        # initialize spectral samples
         idims = self.D
         odims = self.E
 
-        # try a couple spectral samples and pick the one with the lowest nlml
+        # initialize spectral samples
         nlml = self.nlml_ss()
         best_w = self.w_.copy()
+        # try a couple spectral samples and pick the one with the lowest nlml
         for i in xrange(100):
             self.set_spectral_samples( np.random.randn(self.n_basis,odims,idims) )
             nlml_i = self.nlml_ss()
@@ -893,7 +893,7 @@ class SSGP(GP):
         # wrap loghyp plus sr (save shapes)
         p0 = [self.loghyp_,self.w_]
         parameter_shapes = [p.shape for p in p0]
-        opt_res = minimize(self.loss_ss, wrap_params(p0), args=parameter_shapes, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
+        opt_res = minimize(self.loss_ss, wrap_params(p0), args=parameter_shapes, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
         print ''
         loghyp,w = unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
@@ -927,7 +927,7 @@ class SSGP(GP):
 
 class SSGP_UI(SSGP, GP_UI):
     ''' Sparse Spectral Gaussian Process Regression with Uncertain Inputs'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=500,  uncertain_inputs=True, hyperparameter_gradients=False):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
     def predict_symbolic(self,mx,Sx):
@@ -943,6 +943,8 @@ class SSGP_UI(SSGP, GP_UI):
         M2 = [[]]*(odims**2) # second moment
         sr=[[]]*odims
         srdotx=[[]]*odims
+        sin_srdotx=[[]]*odims
+        cos_srdotx=[[]]*odims
         for i in xrange(odims):
             # get the spectral samples for dimension i
             sr[i] = self.sr[i]         # Ms x D
@@ -957,12 +959,12 @@ class SSGP_UI(SSGP, GP_UI):
             e = T.exp(-0.5*T.sum((sr[i].dot(Sx))*sr[i],1))
             # compute the mean vector
             mphi_i = T.concatenate( [ T.sin( srdotx[i] )*e, T.cos( srdotx[i] )*e ] ) # 2*Ms x 1
-            M.append( mphi_i.T.dot(self.beta_ss[i]).flatten() )
+            M.append( mphi_i.T.dot(self.beta_ss[i]) )
 
             # inv(s) times input output covariance
             c = T.horizontal_stack( ( T.outer( mx, T.sin( srdotx[i] ) ) + Sx.dot(sr[i].T)*T.cos( srdotx[i] ) )*e , ( T.outer( mx, T.cos( srdotx[i] ) ) - Sx.dot(sr[i].T)*T.sin( srdotx[i] ) )*e ) # D x 2*Ms
             v = c.dot(self.beta_ss[i]) - mx*M[i]
-            V.append( matrix_inverse(Sx).dot(v).flatten() )
+            V.append( matrix_inverse(Sx).dot(v) )
             
             # predictive covariance
             for j in xrange(i+1):
@@ -992,13 +994,60 @@ class SSGP_UI(SSGP, GP_UI):
                     # if i==j we need to add the trace term
                     m2 =  m2 + sn2*(1 + T.sum(self.iA[i]*Qij))
                 else:
-                    M2[j*odims+i] = m2.flatten()
-                M2[i*odims+j] = m2.flatten()
+                    M2[j*odims+i] = m2
+                M2[i*odims+j] = m2
 
-        M = T.concatenate(M)
+        M = T.stack(M)
         V = T.stack(V).T
-        M2 = T.stack(M2).T
+        M2 = T.stack(M2)
         S = M2.reshape((odims,odims))
-        S = S - (M[:,None]*M[None,:])
+        S = S - T.outer(M,M)
 
         return M,S,V
+
+class VSSGP(GP):
+    ''' Variational Sparse Spectral Gaussian Process Regression'''
+    def __init__(self, X_dataset=None, Y_dataset=None, name='VSSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, hyperparameter_gradients=False):
+        self.n_basis = n_basis
+        super(VSSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+
+    def init_log_likelihood(self):
+        super(VSSGP, self).init_log_likelihood()
+        utils.print_with_stamp('Initialising expression graph for sparse spectral log likelihood',self.name)
+        idims = self.D
+        odims = self.E
+
+        self.A = [[]]*odims
+        self.iA = [[]]*odims
+        self.beta_ss = [[]]*odims
+        nlml_ss = [[]]*odims
+        
+        # sample initial unscaled spectral points
+        self.w_ = np.random.randn(self.n_basis,odims,idims)
+        self.w = S(self.w_,name='sr',borrow=True)
+        self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+
+        N = self.X.shape[0]
+        for i in xrange(odims):
+            sr = self.sr[i]
+            M = sr.shape[0]
+            sf2 = T.exp(2*self.loghyp[i,idims])
+            sn2 = T.exp(2*self.loghyp[i,idims+1])
+            Yi = self.Y[:,i]
+            nlml_ss[i] = -0.5*N*T.log(2*np.pi/sn2) - sn2*Yi.dot(Yi) - 0.5*T.log(det(psd((1/sn2)*self.iA[i]))) + Yi.T.dot(m_phi).dot(self.iA[i]) .dot(m_phi.T).dot(Yi)
+        
+        nlml_ss = T.stack(nlml_ss)
+        if self.snr_penalty is not None:
+            penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
+            nlml_ss += self.snr_penalty(self.loghyp)
+
+        # Compute the gradients for the sum of nlml for all output dimensions
+        dnlml_wrt_lh = T.jacobian(nlml_ss.sum(),self.loghyp)
+        dnlml_wrt_w = T.jacobian(nlml_ss.sum(),self.w)
+
+        utils.print_with_stamp('Compiling sparse spectral log likelihood',self.name)
+        self.nlml_ss = F((),nlml_ss,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+        utils.print_with_stamp('Compiling jacobian of sparse spectral log likelihood',self.name)
+        self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+
+
