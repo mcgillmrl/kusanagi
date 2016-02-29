@@ -41,8 +41,9 @@ class RBFPolicy:
         # set the initial inputs and targets
         self.model.set_dataset(inputs,targets)
 
-        # set the initial log hyperparameters
-        self.model.set_loghyp(np.log(np.tile(np.array([1,1,1,0.7,0.7,1,0.01]),(self.maxU.size,1))))
+        # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
+        l0 = np.hstack([np.ones(self.m0.size-len(self.angle_idims)),0.7*np.ones(2*len(self.angle_idims)),1,0.01])
+        self.model.set_loghyp(np.log(np.tile(l0,(self.maxU.size,1))))
         self.model.init_log_likelihood()
         self.model.init_predict()
 

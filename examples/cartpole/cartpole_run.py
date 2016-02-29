@@ -2,7 +2,7 @@ import signal,sys
 import numpy as np
 from functools import partial
 from ghost.learners.PILCO import PILCO
-from shell.toy.cartpole import Cartpole, CartpoleDraw, cartpole_loss
+from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import RandPolicy, RBFPolicy
 from utils import gTrig_np
 
