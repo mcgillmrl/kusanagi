@@ -28,7 +28,7 @@ if __name__ == '__main__':
     # initialize policy
     angle_dims = [4,5]
     p1 = RandPolicy([20])
-    p2 = RBFPolicy(x0,S0,[20],200, angle_dims)
+    p2 = RBFPolicy(x0,S0,[20],100, angle_dims)
 
     # initialize cost function
     cost_parameters = {}
