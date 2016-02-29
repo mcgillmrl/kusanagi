@@ -781,20 +781,22 @@ class SSGP(GP):
         super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def set_state(self,state):
-        self.w = state[-7]
-        self.w_ = state[-6]
+        self.w = state[-8]
+        self.w_ = state[-7]
+        self.w = state[-6]
         self.beta_ss = state[-5]
         self.A = state[-4]
         self.iA = state[-3]
         self.nlml_ss = state[-2]
         self.dnlml_ss = state[-1]
-        super(SSGP,self).set_state(state[:-7])
+        super(SSGP,self).set_state(state[:-8])
         self.should_recompile = False
 
     def get_state(self):
         state = super(SSGP,self).get_state()
         state.append(self.w)
         state.append(self.w_)
+        state.append(self.sr)
         state.append(self.beta_ss)
         state.append(self.A)
         state.append(self.iA)
