@@ -772,6 +772,7 @@ class SSGP(GP):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, hyperparameter_gradients=False):
         self.w = None
         self.w_ = None
+        self.sr = None
         self.A = None
         self.iA = None
         self.beta_ss = None
@@ -783,7 +784,7 @@ class SSGP(GP):
     def set_state(self,state):
         self.w = state[-8]
         self.w_ = state[-7]
-        self.w = state[-6]
+        self.sr = state[-6]
         self.beta_ss = state[-5]
         self.A = state[-4]
         self.iA = state[-3]
