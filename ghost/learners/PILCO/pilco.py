@@ -4,7 +4,6 @@ from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
-from theano.compile.nanguardmode import NanGuardMode
 
 class PILCO(EpisodicLearner):
     def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=True):
@@ -90,12 +89,12 @@ class PILCO(EpisodicLearner):
                 dretvars.append( theano.tensor.grad(mV_.sum(), p ) ) # we are only interested in the derivative of the sum of expected values
 
             print_with_stamp('Compiling belief state propagation',self.name)
-            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=False),updates=updts)
+            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
             print_with_stamp('Compiling policy gradients',self.name)
-            self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=False),updates=updts)
+            self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)
         else:
             print_with_stamp('Compiling belief state propagation',self.name)
-            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, mode=NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=False),updates=updts)
+            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
         print_with_stamp('Done compiling.',self.name)
 
     def train_dynamics(self):
