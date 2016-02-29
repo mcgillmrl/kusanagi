@@ -56,4 +56,4 @@ if __name__ == '__main__':
         plant.reset_state()
         learner.apply_controller(H=T)
 
-    draw_cp.stop()
+    draw_dcp.stop()
