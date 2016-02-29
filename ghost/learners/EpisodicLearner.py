@@ -41,6 +41,8 @@ class EpisodicLearner(object):
             self.init_cost(cost)
         self.H = 10
         self.discount = 1
+        self.learning_iteration = 0;
+        self.n_evals = 0
 
     def load(self):
         # TODO use saved filenames to load the appropriate policy and dynamics model
@@ -135,8 +137,10 @@ class EpisodicLearner(object):
         if H is not None:
             self.H = H
         # optimize value wrt to the policy parameters
-        print_with_stamp('Training policy parameters.', self.name)# Starting value [%f]'%(self.value(derivs=False)),self.name)
-        print_with_stamp('Current value [%f]'%(self.value(derivs=True))[0],self.name) 
+        self.learning_iteration+=1
+        self.n_evals=0
+        print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)# Starting value [%f]'%(self.value(derivs=False)),self.name)
+        print_with_stamp('Initial value estimate [%f]'%(self.value(derivs=True))[0],self.name) 
         p0 = self.policy.get_params(symbolic=False)
         parameter_shapes = [p.shape for p in p0]
         try:
@@ -158,6 +162,6 @@ class EpisodicLearner(object):
         dv = wrap_params(dv)
         if theano.config.floatX == 'float32':
             v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
-        
-        print_with_stamp('Current value: %s'%(str(v)),self.name,True)
+        self.n_evals+=1
+        print_with_stamp('Current value: %s, Total evaluations: %d    '%(str(v),self.n_evals),self.name,True)
         return v,dv
