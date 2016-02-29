@@ -42,7 +42,7 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
     return sum(M_cost), sum(S_cost)
 
 class DoubleCartpole(ODEPlant):
-    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Cartpole', integrator='dopri5', atol=1e-12, rtol=1e-12):
+    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='DoubleCartpole', integrator='dopri5', atol=1e-12, rtol=1e-12):
         super(DoubleCartpole, self).__init__(params, x0, S0, dt=dt, noise=noise, name=name, integrator=integrator, atol=atol, rtol=rtol)
 
     def dynamics(self,t,z):
@@ -88,7 +88,7 @@ class DoubleCartpole(ODEPlant):
 
 
 class DoubleCartpoleDraw(PlantDraw):
-    def __init__(self, cartpole_plant, refresh_period=100, name='CartpoleDraw'):
+    def __init__(self, cartpole_plant, refresh_period=100, name='DoubleCartpoleDraw'):
         super(DoubleCartpoleDraw, self).__init__(cartpole_plant, refresh_period,name)
         m1 = self.plant.params['m1']
         m2 = self.plant.params['m2']
