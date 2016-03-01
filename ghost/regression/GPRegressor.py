@@ -873,8 +873,23 @@ class SSGP(GP):
         return res
 
     def train(self):
-        # train the full GP
+        # train the full GP ( if dataset too large, take a random subsample)
+        X_full = None
+        Y_full = None
+        n_subsample = 512
+        if self.X_.shape[0] > n_subsample:
+            utils.print_with_stamp('Training full gp with random subsample of size %d'%(n_subsample),self.name)
+            idx = np.arange(self.X_.shape[0]); np.random.shuffle(idx); idx= idx[:n_subsample]
+            X_full = self.X_
+            Y_full = self.Y_
+            self.set_dataset(self.X_[idx],self.Y_[idx])
+
         super(SSGP, self).train()
+
+        if X_full is not None:
+            # restore full dataset for SSGP training
+            utils.print_with_stamp('Restoring full dataset',self.name)
+            self.set_dataset(X_full,Y_full)
 
         idims = self.D
         odims = self.E
@@ -946,8 +961,6 @@ class SSGP_UI(SSGP, GP_UI):
         M2 = [[]]*(odims**2) # second moment
         sr=[[]]*odims
         srdotx=[[]]*odims
-        sin_srdotx=[[]]*odims
-        cos_srdotx=[[]]*odims
         for i in xrange(odims):
             # get the spectral samples for dimension i
             sr[i] = self.sr[i]         # Ms x D
@@ -985,13 +998,13 @@ class SSGP_UI(SSGP, GP_UI):
                 
                 # Populate the second moment matrix of the feature vector
                 Qij = T.zeros((2*Ms,2*Ms))
-                Qij = T.set_subtensor( Qij[:Ms,:Ms] , 0.5*(cm - cp) )
-                Qij = T.set_subtensor( Qij[:Ms,Ms:] , 0.5*(sm + sp) )
-                Qij = T.set_subtensor( Qij[Ms:,:Ms] , 0.5*(sp - sm) )
-                Qij = T.set_subtensor( Qij[Ms:,Ms:] , 0.5*(cm + cp) )
+                Qij = T.set_subtensor( Qij[:Ms,:Ms] , cm - cp )
+                Qij = T.set_subtensor( Qij[:Ms,Ms:] , sm + sp )
+                Qij = T.set_subtensor( Qij[Ms:,:Ms] , sp - sm )
+                Qij = T.set_subtensor( Qij[Ms:,Ms:] , cm + cp )
 
                 # Compute the second moment of the output
-                m2 = matrix_dot(self.beta_ss[i], Qij, self.beta_ss[j].T)
+                m2 = matrix_dot(self.beta_ss[i], 0.5*Qij, self.beta_ss[j].T)
 
                 if i == j:
                     # if i==j we need to add the trace term

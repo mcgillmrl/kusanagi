@@ -144,9 +144,10 @@ class EpisodicLearner(object):
         p0 = self.policy.get_params(symbolic=False)
         parameter_shapes = [p.shape for p in p0]
         try:
-            opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method=self.min_method, tol=1e-9, options={'maxiter': 100})
+            opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method=self.min_method, tol=1e-9, options={'maxiter': 150})
         except ValueError:
-            opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method='CG', tol=1e-9, options={'maxiter': 100})
+            print_with_stamp('\n%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
+            opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method='CG', tol=1e-9, options={'maxiter': 150})
 
         self.policy.set_params(unwrap_params(opt_res.x,parameter_shapes))
         print '' 
