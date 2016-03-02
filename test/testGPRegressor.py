@@ -1,7 +1,8 @@
 from ghost.regression.GPRegressor import *
 from matplotlib import pyplot as plt
-from utils import gTrig2_np
+from utils import gTrig2_np, print_with_stamp
 from scipy.signal import convolve2d
+from time import time
 
 def test_random(gp_type='GP',angi=[0,1]):
     # test function
@@ -10,7 +11,7 @@ def test_random(gp_type='GP',angi=[0,1]):
         return np.exp(-500*(np.sum(0.0001*(X**2),1)))*np.sin(X.sum(1))
 
     n_samples = 1000
-    n_test = 10
+    n_test = 100
     idims = 2
     odims = 2
     np.random.seed(31337)
@@ -43,9 +44,9 @@ def test_random(gp_type='GP',angi=[0,1]):
     elif gp_type == 'SPGP_UI':
         gp = SPGP_UI(Xd,Yd, profile=False, n_basis = 100)
     elif gp_type == 'SSGP':
-        gp = SSGP(Xd,Yd, profile=False, n_basis = 10)
+        gp = SSGP(Xd,Yd, profile=False, n_basis = 100)
     elif gp_type == 'SSGP_UI':
-        gp = SSGP_UI(Xd,Yd, profile=False, n_basis = 10)
+        gp = SSGP_UI(Xd,Yd, profile=False, n_basis = 100)
     else:
         gp = GP(Xd,Yd, profile=False)
 
@@ -53,14 +54,18 @@ def test_random(gp_type='GP',angi=[0,1]):
     #gp.save()
 
     ss = convolve2d(np.eye(Xtest.shape[1]),kk,'same')
+    avg_time_per_call = 0
+    res = gp.predict(Xtest[i,:],ss,derivs=False)
     for i in xrange(n_test):
+        st = time()
         res = gp.predict(Xtest[i,:],ss,derivs=False)
+        avg_time_per_call += time()-st
         print Xtest[i,:],','
         print Ytest[i,:],','
         for j in xrange(len(res)):
            print res[j],','
         print '---'
-
+    print_with_stamp('avg_time_per_call %f'%(avg_time_per_call/n_test),'main')
     if gp.profile:
         write_profile_files(gp)
 

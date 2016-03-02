@@ -73,11 +73,22 @@ class PILCO(EpisodicLearner):
         gamma = theano.tensor.scalar('gamma')
 
         # this will generate the list of value and state distributions for each time step
-        def get_discounted_reward(mv,Sv,mx,Sx,gamma):
+        def get_discounted_reward(mv,Sv,mx,Sx,gamma,*args):
             mv_next, Sv_next, mx_next, Sx_next = rollout_single_step(mx,Sx)
             return gamma*mv_next,(gamma**2)*Sv_next, mx_next, Sx_next, gamma*gamma
+        # this are the initial values for the value and its variance
         zero_ct = theano.tensor.as_tensor_variable(np.asarray(0,mx.dtype))
-        (mV_,SV_,mx_,Sx_,gamma_), updts = theano.scan(fn=get_discounted_reward, outputs_info=[zero_ct,zero_ct,mx,Sx,gamma], n_steps=H)
+        # these are the shared variables that will be used in the graph, we need to let theano know about these
+        # to reduce compilation times
+        shared_vars = []
+        shared_vars.extend(self.dynamics_model.get_params(symbolic=True))
+        shared_vars.extend(self.policy.get_params(symbolic=True))
+        (mV_,SV_,mx_,Sx_,gamma_), updts = theano.scan(fn=get_discounted_reward, 
+                                                      outputs_info=[zero_ct,zero_ct,mx,Sx,gamma], 
+                                                      non_sequences=shared_vars,
+                                                      n_steps=H, 
+                                                      strict=True,
+                                                      allow_gc=False)
         
         if derivs :
             print_with_stamp('Computing symbolic expression for policy gradients',self.name)
@@ -92,6 +103,7 @@ class PILCO(EpisodicLearner):
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
             print_with_stamp('Compiling policy gradients',self.name)
             self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)
+            #theano.function_dump('policy_gradient.pkl',[mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)
         else:
             print_with_stamp('Compiling belief state propagation',self.name)
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
@@ -135,7 +147,7 @@ class PILCO(EpisodicLearner):
         if self.dynamics_model is None:
             #self.dynamics_model = GP_UI(X,Y)
             #self.dynamics_model = SPGP_UI(X,Y,n_basis=100)
-            self.dynamics_model = SSGP_UI(X,Y,n_basis=75)
+            self.dynamics_model = SSGP_UI(X,Y,n_basis=100)
         else:
             self.dynamics_model.set_dataset(X,Y)
 

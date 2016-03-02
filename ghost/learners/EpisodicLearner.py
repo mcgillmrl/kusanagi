@@ -61,8 +61,8 @@ class EpisodicLearner(object):
     def init_cost(self,cost):
         self.cost_symbolic = cost
         print_with_stamp('Compiling cost function',self.name)
-        mx = theano.tensor.fvector('mx') if theano.config.floatX == 'float32' else theano.tensor.dvector('mx')
-        Sx = theano.tensor.fmatrix('Sx') if theano.config.floatX == 'float32' else theano.tensor.dmatrix('Sx')
+        mx = theano.tensor.vector('mx')
+        Sx = theano.tensor.matrix('Sx')
         self.cost = theano.function((mx,Sx),self.cost_symbolic(mx,Sx), allow_input_downcast=True)
 
     def apply_controller(self,H=float('inf')):
@@ -151,6 +151,7 @@ class EpisodicLearner(object):
 
         self.policy.set_params(unwrap_params(opt_res.x,parameter_shapes))
         print '' 
+        #self.policy_gradients.profile.print_summary()
         print_with_stamp('Done training. New value [%f]'%(self.value(derivs=False)),self.name)
         self.save()
 
@@ -161,8 +162,7 @@ class EpisodicLearner(object):
         # compute value + derivatives
         v,dv = self.value(derivs=True)
         dv = wrap_params(dv)
-        if theano.config.floatX == 'float32':
-            v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
+        v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
         self.n_evals+=1
         print_with_stamp('Current value: %s, Total evaluations: %d    '%(str(v),self.n_evals),self.name,True)
         return v,dv

@@ -9,7 +9,8 @@ from scipy.cluster.vq import kmeans
 from theano import function as F, shared as S
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.tensor.nlinalg import matrix_dot
-from theano.sandbox.linalg import psd,matrix_inverse,det
+from theano.sandbox.linalg import psd,matrix_inverse,det,cholesky
+from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular
 
 import cov
 import SNRpenalty
@@ -49,7 +50,7 @@ class GP(object):
         self.X_ = None; self.Y_ = None; self.loghyp_=None
         self.loghyp = None
         self.X = None; self.Y = None
-        self.K = None; self.iK = None; self.beta = None;
+        self.K = None; self.L = None; self.beta = None;
         self.nlml = None
 
         # compiled functions
@@ -85,12 +86,8 @@ class GP(object):
             assert self.Y_.shape[1] == Y_dataset.shape[1]
 
         # first, assign the numpy arrays to class members
-        if theano.config.floatX == 'float32':
-            self.X_ = X_dataset.astype(np.float32)
-            self.Y_ = Y_dataset.astype(np.float32)
-        else:
-            self.X_ = X_dataset
-            self.Y_ = Y_dataset
+        self.X_ = X_dataset.astype(theano.config.floatX )
+        self.Y_ = Y_dataset.astype(theano.config.floatX)
         # dims = non_angle_dims + 2*angle_dims
         self.N = self.X_.shape[0]
         self.D = X_dataset.shape[1]
@@ -98,11 +95,11 @@ class GP(object):
 
         # now we create symbolic shared variables
         if self.X is None:
-            self.X = S(self.X_,name='X',borrow=True)
+            self.X = S(self.X_,name='%s>X'%(self.name),borrow=True)
         else:
             self.X.set_value(self.X_,borrow=True)
         if self.Y is None:
-            self.Y = S(self.Y_,name='Y',borrow=True)
+            self.Y = S(self.Y_,name='%s>Y'%(self.name),borrow=True)
         else:
             self.Y.set_value(self.Y_,borrow=True)
 
@@ -129,14 +126,11 @@ class GP(object):
         self.set_loghyp(self.loghyp_)
 
     def set_loghyp(self, loghyp):
-        loghyp = loghyp.reshape(self.loghyp_.shape)
-        if theano.config.floatX == 'float32':
-            loghyp = loghyp.astype(np.float32)
-        
+        loghyp = loghyp.reshape(self.loghyp_.shape).astype(theano.config.floatX)
         self.loghyp_ = loghyp
         # this creates one theano shared variable for the log hyperparameters
         if self.loghyp is None:
-            self.loghyp = S(self.loghyp_,name='loghyp',borrow=True)
+            self.loghyp = S(self.loghyp_,name='%s>loghyp'%(self.name),borrow=True)
         else:
             self.loghyp.set_value(self.loghyp_,borrow=True)
 
@@ -162,12 +156,12 @@ class GP(object):
 
         self.kernel_func = [[]]*odims
         self.K = [[]]*odims
-        self.iK = [[]]*odims
+        self.L = [[]]*odims
         self.beta = [[]]*odims
         nlml = [[]]*odims
         dnlml = [[]]*odims
         covs = (cov.SEard, cov.Noise)
-        N = T.cast(self.X.shape[0], self.X.dtype)
+        N = self.X.shape[0].astype(theano.config.floatX)
         for i in xrange(odims):
             # initialise the (before compilation) kernel function
             loghyps = (self.loghyp[i,:idims+1],self.loghyp[i,idims+1])
@@ -175,12 +169,13 @@ class GP(object):
 
             # We initialise the kernel matrices (one for each output dimension)
             self.K[i] = self.kernel_func[i](self.X)
-            self.iK[i] = matrix_inverse(psd(self.K[i]))
-            self.beta[i] = self.iK[i].dot(self.Y[:,i])
+            self.L[i] = cholesky(self.K[i])
+            Yc = solve_lower_triangular(self.L[i],self.Y[:,i])
+            self.beta[i] = solve_upper_triangular(self.L[i].T,Yc)
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
-            nlml[i] = 0.5*(self.Y[:,i].T.dot(self.beta[i]) + T.log(det(psd(self.K[i]))) + N*T.log(np.asarray(2*np.pi, self.X.dtype))) 
+            nlml[i] = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(self.L[i]))) + N*T.log(2*np.pi) )
 
         nlml = T.stack(nlml)
         if self.snr_penalty is not None:
@@ -247,7 +242,8 @@ class GP(object):
         for i in xrange(odims):
             k = self.kernel_func[i](mx[None,:],self.X)
             mean[i] = k.dot(self.beta[i])
-            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False) - k.dot( self.iK[i] ).dot(k.T)  #TODO verify this computation
+            kc = solve_lower_triangular(self.L[i],k.flatten())
+            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False) - kc.dot(kc)  #TODO verify this computation
 
         # reshape output variables
         M = T.stack(mean).T.flatten()
@@ -325,7 +321,7 @@ class GP(object):
         self.Y = state[1]
         self.loghyp = state[2]
         self.K = state[3]
-        self.iK = state[4]
+        self.L = state[4]
         self.beta = state[5]
         self.set_dataset(state[6],state[7])
         self.set_loghyp(state[8])
@@ -336,7 +332,7 @@ class GP(object):
         self.kernel_func = state[13]
 
     def get_state(self):
-        return [self.X,self.Y,self.loghyp,self.K,self.iK,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func]
+        return [self.X,self.Y,self.loghyp,self.K,self.L,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func]
 
 class GP_UI(GP):
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'GP_UI', idims=None, odims=None, profile=False, uncertain_inputs=True, hyperparameter_gradients=False):
@@ -356,7 +352,10 @@ class GP_UI(GP):
         logk=[[]]*odims
         Lambda=[[]]*odims
         z_=[[]]*odims
+        N = self.X.shape[0]
         for i in xrange(odims):
+            sf2 = T.exp(2*self.loghyp[i,idims])
+            sn2 = T.exp(2*self.loghyp[i,idims+1])
             # rescale input dimensions by inverse lengthscales
             iL = T.diag(T.exp(-self.loghyp[i,:idims]))
             inp = zeta.dot(iL)  # Note this is assuming a diagonal scaling matrix on the kernel
@@ -364,7 +363,6 @@ class GP_UI(GP):
             # predictive mean ( which depends on input covariance )
             B = iL.dot(Sx).dot(iL) + T.eye(idims)
             t = inp.dot(matrix_inverse(B))
-            sf2 = T.exp(2*self.loghyp[i,idims])
             c = sf2/T.sqrt(det(B))
             l = T.exp(-0.5*T.sum(inp*t,1))
             lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
@@ -389,19 +387,19 @@ class GP_UI(GP):
                 Q = t2*T.exp( n2 )
 
                 # Eq 2.55
-                m2 = matrix_dot(self.beta[i], Q, self.beta[j].T)
+                m2 = matrix_dot(self.beta[i], Q, self.beta[j])
                 if i == j:
-                    iKi = self.iK[i].dot(T.eye(self.iK[i].shape[0]))
-                    m2 =  m2 - T.sum(iKi*Q) + T.exp(2*self.loghyp[i,idims])
+                    iKi = solve_upper_triangular(self.L[i].T, solve_lower_triangular(self.L[i],T.eye(N)))
+                    m2 =  m2 - T.sum(iKi*Q) + sf2
                 else:
-                    M2[j*odims+i] = m2.flatten()
-                M2[i*odims+j] = m2.flatten()
+                    M2[j*odims+i] = m2
+                M2[i*odims+j] = m2
 
         M = T.stack(M).T.flatten()
         V = T.stack(V).T
         M2 = T.stack(M2).T
         S = M2.reshape((odims,odims))
-        S = S - (M[:,None]*M[None,:])
+        S = S - T.outer(M,M)
 
         return M,S,V
         
@@ -412,8 +410,8 @@ class SPGP(GP):
         self.nlml_sp = None
         self.dnlml_sp = None
         self.beta_sp = None
-        self.Kmm = None
-        self.Bmm = None
+        self.Lmm = None
+        self.Amm = None
         self.should_recompile = False
         self.n_basis = n_basis
         # intialize parent class params
@@ -423,16 +421,14 @@ class SPGP(GP):
         assert self.N > self.n_basis, "Dataset must have more than n_basis [ %n ] to enable inference with sparse pseudo inputs"%(self.n_basis)
         self.should_recompile = True
         # pick initial cluster centers from dataset
-        self.X_sp_ = utils.kmeanspp(self.X_,self.n_basis)
-        if theano.config.floatX == 'float32':
-            self.X_sp_ = self.X_sp_.astype(np.float32)
+        self.X_sp_ = utils.kmeanspp(self.X_,self.n_basis).astype(theano.config.floatX)
 
         # perform kmeans to get initial cluster centers
         utils.print_with_stamp('Initialising pseudo inputs',self.name)
         self.X_sp_, dist = kmeans(self.X_, self.X_sp_, iter=200,thresh=1e-12)
         # initialize symbolic tensor variable if necessary
         if self.X_sp is None:
-            self.X_sp = S(self.X_sp_,borrow=True)
+            self.X_sp = S(self.X_sp_,name='%s>X_sp'%(self.name),borrow=True)
         else:
             self.X_sp.set_value(self.X_sp_,borrow=True)
 
@@ -446,8 +442,8 @@ class SPGP(GP):
             self.nlml_sp = None
             self.dnlml_sp = None
             self.beta_sp = None
-            self.Kmm = None
-            self.Bmm = None
+            self.Lmm = None
+            self.Amm = None
             self.should_recompile = False
 
         if self.N > self.n_basis and self.X_sp is None:
@@ -467,8 +463,8 @@ class SPGP(GP):
             odims = self.E
             idims = self.D
             # initialize the log likelihood of the sparse FITC approximation
-            self.Kmm = [[]]*odims
-            self.Bmm = [[]]*odims
+            self.Lmm = [[]]*odims
+            self.Amm = [[]]*odims
             self.beta_sp = [[]]*odims
             nlml_sp = [[]]*odims
             dnlml_sp = [[]]*odims
@@ -482,7 +478,9 @@ class SPGP(GP):
 
                 Kmm = self.kernel_func[i](X_sp_i) + 1e-6*T.eye(self.X_sp.shape[0])
                 Kmn = self.kernel_func[i](X_sp_i, self.X)
-                diagQnn =  T.diag(Kmn.T.dot((matrix_inverse(psd(Kmm))).dot(Kmn)))
+                Lmm = cholesky(Kmm)
+                Lmn = solve_lower_triangular(Lmm,Kmn)
+                diagQnn =  T.diag(Lmn.T.dot(Lmn))
 
                 # Gamma = diag(Knn - Qnn) + sn2*I
                 Gamma = sf2 - diagQnn + sn2
@@ -492,15 +490,16 @@ class SPGP(GP):
                 Kmn_ = Kmn*T.sqrt(Gamma_inv)                    # Kmn_*Gamma^-.5
                 Yi = self.Y[:,i]*(T.sqrt(Gamma_inv))            # Gamma^-.5* Y
                 Bmm = Kmm + (Kmn_).dot(Kmn_.T)                  # Kmm + Kmn * Gamma^-1 * Knm
-                Bmn_ = matrix_inverse(psd(Bmm)).dot(Kmn_)       # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-.5
+                Amm = cholesky(Bmm)
 
-                self.Kmm[i] = Kmm
-                self.Bmm[i] = Bmm
-                self.beta_sp[i] = Bmn_.dot(Yi)                  # (Kmm + Kmn * Gamma^-1 * Knm)^-1*Kmn*Gamma^-1*Y
+                Yci = solve_lower_triangular(Amm,Kmn_.dot(Yi) )
+                self.Lmm[i] = Lmm
+                self.Amm[i] = Amm
+                self.beta_sp[i] = solve_upper_triangular(Amm.T,Yci)
 
-                log_det_K_sp = T.sum(T.log(Gamma)) - T.log(det(psd(Kmm))) + T.log(det(psd(Bmm)))
+                log_det_K_sp = T.sum(T.log(Gamma)) - 2*T.sum(T.log(T.diag(Lmm))) + 2*T.sum(T.log(T.diag(Amm)))
 
-                nlml_sp[i] = 0.5*( Yi.T.dot(Yi) - (Kmn_.dot(Yi)).T.dot(self.beta_sp[i]) + log_det_K_sp + N*np.log(2*np.pi) )
+                nlml_sp[i] = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) + log_det_K_sp + N*np.log(2*np.pi) )
 
             nlml_sp = T.stack(nlml_sp)
             # TODO include the log hyperparameters in the optimization
@@ -524,11 +523,11 @@ class SPGP(GP):
         mean = [[]]*odims
         variance = [[]]*odims
         for i in xrange(odims):
-            k = self.kernel_func[i](mx[None,:],self.X_sp)
+            k = self.kernel_func[i](mx[None,:],self.X_sp).flatten()
             mean[i] = k.dot(self.beta_sp[i])
-            iK = matrix_inverse(psd(self.Kmm[i]))
-            iB = matrix_inverse(psd(self.Bmm[i]))
-            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False) - k.dot( iK - iB).dot(k.T)
+            kL = solve_lower_triangular(self.Lmm[i],k)
+            kA = solve_lower_triangular(self.Amm[i],k)
+            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False) - kL.dot(kL) -  kA.dot(kA)
 
         # reshape the prediction output variables
         M = T.stack(mean).T.flatten()
@@ -537,11 +536,17 @@ class SPGP(GP):
         return M,S
 
     def set_X_sp(self, X_sp):
-        X_sp = X_sp.reshape(self.X_sp_.shape)
-        if theano.config.floatX == 'float32':
-            X_sp = X_sp.astype(np.float32)
+        X_sp = X_sp.reshape(self.X_sp_.shape).astype(theano.config.floatX)
         np.copyto(self.X_sp_,X_sp)
         self.X_sp.set_value(self.X_sp_,borrow=True)
+    
+    def get_params(self, symbolic=True):
+        retvars = super(SPGP,self).get_params(symbolic)
+        if symbolic:
+            retvars.append(self.X_sp)
+        else:
+            retvars.append(self.X_sp_)
+        return retvars
 
     def loss_sp(self,X_sp):
         self.set_X_sp(X_sp)
@@ -570,8 +575,8 @@ class SPGP(GP):
         self.X_sp = state[-7]
         self.X_sp_ = state[-6]
         self.beta_sp = state[-5]
-        self.Kmm = state[-4]
-        self.Bmm = state[-3]
+        self.Lmm = state[-4]
+        self.Amm = state[-3]
         self.nlml_sp = state[-2]
         self.dnlml_sp = state[-1]
         super(SPGP,self).set_state(state[:-7])
@@ -582,8 +587,8 @@ class SPGP(GP):
         state.append(self.X_sp)
         state.append(self.X_sp_)
         state.append(self.beta_sp)
-        state.append(self.Kmm)
-        state.append(self.Bmm)
+        state.append(self.Lmm)
+        state.append(self.Amm)
         state.append(self.nlml_sp)
         state.append(self.dnlml_sp)
         return state
@@ -642,9 +647,10 @@ class SPGP_UI(SPGP,GP_UI):
                 Q = t2*T.exp( n2 )
 
                 # Eq 2.55
-                m2 = matrix_dot(self.beta_sp[i], Q, self.beta_sp[j].T)
+                m2 = matrix_dot(self.beta_sp[i], Q, self.beta_sp[j])
                 if i == j:
-                    iKi = matrix_inverse(psd(self.Kmm[i])).dot(T.eye(self.n_basis)) - matrix_inverse(psd(self.Bmm[i])).dot(T.eye(self.n_basis))
+                    iKi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(self.n_basis)))
+                    iBi = solve_upper_triangular(self.Amm[i].T, solve_lower_triangular(self.Amm[i],T.eye(self.n_basis)))
                     m2 =  m2 - T.sum(iKi*Q) + T.exp(2*self.loghyp[i,idims])
                 else:
                     M2[j*odims+i] = m2.flatten()
@@ -654,7 +660,7 @@ class SPGP_UI(SPGP,GP_UI):
         V = T.stack(V).T
         M2 = T.stack(M2).T
         S = M2.reshape((odims,odims))
-        S = S - (M[:,None]*M[None,:])
+        S = S - T.outer(M,M)
 
         return M,S,V
 
@@ -685,14 +691,12 @@ class RBFGP(GP_UI):
             return retvars
     
     def set_loghyp(self, loghyp):
-        loghyp = loghyp.reshape(self.loghyp_.shape)
-        if theano.config.floatX == 'float32':
-            loghyp = loghyp.astype(np.float32)
+        loghyp = loghyp.reshape(self.loghyp_.shape).astype(theano.config.floatX)
         
         self.loghyp_ = loghyp
         # this creates one theano shared variable for the log hyperparameters
         if self.loghyp_full is None:
-            self.loghyp_full = S(self.loghyp_,name='loghyp',borrow=True)
+            self.loghyp_full = S(self.loghyp_,name='%s>loghyp'%(self.name),borrow=True)
             self.loghyp = T.zeros_like(self.loghyp_full)
             self.loghyp = T.set_subtensor(self.loghyp[:,:-2], self.loghyp_full[:,:-2])
             self.loghyp = T.set_subtensor(self.loghyp[:,-2:], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:]))
@@ -757,7 +761,7 @@ class RBFGP(GP_UI):
         V = T.stack(V).T
         M2 = T.stack(M2).T
         S = M2.reshape((odims,odims))
-        S = S - (M[:,None]*M[None,:])
+        S = S - T.outer(M,M)
 
         # apply saturating function to the output if available
         if self.sat_func is not None:
@@ -774,7 +778,7 @@ class SSGP(GP):
         self.w_ = None
         self.sr = None
         self.A = None
-        self.iA = None
+        self.Lmm = None
         self.beta_ss = None
         self.nlml_ss = None
         self.dnlml_ss = None
@@ -787,7 +791,7 @@ class SSGP(GP):
         self.sr = state[-6]
         self.beta_ss = state[-5]
         self.A = state[-4]
-        self.iA = state[-3]
+        self.Lmm = state[-3]
         self.nlml_ss = state[-2]
         self.dnlml_ss = state[-1]
         super(SSGP,self).set_state(state[:-8])
@@ -800,7 +804,7 @@ class SSGP(GP):
         state.append(self.sr)
         state.append(self.beta_ss)
         state.append(self.A)
-        state.append(self.iA)
+        state.append(self.Lmm)
         state.append(self.nlml_ss)
         state.append(self.dnlml_ss)
         return state
@@ -812,19 +816,20 @@ class SSGP(GP):
         odims = self.E
 
         self.A = [[]]*odims
+        self.Lmm = [[]]*odims
         self.iA = [[]]*odims
         self.beta_ss = [[]]*odims
         nlml_ss = [[]]*odims
         
         # sample initial unscaled spectral points
-        self.w_ = np.random.randn(self.n_basis,odims,idims)
-        self.w = S(self.w_,name='sr',borrow=True)
+        self.w_ = np.random.randn(self.n_basis,odims,idims).astype(theano.config.floatX)
+        self.w = S(self.w_,name='%s>w'%(self.name),borrow=True)
         self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
 
         N = self.X.shape[0]
         for i in xrange(odims):
             sr = self.sr[i]
-            M = sr.shape[0]
+            M = sr.shape[0].astype(theano.config.floatX)
             sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
             # sr.T.dot(x) for all sr ( n_basis x *D) and X (N x D). size n_basis x N
@@ -832,11 +837,13 @@ class SSGP(GP):
             # convert to sin cos
             phi_f = T.vertical_stack(T.sin(srdotX), T.cos(srdotX))
 
-            self.A[i] = phi_f.dot(phi_f.T) + (M*sn2/sf2)*T.eye(2*M)
-            self.iA[i] = matrix_inverse(psd(self.A[i]))
+            self.A[i] = phi_f.dot(phi_f.T) + (M*sn2/sf2)*T.eye(2*sr.shape[0])
+            self.Lmm[i] = cholesky(self.A[i])
             Yi = self.Y[:,i]
-            self.beta_ss[i] = self.iA[i].dot(phi_f).dot(Yi)
-            nlml_ss[i] = 0.5*( Yi.dot(Yi) - Yi.T.dot(phi_f.T).dot(self.beta_ss[i]) )/sn2 + 0.5*T.log(det(psd(self.A[i]))) - M*T.log((M*sn2)/sf2) + 0.5*N*T.log(2*np.pi*sn2)
+            Yci = solve_lower_triangular(self.Lmm[i],phi_f.dot(Yi))
+            self.beta_ss[i] = solve_upper_triangular(self.Lmm[i].T,Yci)
+            
+            nlml_ss[i] = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) )/sn2 + T.sum(T.log(T.diag(self.Lmm[i]))) - M*T.log((M*sn2)/sf2) + 0.5*N*np.log(2*np.pi*sn2)
         
         nlml_ss = T.stack(nlml_ss)
         if self.snr_penalty is not None:
@@ -853,11 +860,17 @@ class SSGP(GP):
         self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
 
     def set_spectral_samples(self,w):
-        w = w.reshape(self.w_.shape)
-        if theano.config.floatX == 'float32':
-            w = w.astype(np.float32)
+        w = w.reshape(self.w_.shape).astype(theano.config.floatX)
         np.copyto(self.w_,w)
         self.w.set_value(self.w_,borrow=True)
+    
+    def get_params(self, symbolic=True):
+        retvars = super(SSGP,self).get_params(symbolic)
+        if symbolic:
+            retvars.append(self.w)
+        else:
+            retvars.append(self.w_)
+        return retvars
 
     def loss_ss(self, params, parameter_shapes):
         loghyp,w = unwrap_params(params,parameter_shapes)
@@ -935,7 +948,8 @@ class SSGP(GP):
             phi_x = T.concatenate([ T.sin(srdotX), T.cos(srdotX) ])
 
             mean[i] = phi_x.T.dot(self.beta_ss[i])
-            variance[i] = sn2 - sn2*(phi_x.T.dot( self.iA[i] ).dot(phi_x) ) #TODO verify this computation
+            phi_x_L = solve_lower_triangular(self.Lmm[i],phi_x)
+            variance[i] = sn2 - sn2*phi_x_L.dot( phi_x_L )
 
         # reshape output variables
         M = T.stack(mean).T.flatten()
@@ -961,10 +975,15 @@ class SSGP_UI(SSGP, GP_UI):
         M2 = [[]]*(odims**2) # second moment
         sr=[[]]*odims
         srdotx=[[]]*odims
+        srdotSx=[[]]*odims
+        cos_srdotx=[[]]*odims
+        sin_srdotx=[[]]*odims
         for i in xrange(odims):
             # get the spectral samples for dimension i
             sr[i] = self.sr[i]         # Ms x D
             srdotx[i] = sr[i].dot(mx)  # Ms x 1
+            srdotSx[i] = sr[i].dot(Sx)  # Ms x D
+
             # initalize some variables
             Ms = sr[i].shape[0]
             D = mx.shape[0]
@@ -972,29 +991,36 @@ class SSGP_UI(SSGP, GP_UI):
             sn2 = T.exp(2*self.loghyp[i,idims+1])
 
             # compute the Mx1 vector of input covariance dependent weights
-            e = T.exp(-0.5*T.sum((sr[i].dot(Sx))*sr[i],1))
+            e = T.exp(-0.5*T.sum(srdotSx[i]*sr[i],1))
+            sin_srdotx[i] = T.sin( srdotx[i] )*e
+            cos_srdotx[i] = T.cos( srdotx[i] )*e
             # compute the mean vector
-            mphi_i = T.concatenate( [ T.sin( srdotx[i] )*e, T.cos( srdotx[i] )*e ] ) # 2*Ms x 1
+            mphi_i = T.concatenate( [ sin_srdotx[i], cos_srdotx[i] ] ) # 2*Ms x 1
             M.append( mphi_i.T.dot(self.beta_ss[i]) )
 
             # inv(s) times input output covariance
-            c = T.horizontal_stack( ( T.outer( mx, T.sin( srdotx[i] ) ) + Sx.dot(sr[i].T)*T.cos( srdotx[i] ) )*e , ( T.outer( mx, T.cos( srdotx[i] ) ) - Sx.dot(sr[i].T)*T.sin( srdotx[i] ) )*e ) # D x 2*Ms
+            c = T.horizontal_stack( ( T.outer( mx, sin_srdotx[i] )  + srdotSx[i].T*cos_srdotx[i] ) , ( T.outer( mx, cos_srdotx[i] ) - srdotSx[i].T*sin_srdotx[i] ) ) # D x 2*Ms
             v = c.dot(self.beta_ss[i]) - mx*M[i]
             V.append( matrix_inverse(Sx).dot(v) )
             
             # predictive covariance
             for j in xrange(i+1):
                 # compute the second moments of the spectral feature vectors
-                srdotx_m_ij = (srdotx[i][:,None] - srdotx[j][None,:])   # MsxMs
-                srdotx_p_ij = (srdotx[i][:,None] + srdotx[j][None,:])   # MsxMs
-                sr_m_ij = (sr[i][:,None,:] - sr[j][None,:,:])           # MsxMsxD
-                sr_p_ij = (sr[i][:,None,:] + sr[j][None,:,:])           # MsxMsxD
-                em =  T.exp(-0.5*T.sum(sr_m_ij.dot(Sx)*sr_m_ij,2))      # MsxMs
-                ep =  T.exp(-0.5*T.sum(sr_p_ij.dot(Sx)*sr_p_ij,2))      # MsxMs
-                sm = T.sin( srdotx_m_ij )*em
-                sp = T.sin( srdotx_p_ij )*ep
-                cm = T.cos( srdotx_m_ij )*em
-                cp = T.cos( srdotx_p_ij )*ep
+                siSxsj = srdotSx[i].dot(sr[j].T)
+                em =  T.exp(siSxsj)      # MsxMs
+                ep =  T.exp(-siSxsj)     # MsxMs
+                si = sin_srdotx[i]       # Msx1
+                ci = cos_srdotx[i]       # Msx1   
+                sj = sin_srdotx[j]       # Msx1
+                cj = cos_srdotx[j]       # Msx1
+                sicj = T.outer(si,cj)    # MsxMs
+                cisj = T.outer(ci,sj)    # MsxMs
+                sisj = T.outer(si,sj)    # MsxMs
+                cicj = T.outer(ci,cj)    # MsxMs
+                sm = (sicj-cisj)*em
+                sp = (sicj+cisj)*ep
+                cm = (sisj+cicj)*em
+                cp = (cicj-sisj)*ep
                 
                 # Populate the second moment matrix of the feature vector
                 Qij = T.zeros((2*Ms,2*Ms))
@@ -1008,7 +1034,8 @@ class SSGP_UI(SSGP, GP_UI):
 
                 if i == j:
                     # if i==j we need to add the trace term
-                    m2 =  m2 + sn2*(1 + T.sum(self.iA[i]*Qij))
+                    iAi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms)))
+                    m2 =  m2 + sn2*(1 + T.sum(iAi*Qij))
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
@@ -1040,7 +1067,7 @@ class VSSGP(GP):
         
         # sample initial unscaled spectral points
         self.w_ = np.random.randn(self.n_basis,odims,idims)
-        self.w = S(self.w_,name='sr',borrow=True)
+        self.w = S(self.w_,name='%s>w'%(self.name),borrow=True)
         self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
 
         N = self.X.shape[0]

@@ -19,12 +19,6 @@ def SEard(loghyp,X1,X2=None, all_pairs=True):
     D = maha(X1,X2,T.diag(T.exp(-2*loghyp[:idims])),all_pairs=all_pairs)
     K = T.exp(2*loghyp[idims] - 0.5*D) 
     return K
-    #if all_pairs:
-    #    nf = T.cast(n, theano.config.floatX)
-    #    eps = 5e-6 if theano.config.floatX == 'float32' else 1e-6
-    #    return K + eps*T.log(nf)*T.eye(n) if (X1 is X2 or X2 is None) else K
-    #else:
-    #    return K
 
 def Noise(loghyp,X1,X2=None, all_pairs=True):
     ''' Noise kernel. Takes as an input a distance matrix D and creates a new matrix 

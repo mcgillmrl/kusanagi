@@ -41,8 +41,8 @@ if __name__ == '__main__':
 
     # initialize learner
     T = 5.0                                                          # controller horizon
-    J = 4                                                            # number of random initial trials
-    N = 15                                                           # learning iterations
+    J = 2                                                            # number of random initial trials
+    N = 40                                                           # learning iterations
     learner = PILCO(plant, p1, cost, angle_dims, async_plant=False)
 
     def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
