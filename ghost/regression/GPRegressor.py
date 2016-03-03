@@ -846,6 +846,7 @@ class SSGP(GP):
             nlml_ss[i] = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) )/sn2 + T.sum(T.log(T.diag(self.Lmm[i]))) - M*T.log((M*sn2)/sf2) + 0.5*N*np.log(2*np.pi*sn2)
         
         nlml_ss = T.stack(nlml_ss)
+        self.beta_ss = T.stack(self.beta_ss)
         if self.snr_penalty is not None:
             penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
             nlml_ss += self.snr_penalty(self.loghyp)
@@ -969,44 +970,33 @@ class SSGP_UI(SSGP, GP_UI):
 
         idims = self.D
         odims = self.E
+        
+        # precompute some variables
+        Ms = self.sr.shape[1]
+        srdotx = self.sr.dot(mx)
+        srdotSx = self.sr.dot(Sx) 
+        e = T.exp(-0.5*T.sum(srdotSx*self.sr,2))
+        cos_srdotx = T.cos(srdotx)*e
+        sin_srdotx = T.sin(srdotx)*e
 
-        M = [] # mean
-        V = [] # inv(Sx).dot(input_output_cov)
+        # compute the mean vector
+        mphi = T.horizontal_stack( sin_srdotx, cos_srdotx ) # E x 2*Ms
+        M = T.sum( mphi*self.beta_ss, 1)
+
+        # inv(s) times input output covariance
+        c = T.concatenate([ mx[:,None]*sin_srdotx[:,None,:] + srdotSx.transpose(0,2,1)*cos_srdotx[:,None,:], mx[:,None]*cos_srdotx[:,None,:] - srdotSx.transpose(0,2,1)*sin_srdotx[:,None,:] ], axis=2) # E x D x 2*Ms
+        v = T.sum( c*(self.beta_ss[:,None,:]), 2 ).T - T.outer(mx,M)
+        V = matrix_inverse(Sx).dot(v)
+        
+        # TODO vectorize this operation
         M2 = [[]]*(odims**2) # second moment
-        sr=[[]]*odims
-        srdotx=[[]]*odims
-        srdotSx=[[]]*odims
-        cos_srdotx=[[]]*odims
-        sin_srdotx=[[]]*odims
         for i in xrange(odims):
-            # get the spectral samples for dimension i
-            sr[i] = self.sr[i]         # Ms x D
-            srdotx[i] = sr[i].dot(mx)  # Ms x 1
-            srdotSx[i] = sr[i].dot(Sx)  # Ms x D
-
             # initalize some variables
-            Ms = sr[i].shape[0]
-            D = mx.shape[0]
-            sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
-
-            # compute the Mx1 vector of input covariance dependent weights
-            e = T.exp(-0.5*T.sum(srdotSx[i]*sr[i],1))
-            sin_srdotx[i] = T.sin( srdotx[i] )*e
-            cos_srdotx[i] = T.cos( srdotx[i] )*e
-            # compute the mean vector
-            mphi_i = T.concatenate( [ sin_srdotx[i], cos_srdotx[i] ] ) # 2*Ms x 1
-            M.append( mphi_i.T.dot(self.beta_ss[i]) )
-
-            # inv(s) times input output covariance
-            c = T.horizontal_stack( ( T.outer( mx, sin_srdotx[i] )  + srdotSx[i].T*cos_srdotx[i] ) , ( T.outer( mx, cos_srdotx[i] ) - srdotSx[i].T*sin_srdotx[i] ) ) # D x 2*Ms
-            v = c.dot(self.beta_ss[i]) - mx*M[i]
-            V.append( matrix_inverse(Sx).dot(v) )
-            
             # predictive covariance
             for j in xrange(i+1):
                 # compute the second moments of the spectral feature vectors
-                siSxsj = srdotSx[i].dot(sr[j].T)
+                siSxsj = srdotSx[i].dot(self.sr[j].T) #Ms x Ms
                 em =  T.exp(siSxsj)      # MsxMs
                 ep =  T.exp(-siSxsj)     # MsxMs
                 si = sin_srdotx[i]       # Msx1
@@ -1040,8 +1030,6 @@ class SSGP_UI(SSGP, GP_UI):
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
 
-        M = T.stack(M)
-        V = T.stack(V).T
         M2 = T.stack(M2)
         S = M2.reshape((odims,odims))
         S = S - T.outer(M,M)
