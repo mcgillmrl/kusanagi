@@ -345,58 +345,48 @@ class GP_UI(GP):
         #centralize inputs 
         zeta = self.X - mx
         
-        # predictive mean and covariance (for each output dimension)
-        M = [] # mean
-        V = [] # inv(Sx).dot(input_output_cov)
+        # initialize some variables
+        sf2 = T.exp(2*self.loghyp[:,idims])
+        eyeE = T.tile(T.eye(idims),(odims,1,1))
+        lscales = T.exp(self.loghyp[:,:idims])
+        iL = eyeE/lscales[:,:,None]
+
+        # predictive mean
+        inp = iL.dot(zeta.T).transpose(0,2,1) 
+        iLdotSx = iL.dot(Sx)
+        B = T.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + T.eye(idims)   #TODO vectorize this
+        t = T.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
+        c = sf2/T.sqrt(T.stack([det(B[i]) for i in xrange(odims)]))
+        l = T.exp(-0.5*T.sum(inp*t,2))
+        lb = l*self.beta # beta should have been precomputed in init_log_likelihood # E x N dot E x N
+        M = T.sum(lb,1)*c
+        
+        # inv(Sx) times input output covariance
+        tiL = T.stack([t[i].dot(iL[i]) for i in xrange(odims)])
+        V = T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+
+        # predictive covariance
+        logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
+        Lambda = iL**2
+        R = T.dot((Lambda[:,None,:,:] + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
+        z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         M2 = [[]]*(odims**2) # second moment
-        logk=[[]]*odims
-        Lambda=[[]]*odims
-        z_=[[]]*odims
         N = self.X.shape[0]
         for i in xrange(odims):
-            sf2 = T.exp(2*self.loghyp[i,idims])
-            sn2 = T.exp(2*self.loghyp[i,idims+1])
-            # rescale input dimensions by inverse lengthscales
-            iL = T.diag(T.exp(-self.loghyp[i,:idims]))
-            inp = zeta.dot(iL)  # Note this is assuming a diagonal scaling matrix on the kernel
-
-            # predictive mean ( which depends on input covariance )
-            B = iL.dot(Sx).dot(iL) + T.eye(idims)
-            t = inp.dot(matrix_inverse(B))
-            c = sf2/T.sqrt(det(B))
-            l = T.exp(-0.5*T.sum(inp*t,1))
-            lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
-            mean = T.sum(lb)*c;
-            M.append(mean.flatten())
-
-            # inv(s) times input output covariance (Eq 2.70)
-            tiL = t.dot(iL)
-            v = tiL.T.dot(lb)*c
-            V.append(v)
-            
-            # predictive covariance
-            logk[i] = 2*self.loghyp[i,idims] - 0.5*T.sum(inp*inp,1)
-            Lambda[i] = T.exp(-2*self.loghyp[i,:idims])
-            z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                R = Sx*(Lambda[i] + Lambda[j]) + T.eye(idims)
-    
-                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(R).dot(Sx))
-                t2 = 1.0/T.sqrt(det(R))
-                Q = t2*T.exp( n2 )
-
+                Rij = R[i,j]
+                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+                Q = T.exp( n2 )/T.sqrt(det(Rij))
                 # Eq 2.55
                 m2 = matrix_dot(self.beta[i], Q, self.beta[j])
                 if i == j:
                     iKi = solve_upper_triangular(self.L[i].T, solve_lower_triangular(self.L[i],T.eye(N)))
-                    m2 =  m2 - T.sum(iKi*Q) + sf2
+                    m2 =  m2 - T.sum(iKi*Q) + sf2[i]
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
 
-        M = T.stack(M).T.flatten()
-        V = T.stack(V).T
         M2 = T.stack(M2).T
         S = M2.reshape((odims,odims))
         S = S - T.outer(M,M)
@@ -606,58 +596,51 @@ class SPGP_UI(SPGP,GP_UI):
         odims = self.E
 
         #centralize inputs 
-        zeta = self.X_sp - mx
+        zeta = self.X - mx
+        
+        # initialize some variables
+        sf2 = T.exp(2*self.loghyp[:,idims])
+        eyeE = T.tile(T.eye(idims),(odims,1,1))
+        lscales = T.exp(self.loghyp[:,:idims])
+        iL = eyeE/lscales[:,:,None]
 
-        M = [] # mean
-        V = [] # inv(Sx).dot(input_output_cov)
+        # predictive mean
+        inp = iL.dot(zeta.T).transpose(0,2,1) 
+        iLdotSx = iL.dot(Sx)
+        B = T.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + T.eye(idims)   #TODO vectorize this
+        t = T.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
+        c = sf2/T.sqrt(T.stack([det(B[i]) for i in xrange(odims)]))
+        l = T.exp(-0.5*T.sum(inp*t,2))
+        lb = l*self.beta_sp # beta_sp should have been precomputed in init_log_likelihood # E x N dot E x N
+        M = T.sum(lb,1)*c
+        
+        # inv(Sx) times input output covariance
+        tiL = T.stack([t[i].dot(iL[i]) for i in xrange(odims)])
+        V = T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+
+        # predictive covariance
+        logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
+        Lambda = iL**2
+        R = T.dot((Lambda[:,None,:,:] + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
+        z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         M2 = [[]]*(odims**2) # second moment
-        logk=[[]]*odims
-        Lambda=[[]]*odims
-        z_=[[]]*odims
+        N = self.X.shape[0]
         for i in xrange(odims):
-            # rescale input dimensions by inverse lengthscales
-            iL = T.diag(T.exp(-self.loghyp[i,:idims]))
-            inp = zeta.dot(iL)  # Note this is assuming a diagonal scaling matrix on the kernel
-
-            # predictive mean ( which depends on input covariance )
-            B = iL.dot(Sx).dot(iL) + T.eye(idims)
-            t = inp.dot(matrix_inverse(B))
-            sf2 = T.exp(2*self.loghyp[i,idims])
-            c = sf2/T.sqrt(det(B))
-            l = T.exp(-0.5*T.sum(inp*t,1))
-            lb = l*self.beta_sp[i] # beta_sp should have been precomputed in init_log_likelihood
-            mean = T.sum(lb)*c;
-            M.append(mean.flatten())
-
-            # inv(s) times input output covariance (Eq 2.70)
-            tiL = t.dot(iL)
-            v = tiL.T.dot(lb)*c
-            V.append(v)
-            
-            # predictive covariance
-            logk[i] = 2*self.loghyp[i,idims] - 0.5*T.sum(inp*inp,1)
-            Lambda[i] = T.exp(-2*self.loghyp[i,:idims])
-            z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                R = Sx*(Lambda[i] + Lambda[j]) + T.eye(idims)
-    
-                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(R).dot(Sx))
-                t2 = 1.0/T.sqrt(det(R))
-                Q = t2*T.exp( n2 )
-
+                Rij = R[i,j]
+                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+                Q = T.exp( n2 )/T.sqrt(det(Rij))
                 # Eq 2.55
                 m2 = matrix_dot(self.beta_sp[i], Q, self.beta_sp[j])
                 if i == j:
                     iKi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(self.n_basis)))
                     iBi = solve_upper_triangular(self.Amm[i].T, solve_lower_triangular(self.Amm[i],T.eye(self.n_basis)))
-                    m2 =  m2 - T.sum(iKi*Q) + T.exp(2*self.loghyp[i,idims])
+                    m2 =  m2 - T.sum((iKi - iBi)*Q) + sf2[i]
                 else:
                     M2[j*odims+i] = m2.flatten()
                 M2[i*odims+j] = m2.flatten()
 
-        M = T.stack(M).T.flatten()
-        V = T.stack(V).T
         M2 = T.stack(M2).T
         S = M2.reshape((odims,odims))
         S = S - T.outer(M,M)
@@ -710,45 +693,39 @@ class RBFGP(GP_UI):
         #centralize inputs 
         zeta = self.X - mx
         
-        # predictive mean and covariance (for each output dimension)
-        M = [] # mean
-        V = [] # inv(Sx).dot(input_output_cov)
+        # initialize some variables
+        sf2 = T.exp(2*self.loghyp[:,idims])
+        eyeE = T.tile(T.eye(idims),(odims,1,1))
+        lscales = T.exp(self.loghyp[:,:idims])
+        iL = eyeE/lscales[:,:,None]
+
+        # predictive mean
+        inp = iL.dot(zeta.T).transpose(0,2,1) 
+        iLdotSx = iL.dot(Sx)
+        B = T.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + T.eye(idims)   #TODO vectorize this
+        t = T.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
+        c = sf2/T.sqrt(T.stack([det(B[i]) for i in xrange(odims)]))
+        l = T.exp(-0.5*T.sum(inp*t,2))
+        lb = l*self.beta # beta should have been precomputed in init_log_likelihood # E x N
+        M = T.sum(lb,1)*c
+        
+        # inv(Sx) times input output covariance
+        tiL = T.stack([t[i].dot(iL[i]) for i in xrange(odims)])
+        V = T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+
+        # predictive covariance
+        logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
+        Lambda = iL**2
+        R = T.dot((Lambda[:,None,:,:] + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
+        z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         M2 = [[]]*(odims**2) # second moment
-        logk=[[]]*odims
-        Lambda=[[]]*odims
-        z_=[[]]*odims
+        N = self.X.shape[0]
         for i in xrange(odims):
-            # rescale input dimensions by inverse lengthscales
-            iL = T.diag(T.exp(-self.loghyp[i,:idims]))
-            inp = zeta.dot(iL)  # Note this is assuming a diagonal scaling matrix on the kernel
-
-            # predictive mean ( which depends on input covariance )
-            B = iL.dot(Sx).dot(iL) + T.eye(idims)
-            t = inp.dot(matrix_inverse(B))
-            sf2 = T.exp(2*self.loghyp[i,idims])
-            c = sf2/T.sqrt(det(B))
-            l = T.exp(-0.5*T.sum(inp*t,1))
-            lb = l*self.beta[i] # beta should have been precomputed in init_log_likelihood
-            mean = T.sum(lb)*c;
-            M.append(mean.flatten())
-
-            # inv(s) times input output covariance (Eq 2.70)
-            tiL = t.dot(iL)
-            v = tiL.T.dot(lb)*c
-            V.append(v)
-            
-            # predictive covariance
-            logk[i] = 2*self.loghyp[i,idims] - 0.5*T.sum(inp*inp,1)
-            Lambda[i] = T.exp(-2*self.loghyp[i,:idims])
-            z_[i] = zeta*Lambda[i] 
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                R = Sx*(Lambda[i] + Lambda[j]) + T.eye(idims)
-    
-                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(R).dot(Sx))
-                t2 = 1.0/T.sqrt(det(R))
-                Q = t2*T.exp( n2 )
-
+                Rij = R[i,j]
+                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+                Q = T.exp( n2 )/T.sqrt(det(Rij))
                 # Eq 2.55
                 m2 = matrix_dot(self.beta[i],Q,self.beta[j].T)
                 if i == j:
@@ -757,8 +734,6 @@ class RBFGP(GP_UI):
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
 
-        M = T.stack(M).T.flatten()
-        V = T.stack(V).T
         M2 = T.stack(M2).T
         S = M2.reshape((odims,odims))
         S = S - T.outer(M,M)
@@ -836,14 +811,15 @@ class SSGP(GP):
             srdotX = sr.dot(self.X.T)
             # convert to sin cos
             phi_f = T.vertical_stack(T.sin(srdotX), T.cos(srdotX))
-
-            self.A[i] = phi_f.dot(phi_f.T) + (M*sn2/sf2)*T.eye(2*sr.shape[0])
+            
+            sf2M = sf2/M
+            self.A[i] = sf2M*phi_f.dot(phi_f.T) + sn2*T.eye(2*sr.shape[0])
             self.Lmm[i] = cholesky(self.A[i])
             Yi = self.Y[:,i]
             Yci = solve_lower_triangular(self.Lmm[i],phi_f.dot(Yi))
-            self.beta_ss[i] = solve_upper_triangular(self.Lmm[i].T,Yci)
+            self.beta_ss[i] = sf2M*solve_upper_triangular(self.Lmm[i].T,Yci)
             
-            nlml_ss[i] = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) )/sn2 + T.sum(T.log(T.diag(self.Lmm[i]))) - M*T.log((M*sn2)/sf2) + 0.5*N*np.log(2*np.pi*sn2)
+            nlml_ss[i] = 0.5*( Yi.dot(Yi) - sf2M*Yci.dot(Yci) )/sn2 + T.sum(T.log(T.diag(self.Lmm[i]))) + (0.5*N - M)*T.log(sn2) + 0.5*N*np.log(2*np.pi)
         
         nlml_ss = T.stack(nlml_ss)
         self.beta_ss = T.stack(self.beta_ss)
@@ -941,6 +917,7 @@ class SSGP(GP):
         variance = [[]]*odims
         for i in xrange(odims):
             sr = self.sr[i]
+            M = sr.shape[0]
             sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
             # sr.T.dot(x) for all sr and X. size n_basis x N
@@ -950,7 +927,7 @@ class SSGP(GP):
 
             mean[i] = phi_x.T.dot(self.beta_ss[i])
             phi_x_L = solve_lower_triangular(self.Lmm[i],phi_x)
-            variance[i] = sn2 - sn2*phi_x_L.dot( phi_x_L )
+            variance[i] = sn2*(1 + (sf2/M)*phi_x_L.dot( phi_x_L ))
 
         # reshape output variables
         M = T.stack(mean).T.flatten()
@@ -992,6 +969,7 @@ class SSGP_UI(SSGP, GP_UI):
         M2 = [[]]*(odims**2) # second moment
         for i in xrange(odims):
             # initalize some variables
+            sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
             # predictive covariance
             for j in xrange(i+1):
@@ -1025,7 +1003,7 @@ class SSGP_UI(SSGP, GP_UI):
                 if i == j:
                     # if i==j we need to add the trace term
                     iAi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms)))
-                    m2 =  m2 + sn2*(1 + T.sum(iAi*Qij))
+                    m2 =  m2 + sn2*(1 + (sf2/Ms)*T.sum(iAi*Qij)) + 1e-6 # adding some jitter for numerical stability
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
