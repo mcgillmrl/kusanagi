@@ -91,7 +91,7 @@ def gTrig(x,angi,D):
 def gTrig2(m, v, angi, D, derivs=False):
     non_angle_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
-    Dna = len(non_angle_dims) 
+    Dna = len(non_angle_dims)
     Ma = T.zeros((Da,))
     Va = T.zeros((Da,Da))
     Ca = T.zeros((D,Da))
@@ -232,12 +232,8 @@ def gTrig2_np(m,v,angi,D):
     return [M,V]
 
 def get_compiled_gTrig(angi,D,derivs=True):
-    if theano.config.floatX == 'float32':
-        m = T.fmatrix('x')      # n_samples x idims
-        v = T.ftensor3('x_cov')  # n_samples x idims x idims
-    else:
-        m = T.dmatrix('x')      # n_samples x idims
-        v = T.dtensor3('x_cov')  # n_samples x idims x idims
+    m = T.dvector('x')      # n_samples x idims
+    v = T.dmatrix('x_cov')  # n_samples x idims x idims
 
     gt = gTrig2(m, v, angi, D, derivs=derivs)
     return theano.function([m,v],gt)

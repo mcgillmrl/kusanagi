@@ -974,21 +974,31 @@ class SSGP_UI(SSGP, GP_UI):
             # predictive covariance
             for j in xrange(i+1):
                 # compute the second moments of the spectral feature vectors
-                siSxsj = srdotSx[i].dot(self.sr[j].T) #Ms x Ms
-                em =  T.exp(siSxsj)      # MsxMs
-                ep =  T.exp(-siSxsj)     # MsxMs
-                si = sin_srdotx[i]       # Msx1
-                ci = cos_srdotx[i]       # Msx1   
-                sj = sin_srdotx[j]       # Msx1
-                cj = cos_srdotx[j]       # Msx1
-                sicj = T.outer(si,cj)    # MsxMs
-                cisj = T.outer(ci,sj)    # MsxMs
-                sisj = T.outer(si,sj)    # MsxMs
-                cicj = T.outer(ci,cj)    # MsxMs
-                sm = (sicj-cisj)*em
-                sp = (sicj+cisj)*ep
-                cm = (sisj+cicj)*em
-                cp = (cicj-sisj)*ep
+                #siSxsj = srdotSx[i].dot(self.sr[j].T) #Ms x Ms
+                #em =  T.exp(siSxsj)      # MsxMs
+                #ep =  T.exp(-siSxsj)     # MsxMs
+                #si = sin_srdotx[i]       # Msx1
+                #ci = cos_srdotx[i]       # Msx1   
+                #sj = sin_srdotx[j]       # Msx1
+                #cj = cos_srdotx[j]       # Msx1
+                #sicj = T.outer(si,cj)    # MsxMs
+                #cisj = T.outer(ci,sj)    # MsxMs
+                #sisj = T.outer(si,sj)    # MsxMs
+                #cicj = T.outer(ci,cj)    # MsxMs
+                #sm = (sicj-cisj)*em
+                #sp = (sicj+cisj)*ep
+                #cm = (sisj+cicj)*em
+                #cp = (cicj-sisj)*ep
+                srdotx_m_ij = (srdotx[i][:,None] - srdotx[j][None,:])   # MsxMs
+                srdotx_p_ij = (srdotx[i][:,None] + srdotx[j][None,:])   # MsxMs
+                sr_m_ij = (self.sr[i][:,None,:] - self.sr[j][None,:,:])           # MsxMsxD
+                sr_p_ij = (self.sr[i][:,None,:] + self.sr[j][None,:,:])           # MsxMsxD
+                em =  T.exp(-0.5*T.sum(sr_m_ij.dot(Sx)*sr_m_ij,2))      # MsxMs
+                ep =  T.exp(-0.5*T.sum(sr_p_ij.dot(Sx)*sr_p_ij,2))      # MsxMs
+                sm = T.sin( srdotx_m_ij )*em
+                sp = T.sin( srdotx_p_ij )*ep
+                cm = T.cos( srdotx_m_ij )*em
+                cp = T.cos( srdotx_p_ij )*ep
                 
                 # Populate the second moment matrix of the feature vector
                 Qij = T.zeros((2*Ms,2*Ms))
@@ -1003,7 +1013,7 @@ class SSGP_UI(SSGP, GP_UI):
                 if i == j:
                     # if i==j we need to add the trace term
                     iAi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms)))
-                    m2 =  m2 + sn2*(1 + (sf2/Ms)*T.sum(iAi*Qij)) + 1e-6 # adding some jitter for numerical stability
+                    m2 =  m2 + sn2*(1 + (sf2/Ms)*T.sum(iAi*Qij))
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2

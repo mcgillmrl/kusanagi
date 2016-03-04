@@ -166,7 +166,7 @@ class PILCO(EpisodicLearner):
 
     def value(self, derivs=False):
         # compile the belef state propagation
-        if self.rollout is None or self.policy_gradients is None:
+        if self.rollout is None or (self.policy_gradients is None and derivs):
             self.init_rollout(derivs=derivs)
 
         # setp initial state
