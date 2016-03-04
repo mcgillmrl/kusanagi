@@ -41,7 +41,7 @@ if __name__ == '__main__':
 
     # initialize learner
     T = 5.0                                                          # controller horizon
-    J = 5                                                            # number of random initial trials
+    J = 4                                                            # number of random initial trials
     N = 40                                                           # learning iterations
     learner = PILCO(plant, p1, cost, angle_dims, async_plant=False)
 
@@ -58,6 +58,8 @@ if __name__ == '__main__':
         learner.apply_controller(H=T)
     
     learner.policy = p2
+    plant.reset_state()
+    learner.apply_controller(H=T)
     for i in xrange(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()
