@@ -977,7 +977,6 @@ class SSGP_UI(SSGP, GP_UI):
             # predictive covariance
             for j in xrange(i+1):
                 # compute the second moments of the spectral feature vectors
-                '''
                 siSxsj = srdotSx[i].dot(self.sr[j].T) #Ms x Ms
                 sijSxsij = -0.5*(srdotSxdotsr[i,:,None] + srdotSxdotsr[j,None,:]) 
                 em =  T.exp(sijSxsij+siSxsj)      # MsxMs
@@ -994,18 +993,6 @@ class SSGP_UI(SSGP, GP_UI):
                 sp = (sicj+cisj)*ep
                 cm = (sisj+cicj)*em
                 cp = (cicj-sisj)*ep
-                '''
-                srdotx_m_ij = (srdotx[i][:,None] - srdotx[j][None,:])   # MsxMs
-                srdotx_p_ij = (srdotx[i][:,None] + srdotx[j][None,:])   # MsxMs
-                sr_m_ij = (self.sr[i][:,None,:] - self.sr[j][None,:,:])           # MsxMsxD
-                sr_p_ij = (self.sr[i][:,None,:] + self.sr[j][None,:,:])           # MsxMsxD
-                em =  T.exp(-0.5*T.sum(sr_m_ij.dot(Sx)*sr_m_ij,2))      # MsxMs
-                ep =  T.exp(-0.5*T.sum(sr_p_ij.dot(Sx)*sr_p_ij,2))      # MsxMs
-                sm = T.sin( srdotx_m_ij )*em
-                sp = T.sin( srdotx_p_ij )*ep
-                cm = T.cos( srdotx_m_ij )*em
-                cp = T.cos( srdotx_p_ij )*ep
-                
                 
                 # Populate the second moment matrix of the feature vector
                 Qij = T.zeros((2*Ms,2*Ms))
