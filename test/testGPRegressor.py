@@ -10,10 +10,10 @@ def test_random(gp_type='GP',angi=[0,1]):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-500*(np.sum(0.0001*(X**2),1)))*np.sin(X.sum(1))
 
-    n_samples = 1000
-    n_test = 100
-    idims = 2
-    odims = 2
+    n_samples = 500
+    n_test = 500
+    idims = 6
+    odims = 6
     np.random.seed(31337)
     
     #  ================== train dataset ==================
@@ -51,7 +51,7 @@ def test_random(gp_type='GP',angi=[0,1]):
         gp = GP(Xd,Yd, profile=False)
 
     gp.train()
-    #gp.save()
+    gp.save()
 
     ss = convolve2d(np.eye(Xtest.shape[1]),kk,'same')
     avg_time_per_call = 0

@@ -952,16 +952,19 @@ class SSGP_UI(SSGP, GP_UI):
         Ms = self.sr.shape[1]
         srdotx = self.sr.dot(mx)
         srdotSx = self.sr.dot(Sx) 
-        e = T.exp(-0.5*T.sum(srdotSx*self.sr,2))
-        cos_srdotx = T.cos(srdotx)*e
-        sin_srdotx = T.sin(srdotx)*e
+        srdotSxdotsr = T.sum(srdotSx*self.sr,2)
+        e = T.exp(-0.5*srdotSxdotsr)
+        cos_srdotx = T.cos(srdotx)
+        sin_srdotx = T.sin(srdotx)
+        cos_srdotx_e = T.cos(srdotx)*e
+        sin_srdotx_e = T.sin(srdotx)*e
 
         # compute the mean vector
-        mphi = T.horizontal_stack( sin_srdotx, cos_srdotx ) # E x 2*Ms
+        mphi = T.horizontal_stack( sin_srdotx_e, cos_srdotx_e ) # E x 2*Ms
         M = T.sum( mphi*self.beta_ss, 1)
 
         # inv(s) times input output covariance
-        c = T.concatenate([ mx[:,None]*sin_srdotx[:,None,:] + srdotSx.transpose(0,2,1)*cos_srdotx[:,None,:], mx[:,None]*cos_srdotx[:,None,:] - srdotSx.transpose(0,2,1)*sin_srdotx[:,None,:] ], axis=2) # E x D x 2*Ms
+        c = T.concatenate([ mx[:,None]*sin_srdotx_e[:,None,:] + srdotSx.transpose(0,2,1)*cos_srdotx_e[:,None,:], mx[:,None]*cos_srdotx_e[:,None,:] - srdotSx.transpose(0,2,1)*sin_srdotx_e[:,None,:] ], axis=2) # E x D x 2*Ms
         v = T.sum( c*(self.beta_ss[:,None,:]), 2 ).T - T.outer(mx,M)
         V = matrix_inverse(Sx).dot(v)
         
@@ -974,21 +977,24 @@ class SSGP_UI(SSGP, GP_UI):
             # predictive covariance
             for j in xrange(i+1):
                 # compute the second moments of the spectral feature vectors
-                #siSxsj = srdotSx[i].dot(self.sr[j].T) #Ms x Ms
-                #em =  T.exp(siSxsj)      # MsxMs
-                #ep =  T.exp(-siSxsj)     # MsxMs
-                #si = sin_srdotx[i]       # Msx1
-                #ci = cos_srdotx[i]       # Msx1   
-                #sj = sin_srdotx[j]       # Msx1
-                #cj = cos_srdotx[j]       # Msx1
-                #sicj = T.outer(si,cj)    # MsxMs
-                #cisj = T.outer(ci,sj)    # MsxMs
-                #sisj = T.outer(si,sj)    # MsxMs
-                #cicj = T.outer(ci,cj)    # MsxMs
-                #sm = (sicj-cisj)*em
-                #sp = (sicj+cisj)*ep
-                #cm = (sisj+cicj)*em
-                #cp = (cicj-sisj)*ep
+                '''
+                siSxsj = srdotSx[i].dot(self.sr[j].T) #Ms x Ms
+                sijSxsij = -0.5*(srdotSxdotsr[i,:,None] + srdotSxdotsr[j,None,:]) 
+                em =  T.exp(sijSxsij+siSxsj)      # MsxMs
+                ep =  T.exp(sijSxsij-siSxsj)     # MsxMs
+                si = sin_srdotx[i]       # Msx1
+                ci = cos_srdotx[i]       # Msx1   
+                sj = sin_srdotx[j]       # Msx1
+                cj = cos_srdotx[j]       # Msx1
+                sicj = T.outer(si,cj)    # MsxMs
+                cisj = T.outer(ci,sj)    # MsxMs
+                sisj = T.outer(si,sj)    # MsxMs
+                cicj = T.outer(ci,cj)    # MsxMs
+                sm = (sicj-cisj)*em
+                sp = (sicj+cisj)*ep
+                cm = (sisj+cicj)*em
+                cp = (cicj-sisj)*ep
+                '''
                 srdotx_m_ij = (srdotx[i][:,None] - srdotx[j][None,:])   # MsxMs
                 srdotx_p_ij = (srdotx[i][:,None] + srdotx[j][None,:])   # MsxMs
                 sr_m_ij = (self.sr[i][:,None,:] - self.sr[j][None,:,:])           # MsxMsxD
@@ -999,6 +1005,7 @@ class SSGP_UI(SSGP, GP_UI):
                 sp = T.sin( srdotx_p_ij )*ep
                 cm = T.cos( srdotx_m_ij )*em
                 cp = T.cos( srdotx_p_ij )*ep
+                
                 
                 # Populate the second moment matrix of the feature vector
                 Qij = T.zeros((2*Ms,2*Ms))
