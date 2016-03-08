@@ -458,6 +458,7 @@ class SPGP(GP):
             self.beta_sp = [[]]*odims
             nlml_sp = [[]]*odims
             dnlml_sp = [[]]*odims
+            ridge = 1e-6 if theano.config.floatX == 'float64' else 5e-4
             for i in xrange(odims):
                 X_sp_i = self.X_sp  # TODO allow for different pseudo inputs for each dimension
                 ll = T.exp(self.loghyp[i,:idims])
@@ -466,7 +467,7 @@ class SPGP(GP):
                 N = self.X.shape[0]
                 M = X_sp_i.shape[0]
 
-                Kmm = self.kernel_func[i](X_sp_i) + 1e-6*T.eye(self.X_sp.shape[0])
+                Kmm = self.kernel_func[i](X_sp_i) + ridge*T.eye(self.X_sp.shape[0])
                 Kmn = self.kernel_func[i](X_sp_i, self.X)
                 Lmm = cholesky(Kmm)
                 Lmn = solve_lower_triangular(Lmm,Kmn)
@@ -503,7 +504,7 @@ class SPGP(GP):
             self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             
     def predict_symbolic(self,mx,Sx):
-        if self.N < self.n_basis:
+        if self.N <= self.n_basis:
             # stick with the full GP
             return super(SPGP, self).predict_symbolic()
 
@@ -554,6 +555,8 @@ class SPGP(GP):
 
         if self.N > self.n_basis:
             # train the pseudo input locations
+            if self.nlml_sp is None:
+                self.init_log_likelihood()
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
             opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
             print ''
@@ -588,7 +591,7 @@ class SPGP_UI(SPGP,GP_UI):
         super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
     def predict_symbolic(self,mx,Sx):
-        if self.N < self.n_basis:
+        if self.N <= self.n_basis:
             # stick with the full GP
             return GP_UI.predict_symbolic(self,mx,Sx)
 
@@ -596,7 +599,7 @@ class SPGP_UI(SPGP,GP_UI):
         odims = self.E
 
         #centralize inputs 
-        zeta = self.X - mx
+        zeta = self.X_sp - mx
         
         # initialize some variables
         sf2 = T.exp(2*self.loghyp[:,idims])
@@ -1035,19 +1038,32 @@ class VSSGP(GP):
         self.beta_ss = [[]]*odims
         nlml_ss = [[]]*odims
         
-        # sample initial unscaled spectral points
-        self.w_ = np.random.randn(self.n_basis,odims,idims)
-        self.w = S(self.w_,name='%s>w'%(self.name),borrow=True)
-        self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+        # hyperparameters for the prior parameters
+        # for the spectral points distribution
+        self.w_mean_ = np.zeros(self.n_basis,self.D)
+        self.w_cov_ = np.ones(self.n_basis,self.D)
+        # for the phases
+        self.b_bounds_ = np.array([0,2*np.pi])
+        # for the fourier coefficients
+        self.fc_mean_ = np.zeros(self.E,self.D)
+        self.fc_cov_ = np.ones(self.E,self.D)
+
+        # initialize sahred variables for all parameters
+        self.w_mean = S(self.w_mean_,name='%s>w_mean'%(self.name),borrow=True)
+        self.w_cov = S(self.w_cov_,name='%s>w_cov'%(self.name),borrow=True)
+        self.b_bounds = S(self.b_bounds_,name='%s>b_bounds'%(self.name),borrow=True)
+        self.fc_mean = S(self.fc_mean_,name='%s>fc_mean'%(self.name),borrow=True)
+        self.fc_cov = S(self.fc_cov_,name='%s>fc_cov'%(self.name),borrow=True)
 
         N = self.X.shape[0]
         for i in xrange(odims):
-            sr = self.sr[i]
             M = sr.shape[0]
             sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
+
+            m_phi_f = T.sqrt(2*sn2/M)*exp(
             Yi = self.Y[:,i]
-            nlml_ss[i] = -0.5*N*T.log(2*np.pi/sn2) - sn2*Yi.dot(Yi) - 0.5*T.log(det(psd((1/sn2)*self.iA[i]))) + Yi.T.dot(m_phi).dot(self.iA[i]) .dot(m_phi.T).dot(Yi)
+            lelb[i] = -0.5*sn2*( Yi.dot(Yi) - 
         
         nlml_ss = T.stack(nlml_ss)
         if self.snr_penalty is not None:

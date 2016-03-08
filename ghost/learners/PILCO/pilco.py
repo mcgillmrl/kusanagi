@@ -147,7 +147,7 @@ class PILCO(EpisodicLearner):
         if self.dynamics_model is None:
             #self.dynamics_model = GP_UI(X,Y)
             #self.dynamics_model = SPGP_UI(X,Y,n_basis=100)
-            self.dynamics_model = SSGP_UI(X,Y,n_basis=150)
+            self.dynamics_model = SSGP_UI(X,Y,n_basis=75)
         else:
             self.dynamics_model.set_dataset(X,Y)
 
