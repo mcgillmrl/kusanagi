@@ -10,9 +10,9 @@ def test_random(gp_type='GP',angi=[0,1]):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-500*(np.sum(0.0001*(X**2),1)))*np.sin(X.sum(1))
 
-    n_samples = 500
-    n_test = 500
-    idims = 6
+    n_samples = 1000
+    n_test = 200
+    idims = 7
     odims = 6
     np.random.seed(31337)
     
@@ -34,24 +34,25 @@ def test_random(gp_type='GP',angi=[0,1]):
     if len(angi)>0:
         ss = convolve2d(np.eye(idims),kk,'same')
         Xtest,bbb = gTrig2_np(Xtest,np.tile(ss,(n_test,1)).reshape(n_test,idims,idims), angi, idims)
-
+    
+    profile = theano.config.profile
     if gp_type == 'GP_UI':
-        gp = GP_UI(Xd,Yd, profile=False)
+        gp = GP_UI(Xd,Yd, profile=profile)
     elif gp_type == 'RBFGP':
-        gp = RBFGP(Xd,Yd, profile=False)
+        gp = RBFGP(Xd,Yd, profile=profile)
     elif gp_type == 'SPGP':
-        gp = SPGP(Xd,Yd, profile=False, n_basis = 100)
+        gp = SPGP(Xd,Yd, profile=profile, n_basis = 100)
     elif gp_type == 'SPGP_UI':
-        gp = SPGP_UI(Xd,Yd, profile=False, n_basis = 100)
+        gp = SPGP_UI(Xd,Yd, profile=profile, n_basis = 100)
     elif gp_type == 'SSGP':
-        gp = SSGP(Xd,Yd, profile=False, n_basis = 100)
+        gp = SSGP(Xd,Yd, profile=profile, n_basis = 100)
     elif gp_type == 'SSGP_UI':
-        gp = SSGP_UI(Xd,Yd, profile=False, n_basis = 100)
+        gp = SSGP_UI(Xd,Yd, profile=profile, n_basis = 100)
     else:
-        gp = GP(Xd,Yd, profile=False)
+        gp = GP(Xd,Yd, profile=profile)
 
-    gp.train()
-    gp.save()
+    #gp.train()
+    #gp.save()
 
     ss = convolve2d(np.eye(Xtest.shape[1]),kk,'same')
     avg_time_per_call = 0
@@ -64,6 +65,7 @@ def test_random(gp_type='GP',angi=[0,1]):
         print Ytest[i,:],','
         for j in xrange(len(res)):
            print res[j],','
+        print avg_time_per_call/(i+1.0)
         print '---'
     print_with_stamp('avg_time_per_call %f'%(avg_time_per_call/n_test),'main')
     if gp.profile:
@@ -298,4 +300,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('SPGP_UI')
+    test_random('SSGP_UI')
