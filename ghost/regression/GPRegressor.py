@@ -812,9 +812,8 @@ class SSGP(GP):
         sn2 = T.exp(2*self.loghyp[:,idims+1])
         srdotX = self.sr.dot(self.X.T)
         phi_f = T.concatenate( [T.sin(srdotX), T.cos(srdotX)], axis=1 ) # E x 2*n_basis x N
-        #jit = self.A_jitter.astype(theano.config.floatX)
-        #self.A = sf2M*(phi_f[:,:,None,:]*phi_f[:,None,:,:]).sum(-1) + (sn2 + jit)*T.eye(2*self.sr.shape[1])
         
+        # TODO vectorize these ops
         for i in xrange(odims):
             self.A[i] = sf2M[i]*phi_f[i].dot(phi_f[i].T) + (sn2[i]+self.A_jitter.astype(theano.config.floatX))*T.eye(2*self.sr.shape[1])
             self.Lmm[i] = cholesky(self.A[i])
