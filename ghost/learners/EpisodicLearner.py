@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.optimize import minimize, basinhopping
 import theano
-from utils import print_with_stamp,gTrig_np,wrap_params,unwrap_params
+from utils import print_with_stamp,gTrig_np,wrap_params,unwrap_params,MemoizeJac
 from time import time, sleep
 
 class ExperienceDataset(object):
@@ -129,7 +129,7 @@ class EpisodicLearner(object):
             self.experience.append(t,x_t,u_t,0)
 
         # stop robot
-        print_with_stamp('Done. Stopping robot.',self.name)
+        print_with_stamp('Done. Stopping robot. Value of run [%f]'%(np.array(self.experience.immediate_cost[-1])).sum(),self.name)
         self.plant.stop()
         self.n_episodes += 1
 
@@ -143,11 +143,13 @@ class EpisodicLearner(object):
         print_with_stamp('Initial value estimate [%f]'%(self.value(derivs=True))[0],self.name) 
         p0 = self.policy.get_params(symbolic=False)
         parameter_shapes = [p.shape for p in p0]
+        m_loss = MemoizeJac(self.loss)
         try:
-            opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method=self.min_method, tol=1e-9, options={'maxiter': 150})
+            opt_res = minimize(m_loss, wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=1e-9, options={'maxiter': 150})
         except ValueError:
-            print_with_stamp('\n%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
-            opt_res = minimize(self.loss, wrap_params(p0), jac=True, args=parameter_shapes, method='CG', tol=1e-9, options={'maxiter': 150})
+            print '' 
+            print_with_stamp('%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
+            opt_res = minimize(m_loss, wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-9, options={'maxiter': 150})
 
         self.policy.set_params(unwrap_params(opt_res.x,parameter_shapes))
         print '' 

@@ -15,7 +15,7 @@ from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular
 import cov
 import SNRpenalty
 import utils
-from utils import gTrig, gTrig2,gTrig_np, wrap_params, unwrap_params
+from utils import gTrig, gTrig2,gTrig_np, wrap_params, unwrap_params,MemoizeJac
 
 class GP(object):
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, hyperparameter_gradients=False, snr_penalty=SNRpenalty.SEard):
@@ -289,10 +289,11 @@ class GP(object):
         loghyp0 = self.loghyp_.copy()
         print (loghyp0)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
+        m_loss = MemoizeJac(self.loss)
         try:
-            opt_res = minimize(self.loss, loghyp0, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 500})
         except ValueError:
-            opt_res = minimize(self.loss, loghyp0, jac=True, method='CG', tol=1e-9, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-9, options={'maxiter': 500})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
@@ -558,7 +559,8 @@ class SPGP(GP):
             if self.nlml_sp is None:
                 self.init_log_likelihood()
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
-            opt_res = minimize(self.loss_sp, self.X_sp_, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
+            m_loss_sp = MemoizeJac(self.loss_sp)
+            opt_res = minimize(m_loss_sp, self.X_sp_, jac=m_loss_sp.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
             print ''
             X_sp = opt_res.x.reshape(self.X_sp_.shape)
             self.set_X_sp(X_sp)
@@ -761,19 +763,20 @@ class SSGP(GP):
         self.nlml_ss = None
         self.dnlml_ss = None
         self.n_basis = n_basis
-        self.A_jitter = S(np.float32(1e-16)) # this variable is a hack!
+        self.A_jitter = S(np.float32(1e-9)) # this variable is a hack!
         super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def set_state(self,state):
-        self.w = state[-8]
-        self.w_ = state[-7]
-        self.sr = state[-6]
-        self.beta_ss = state[-5]
-        self.A = state[-4]
+        self.w = state[-9]
+        self.w_ = state[-8]
+        self.sr = state[-7]
+        self.beta_ss = state[-6]
+        self.A = state[-5]
+        self.A_jitter = state[-4]
         self.Lmm = state[-3]
         self.nlml_ss = state[-2]
         self.dnlml_ss = state[-1]
-        super(SSGP,self).set_state(state[:-8])
+        super(SSGP,self).set_state(state[:-9])
         self.should_recompile = False
 
     def get_state(self):
@@ -783,6 +786,7 @@ class SSGP(GP):
         state.append(self.sr)
         state.append(self.beta_ss)
         state.append(self.A)
+        state.append(self.A_jitter)
         state.append(self.Lmm)
         state.append(self.nlml_ss)
         state.append(self.dnlml_ss)
@@ -801,10 +805,9 @@ class SSGP(GP):
         nlml_ss = [[]]*odims
         
         # sample initial unscaled spectral points
-        self.w_ = np.random.randn(self.n_basis,odims,idims).astype(theano.config.floatX)
-        self.w = S(self.w_,name='%s>w'%(self.name),borrow=True)
-        self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+        self.set_spectral_samples()
 
+        #init variables
         N = self.X.shape[0].astype(theano.config.floatX)
         M = self.sr.shape[1].astype(theano.config.floatX)
         sf2 = T.exp(2*self.loghyp[:,idims])
@@ -820,9 +823,7 @@ class SSGP(GP):
             Yi = self.Y[:,i]
             Yci = solve_lower_triangular(self.Lmm[i],phi_f[i].dot(Yi))
             self.beta_ss[i] = sf2M[i]*solve_upper_triangular(self.Lmm[i].T,Yci)
-            
             nlml_ss[i] = 0.5*( Yi.dot(Yi) - sf2M[i]*Yci.dot(Yci) )/sn2[i] + T.sum(T.log(T.diag(self.Lmm[i]))) + (0.5*N - M)*T.log(sn2[i]) + 0.5*N*np.log(2*np.pi).astype(theano.config.floatX)
-
 
         nlml_ss = T.stack(nlml_ss)
         self.beta_ss = T.stack(self.beta_ss)
@@ -839,10 +840,22 @@ class SSGP(GP):
         utils.print_with_stamp('Compiling jacobian of sparse spectral log likelihood',self.name)
         self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
 
-    def set_spectral_samples(self,w):
-        w = w.reshape(self.w_.shape).astype(theano.config.floatX)
-        np.copyto(self.w_,w)
-        self.w.set_value(self.w_,borrow=True)
+    def set_spectral_samples(self,w=None):
+        if w is None:
+            idims = self.D
+            odims = self.E
+            w = np.random.randn(self.n_basis,odims,idims).astype(theano.config.floatX)
+        else:
+            w = w.reshape(self.w_.shape).astype(theano.config.floatX)
+
+        if self.w_ is None or self.w_.shape[0] != self.n_basis:
+            idims = self.D
+            self.w_ = w
+            self.w = S(self.w_,name='%s>w'%(self.name),borrow=True)
+            self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+        else:
+            np.copyto(self.w_,w)
+            self.w.set_value(self.w_,borrow=True)
     
     def get_params(self, symbolic=True):
         retvars = super(SSGP,self).get_params(symbolic)
@@ -858,14 +871,17 @@ class SSGP(GP):
         self.set_loghyp(loghyp)
         self.set_spectral_samples(w)
         success=False
-        self.A_jitter.set_value(np.float32(1e-16))
+        self.A_jitter.set_value(np.float32(1e-9))
         while not success:
             try:
                 nlml,dnlml_lh,dnlml_sr = self.dnlml_ss()
                 success=True
-            except np.linalg.linalg.LinAlgError:
-                self.A_jitter.set_value(self.A_jitter.get_value()*np.float32(1.1))
-        #self.A_jitter.set_value(np.float32(1e-16))
+            except np.linalg.linalg.LinAlgError,e:
+                jit = self.A_jitter.get_value()
+                if jit < 1.0:
+                    self.A_jitter.set_value(self.A_jitter.get_value()*np.float32(1.25))
+                else:
+                    raise e
     
         nlml = nlml.sum()
         dnlml = wrap_params([dnlml_lh,dnlml_sr])
@@ -880,7 +896,7 @@ class SSGP(GP):
             # train the full GP ( if dataset too large, take a random subsample)
             X_full = None
             Y_full = None
-            n_subsample = 512
+            n_subsample = 1024
             if self.X_.shape[0] > n_subsample:
                 utils.print_with_stamp('Training full gp with random subsample of size %d'%(n_subsample),self.name)
                 idx = np.arange(self.X_.shape[0]); np.random.shuffle(idx); idx= idx[:n_subsample]
@@ -901,9 +917,10 @@ class SSGP(GP):
         # initialize spectral samples
         nlml = self.nlml_ss()
         best_w = self.w_.copy()
+
         # try a couple spectral samples and pick the one with the lowest nlml
         for i in xrange(100):
-            self.set_spectral_samples( np.random.randn(self.n_basis,odims,idims) )
+            self.set_spectral_samples()
             nlml_i = self.nlml_ss()
             for d in xrange(odims):
                 if np.all(nlml_i[d] < nlml[d]):
@@ -917,7 +934,8 @@ class SSGP(GP):
         # wrap loghyp plus sr (save shapes)
         p0 = [self.loghyp_,self.w_]
         parameter_shapes = [p.shape for p in p0]
-        opt_res = minimize(self.loss_ss, wrap_params(p0), args=parameter_shapes, jac=True, method=self.min_method, tol=1e-9, options={'maxiter': 750})
+        m_loss_ss = MemoizeJac(self.loss_ss)
+        opt_res = minimize(m_loss_ss, wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 750})
         print ''
         loghyp,w = unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
@@ -1038,8 +1056,10 @@ class VSSGP(GP):
         # for the spectral points distribution
         self.w_mean_ = np.zeros(self.n_basis,self.D)
         self.w_cov_ = np.ones(self.n_basis,self.D)
+        # for the inducing spectral points distribution
+        self.z_ = np.zeros(self.n_basis,self.D)
         # for the phases
-        self.b_bounds_ = np.array([0,2*np.pi])
+        self.b_bounds_ = np.tile(np.array([0,2*np.pi]),(self.n_basis,1))
         # for the fourier coefficients
         self.fc_mean_ = np.zeros(self.E,self.D)
         self.fc_cov_ = np.ones(self.E,self.D)
@@ -1047,19 +1067,33 @@ class VSSGP(GP):
         # initialize sahred variables for all parameters
         self.w_mean = S(self.w_mean_,name='%s>w_mean'%(self.name),borrow=True)
         self.w_cov = S(self.w_cov_,name='%s>w_cov'%(self.name),borrow=True)
+        self.z = S(self.z_,name='%s>z'%(self.name),borrow=True)
         self.b_bounds = S(self.b_bounds_,name='%s>b_bounds'%(self.name),borrow=True)
         self.fc_mean = S(self.fc_mean_,name='%s>fc_mean'%(self.name),borrow=True)
         self.fc_cov = S(self.fc_cov_,name='%s>fc_cov'%(self.name),borrow=True)
 
-        N = self.X.shape[0]
+        N = self.X.shape[0].astype(theano.config.floatX)
         for i in xrange(odims):
-            M = sr.shape[0]
+            Ms = sr.shape[0]
             sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
-
-            #m_phi_f = T.sqrt(2*sn2/M)*exp(
-            #Yi = self.Y[:,i]
-            #lelb[i] = -0.5*sn2*( Yi.dot(Yi) - 
+            ill = T.exp(-self.loghyp[i,:idims])
+            
+            x_nm = 2*np.pi*(iLL*(self.X[:,None,:]-self.z[None,:,:])) #  N x 1 x D - 1 x Ms x D = N x Ms x D
+            x_Sw_x = T.sum(x_nm*x_nm*self.w_cov,-1)  #  N x Ms, we only store the diagonal of w_cov, so we do not need to perform dot products
+            uw_x = T.sum(self.w_mean*x_nm,-1) # N x Ms
+            exp_x_Sw_x = T.exp(-0.5*x_Sw_x)
+            m_cos_w = ( sin(uw_k + self.b_bounds[:,1]) - sin(uw_k + self.b_bounds[:,0]) )/(self.b_bounds[:,1] - self.b_bounds[:,0])
+            m_cos_2w = ( sin(2*(uw_k + self.b_bounds[:,1])) - sin(2*(uw_k + self.b_bounds[:,0])) )/(self.b_bounds[:,1] - self.b_bounds[:,0])
+            m_phi = T.sqrt(2*sf2/M)*exp_x_Sw_x*m_cos_w # N x Ms
+            m_K =  m_phi.T.dot(m_phi) # Ms x Ms
+            m_K = m_K - T.diag(m_K) + 0.5*(1+(exp_x_Sx_x**4)*m_cos_2w)
+            A = m_K + (sn2[i]+self.A_jitter.astype(theano.config.floatX))*T.eye(self.w.shape[0])
+            Lmm = cholesky(A)
+            Yi = self.Y[:,i]
+            Yci = solve_lower_triangular(Lmm,m_phi.dot(Yi))
+            Yi = self.Y[:,i]
+            lelb[i] = -0.5*N*T.log(2*np.pi/sn2) - 0.5*sn2*Yi.dot(Yi) + 0.5*sn2*Yci.dot(Yci) + T.sum(T.log(T.diag(Lmm/sn2)))
         
         nlml_ss = T.stack(nlml_ss)
         if self.snr_penalty is not None:

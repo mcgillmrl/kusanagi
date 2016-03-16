@@ -27,13 +27,16 @@ def Noise(loghyp,X1,X2=None, all_pairs=True):
         X2 = X1
 
     if all_pairs:
-        D = (X1[:,None,:] - X2[None,:,:]).sum(2)
-        #K = T.eye(X1.shape[0])*T.exp(2*loghyp)
+        #D = (X1[:,None,:] - X2[None,:,:]).sum(2)
+        K = T.eye(X1.shape[0])*T.exp(2*loghyp)
+        return K
     else:
-        D = (X1 - X2).sum(1)
+        #D = (X1 - X2).sum(1)
+        K = T.ones((X1.shape[0],))*T.exp(2*loghyp)
+        return K
     
-    K = T.eq(D,0)*T.exp(2*loghyp)
-    return K
+    #K = T.eq(D,0)*T.exp(2*loghyp)
+    #return K
 
 def Sum(loghyp_l, cov_l, X1, X2=None, all_pairs=True):
     ''' Returns the sum of multiple covariance functions'''

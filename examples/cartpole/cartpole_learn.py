@@ -39,8 +39,8 @@ if __name__ == '__main__':
 
     # initialize learner
     T = 4.0                                                          # controller horizon
-    J = 4                                                            # number of random initial trials
-    N = 15                                                           # learning iterations
+    J = 2                                                            # number of random initial trials
+    N = 100                                                           # learning iterations
     learner = PILCO(plant, p1, cost, angle_dims, async_plant=False)
     
     def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
@@ -56,6 +56,8 @@ if __name__ == '__main__':
         learner.apply_controller(H=T)
     
     learner.policy = p2
+    plant.reset_state()
+    learner.apply_controller(H=T)
     for i in xrange(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()

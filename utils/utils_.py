@@ -258,3 +258,27 @@ def unwrap_params(P,parameter_shapes):
         # set index to the beginning  of next parameter
         i += npi
     return p
+
+class MemoizeJac(object):
+    def __init__(self, fun):
+        self.fun = fun
+        self.value, self.jac = None, None
+        self.x = None
+
+    def _compute(self, x, *args):
+        self.x = np.asarray(x).copy()
+        self.value, self.jac = self.fun(x, *args)
+
+    def __call__(self, x, *args):
+        if self.value is not None and np.alltrue(x == self.x):
+            return self.value
+        else:
+            self._compute(x, *args)
+            return self.value
+
+    def derivative(self, x, *args):
+        if self.jac is not None and np.alltrue(x == self.x):
+            return self.jac
+        else:
+            self._compute(x, *args)
+            return self.jac
