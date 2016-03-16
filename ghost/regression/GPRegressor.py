@@ -109,6 +109,16 @@ class GP(object):
         # we should be saving, since we updated the trianing dataset
         self.state_changed = True
 
+    def append_dataset(self,X_dataset,Y_dataset):
+        if self.X is None:
+            self.set_dataset(X_dataset,Y_dataset)
+        else:
+            self.X_ = np.vstack((self.X_, X_dataset.astype(theano.config.floatX)))
+            self.X.set_value(self.X_,borrow=True)
+            self.Y_ = np.vstack((self.Y_, Y_dataset.astype(theano.config.floatX)))
+            self.Y.set_value(self.Y_,borrow=True)
+
+
     def init_loghyp(self,reinit=False):
         idims = self.D; odims = self.E; 
         # initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)

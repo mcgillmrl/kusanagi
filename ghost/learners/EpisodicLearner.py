@@ -1,8 +1,11 @@
 import numpy as np
-from scipy.optimize import minimize, basinhopping
 import theano
-from utils import print_with_stamp,gTrig_np,wrap_params,unwrap_params,MemoizeJac
+
+from scipy.optimize import minimize, basinhopping
+from matplotlib import pyplot as plt
 from time import time, sleep
+
+from utils import print_with_stamp,gTrig_np,wrap_params,unwrap_params,MemoizeJac
 
 class ExperienceDataset(object):
     def __init__(self):
@@ -129,7 +132,12 @@ class EpisodicLearner(object):
             self.experience.append(t,x_t,u_t,0)
 
         # stop robot
-        print_with_stamp('Done. Stopping robot. Value of run [%f]'%(np.array(self.experience.immediate_cost[-1])).sum(),self.name)
+        run_value = np.array(self.experience.immediate_cost[-1][:-1])
+        print_with_stamp('Done. Stopping robot. Value of run [%f]'%(run_value.sum()),self.name)
+        # plot predicted value vs actual value
+        #pred_value = self.value(derivs=False)
+        #plt.plot(np.arange())
+
         self.plant.stop()
         self.n_episodes += 1
 
@@ -168,3 +176,4 @@ class EpisodicLearner(object):
         self.n_evals+=1
         print_with_stamp('Current value: %s, Total evaluations: %d    '%(str(v),self.n_evals),self.name,True)
         return v,dv
+

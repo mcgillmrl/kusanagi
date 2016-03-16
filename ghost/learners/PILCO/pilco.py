@@ -13,6 +13,13 @@ class PILCO(EpisodicLearner):
         self.wrap_angles = wrap_angles
         self.rollout=None
         self.policy_gradients=None
+        # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
+        dyn_idims = len(self.plant.x0) + len(self.angle_idims) + len(self.policy.maxU)
+        # output dimensions are state dims
+        dyn_odims = len(self.plant.x0)
+        #self.dynamics_model = GP_UI(idims=dyn_idims,odims=dyn_odims)
+        #self.dynamics_model = SPGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
+        self.dynamics_model = SSGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
 
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
@@ -112,27 +119,29 @@ class PILCO(EpisodicLearner):
 
     def train_dynamics(self):
         print_with_stamp('Training dynamics model',self.name)
-        
-        X = []
-        Y = []
-        x0 = []
-        n_episodes = len(self.experience.states)
-        # construct training dataset
-        for i in xrange(n_episodes):
-            x = np.array(self.experience.states[i])
-            u = np.array(self.experience.actions[i])
-            x0.append(x[0])
 
-            # inputs are states, concatenated with actions (except for the last entry)
-            x_ = gTrig_np(x, self.angle_idims)
-            X.append( np.hstack((x_[:-1],u[:-1])) )
-            # outputs are changes in state
-            Y.append( x[1:] - x[:-1] )
+        # construct training dataset for last episode
+        x_i = np.array(self.experience.states[-1])
+        u_i = np.array(self.experience.actions[-1])
 
-        X = np.vstack(X)
-        Y = np.vstack(Y)
+        # inputs are states, concatenated with actions ( excluding the last entry) 
+        x_i_ = gTrig_np(x_i, self.angle_idims)
+        X_i = np.hstack( (x_i_[:-1],u_i[:-1]) )
+        # outputs are changes in state ( x_t - x_{t-1} )
+        Y_i =  x_i[1:] - x_i[:-1]
+
+        X = np.vstack(X_i)
+        Y = np.vstack(Y_i)
+        # wrap angles if requested (this might introduce error if the angular velocities are high )
+        if self.wrap_angles:
+            # wrap angle differences to [-pi,pi]
+            Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
 
         # get distribution of initial states
+        n_episodes = len(self.experience.states)
+        x0 = []
+        for i in xrange(n_episodes):
+            x0.append(self.experience.states[i][0])
         x0 = np.array(x0)
         if n_episodes > 1:
             self.mx0 = x0.mean(0)[None,:]
@@ -141,19 +150,11 @@ class PILCO(EpisodicLearner):
             self.mx0 = x0[None,:]
             self.Sx0 = 1e-2*np.eye(self.mx0.size)[None,:,:]
 
-        if self.wrap_angles:
-            # wrap angle differences to [-pi,pi]
-            Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
-
-        if self.dynamics_model is None:
-            #self.dynamics_model = GP_UI(X,Y)
-            #self.dynamics_model = SPGP_UI(X,Y,n_basis=100)
-            self.dynamics_model = SSGP_UI(X,Y,n_basis=100)
-        else:
-            self.dynamics_model.set_dataset(X,Y)
+        # append data to the dynamics model
+        self.dynamics_model.append_dataset(X,Y)
 
         # if we reach a large dataset, switch to SPGP
-        print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(X.shape,Y.shape),self.name)
+        print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X_.shape,self.dynamics_model.Y_.shape),self.name)
         if self.dynamics_model.should_recompile:
             # reinitialize log likelihood
             self.dynamics_model.init_log_likelihood()
@@ -162,7 +163,7 @@ class PILCO(EpisodicLearner):
             self.init_rollout(derivs=True)
  
         self.dynamics_model.train()
-        self.dynamics_model.save()
+        #self.dynamics_model.save()
         print_with_stamp('Done training dynamics model',self.name)
 
     def value(self, derivs=False):
