@@ -3,7 +3,7 @@ import numpy as np
 from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
-from ghost.control import RandPolicy, RBFPolicy
+from ghost.control import RBFPolicy
 from utils import gTrig_np
 
 if __name__ == '__main__':
@@ -31,7 +31,7 @@ if __name__ == '__main__':
 
     # initialize policy
     angle_dims = [3]
-    p = RBFPolicy(x0,S0,[10],10, angle_dims)
+    policy = RBFPolicy(x0,S0,[10],10, angle_dims)
 
     # initialize cost function
     cost_parameters = {}
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     # initialize learner
     T = 5.0                                                          # controller horizon
     J = 30                                                           # number of random initial trials
-    learner = PILCO(plant, p, cost, angle_dims, async_plant=False)
+    learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
     
     # gather data with random trials
     for i in xrange(J):

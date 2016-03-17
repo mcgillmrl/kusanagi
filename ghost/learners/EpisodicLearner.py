@@ -5,6 +5,7 @@ from scipy.optimize import minimize, basinhopping
 from matplotlib import pyplot as plt
 from time import time, sleep
 
+from ghost.control import RandPolicy
 from utils import print_with_stamp,gTrig_np,wrap_params,unwrap_params,MemoizeJac
 
 class ExperienceDataset(object):
@@ -47,19 +48,9 @@ class EpisodicLearner(object):
         self.learning_iteration = 0;
         self.n_evals = 0
 
-    def load(self):
-        # TODO use saved filenames to load the appropriate policy and dynamics model
-        # TODO load experience dataset
-        pass
     def save(self):
         self.policy.save()
-        #TODO save filenames of these
-    def set_state(self,state):
-        #TODO 
-        pass
-    def get_state(self):
-        #TODO
-        pass
+        # TODO save state of the learner (e.g. learning iteration)
 
     def init_cost(self,cost):
         self.cost_symbolic = cost
@@ -68,11 +59,16 @@ class EpisodicLearner(object):
         Sx = theano.tensor.matrix('Sx')
         self.cost = theano.function((mx,Sx),self.cost_symbolic(mx,Sx), allow_input_downcast=True)
 
-    def apply_controller(self,H=float('inf')):
+    def apply_controller(self,H=float('inf'),random_controls=False):
         print_with_stamp('Starting data collection run',self.name)
         if H < float('inf'):
             print_with_stamp('Running for %f seconds'%(H),self.name)
             self.H = H
+
+        if random_controls:
+            policy =  RandPolicy(self.policy.maxU)
+        else:
+            policy = self.policy
 
         # mark the start of the episode
         self.experience.new_episode()
@@ -96,7 +92,7 @@ class EpisodicLearner(object):
             # convert input angle dimensions to complex representation
             x_t_ = gTrig_np(x_t[None,:], self.angle_idims).flatten()
             #  get command from policy (this should be fast, or at least account for delays in processing):
-            u_t = self.policy.evaluate(t, x_t_)[0].flatten()
+            u_t = policy.evaluate(t, x_t_)[0].flatten()
             #print x_t_,u_t
             #  send command to robot:
             self.plant.apply_control(u_t)

@@ -295,6 +295,8 @@ class GP(object):
         return res
 
     def train(self):
+        if self.nlml is None:
+            self.init_log_likelihood()
         utils.print_with_stamp('Current hyperparameters:',self.name)
         loghyp0 = self.loghyp_.copy()
         print (loghyp0)
@@ -923,6 +925,9 @@ class SSGP(GP):
 
         idims = self.D
         odims = self.E
+
+        if self.nlml_ss is None:
+            self.init_log_likelihood()
 
         # initialize spectral samples
         nlml = self.nlml_ss()

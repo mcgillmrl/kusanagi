@@ -3,7 +3,7 @@ import numpy as np
 from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
-from ghost.control import RandPolicy, RBFPolicy
+from ghost.control import RBFPolicy
 
 if __name__ == '__main__':
     #np.random.seed(31337)
@@ -25,8 +25,7 @@ if __name__ == '__main__':
 
     # initialize policy
     angle_dims = [3]
-    p1 = RandPolicy([10])
-    p2 = RBFPolicy(x0,S0,[10],10, angle_dims)
+    policy = RBFPolicy(x0,S0,[10],10, angle_dims)
 
     # initialize cost function
     cost_parameters = {}
@@ -41,7 +40,7 @@ if __name__ == '__main__':
     T = 4.0                                                          # controller horizon
     J = 2                                                            # number of random initial trials
     N = 100                                                           # learning iterations
-    learner = PILCO(plant, p1, cost, angle_dims, async_plant=False)
+    learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
     
     def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
         print 'Caught CTRL-C!'
@@ -50,14 +49,15 @@ if __name__ == '__main__':
         sys.exit(0)
     signal.signal(signal.SIGINT, signal_handler)
 
-    # gather data with random trials
-    for i in xrange(J):
+    if learner.dynamics_model.X_ is None: #if we have no prior data
+        # gather data with random trials
+        for i in xrange(J):
+            plant.reset_state()
+            learner.apply_controller(H=T,random_controls=True)
+    else:
         plant.reset_state()
         learner.apply_controller(H=T)
-    
-    learner.policy = p2
-    plant.reset_state()
-    learner.apply_controller(H=T)
+        
     for i in xrange(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()
@@ -70,6 +70,6 @@ if __name__ == '__main__':
         learner.apply_controller(H=T)
 
         # save latest state of the learner
-        #learner.save()
+        learner.save()
     
     draw_cp.stop()

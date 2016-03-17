@@ -8,9 +8,9 @@ import theano
 # GP based controller
 class RBFPolicy:
     def __init__(self, m0, S0, maxU=[10], n_basis_functions=10, angle_idims=[]):
-        self.m0 = np.array(m0).squeeze()
-        self.S0 = np.array(S0).squeeze()
-        self.maxU = np.array(maxU).squeeze()
+        self.m0 = np.array(m0)
+        self.S0 = np.array(S0)
+        self.maxU = np.array(maxU)
         self.n_basis_functions = n_basis_functions
         self.angle_idims = angle_idims
         # set the model to be a RBF with saturated outputs

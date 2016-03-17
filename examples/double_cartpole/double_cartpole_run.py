@@ -3,7 +3,7 @@ import numpy as np
 from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.double_cartpole import DoubleCartpole, DoubleCartpoleDraw, double_cartpole_loss
-from ghost.control import RandPolicy, RBFPolicy
+from ghost.control import RBFPolicy
 
 if __name__ == '__main__':
     #np.random.seed(31337)
@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
     # initialize policy
     angle_dims = [4,5]
-    p = RBFPolicy(x0,S0,[20],100, angle_dims)
+    policy = RBFPolicy(x0,S0,[20],100, angle_dims)
 
     # initialize cost function
     cost_parameters = {}
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     T = 5.0                                                          # controller horizon
     J = 4                                                            # number of random initial trials
     N = 15                                                           # learning iterations
-    learner = PILCO(plant, p, cost, angle_dims, async_plant=False)
+    learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
 
     def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
         print 'Caught CTRL-C!'
