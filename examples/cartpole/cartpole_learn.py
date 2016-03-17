@@ -54,9 +54,10 @@ if __name__ == '__main__':
         for i in xrange(J):
             plant.reset_state()
             learner.apply_controller(H=T,random_controls=True)
-    else:
-        plant.reset_state()
-        learner.apply_controller(H=T)
+ #   else:
+ #       plant.reset_state()
+ 
+ #learner.apply_controller(H=T)
         
     for i in xrange(N):
         # train the dynamics models given the collected data

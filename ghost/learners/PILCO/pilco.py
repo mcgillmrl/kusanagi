@@ -125,39 +125,43 @@ class PILCO(EpisodicLearner):
         Y = []
         x0 = []
         n_episodes = len(self.experience.states)
-
-        # construct training dataset
-        for i in xrange(self.last_episode,n_episodes):
-            x = np.array(self.experience.states[i])
-            u = np.array(self.experience.actions[i])
-            x0.append(x[0])
-
-            # inputs are states, concatenated with actions ( excluding the last entry) 
-            x_ = gTrig_np(x, self.angle_idims)
-            X.append( np.hstack((x_[:-1],u[:-1])) )
-            # outputs are changes in state
-            Y.append( x[1:] - x[:-1] )
-
-        self.last_episode = n_episodes - 1
-        X = np.vstack(X)
-        Y = np.vstack(Y)
         
-        # wrap angles if requested (this might introduce error if the angular velocities are high )
-        if self.wrap_angles:
-            # wrap angle differences to [-pi,pi]
-            Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
+        if n_episodes>0:
+            # construct training dataset
+            for i in xrange(self.last_episode,n_episodes):
+                x = np.array(self.experience.states[i])
+                u = np.array(self.experience.actions[i])
+                x0.append(x[0])
 
-        # get distribution of initial states
-        x0 = np.array(x0)
-        if n_episodes > 1:
-            self.mx0 = x0.mean(0)[None,:]
-            self.Sx0 = np.cov(x0.T)[None,:,:]
+                # inputs are states, concatenated with actions ( excluding the last entry) 
+                x_ = gTrig_np(x, self.angle_idims)
+                X.append( np.hstack((x_[:-1],u[:-1])) )
+                # outputs are changes in state
+                Y.append( x[1:] - x[:-1] )
+
+            self.last_episode = n_episodes - 1
+            X = np.vstack(X)
+            Y = np.vstack(Y)
+            
+            # wrap angles if requested (this might introduce error if the angular velocities are high )
+            if self.wrap_angles:
+                # wrap angle differences to [-pi,pi]
+                Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
+
+            # get distribution of initial states
+            x0 = np.array(x0)
+            if n_episodes > 1:
+                self.mx0 = x0.mean(0)[None,:]
+                self.Sx0 = np.cov(x0.T)[None,:,:]
+            else:
+                self.mx0 = x0[None,:]
+                self.Sx0 = 1e-2*np.eye(self.mx0.size)[None,:,:]
+
+            # append data to the dynamics model
+            self.dynamics_model.append_dataset(X,Y)
         else:
-            self.mx0 = x0[None,:]
-            self.Sx0 = 1e-2*np.eye(self.mx0.size)[None,:,:]
-
-        # append data to the dynamics model
-        self.dynamics_model.append_dataset(X,Y)
+            self.mx0 = np.array(self.plant.x0).squeeze()
+            self.Sx0 = np.array(self.plant.S0).squeeze()
 
         print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X_.shape,self.dynamics_model.Y_.shape),self.name)
         if self.dynamics_model.should_recompile:
