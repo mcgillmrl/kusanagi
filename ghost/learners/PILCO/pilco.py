@@ -7,7 +7,7 @@ from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.compile.nanguardmode import NanGuardMode
 
 class PILCO(EpisodicLearner):
-    def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=True):
+    def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
         super(PILCO, self).__init__(plant, policy, cost, angle_idims, discount, experience, async_plant, name)
         self.dynamics_model = None
         self.wrap_angles = wrap_angles

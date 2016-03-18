@@ -117,8 +117,6 @@ class GP(object):
             self.X.set_value(self.X_,borrow=True)
             self.Y_ = np.vstack((self.Y_, Y_dataset.astype(theano.config.floatX)))
             self.Y.set_value(self.Y_,borrow=True)
-        print self.X_.flags
-
 
     def init_loghyp(self,reinit=False):
         idims = self.D; odims = self.E; 
@@ -164,24 +162,31 @@ class GP(object):
         utils.print_with_stamp('Initialising expression graph for full GP log likelihood',self.name)
         idims = self.D
         odims = self.E
-        
-        # initialise variables
+
+        self.kernel_func = [[]]*odims
+        self.K = [[]]*odims
+        self.L = [[]]*odims
+        self.beta = [[]]*odims
+        nlml = [[]]*odims
+        dnlml = [[]]*odims
         covs = (cov.SEard, cov.Noise)
         N = self.X.shape[0].astype(theano.config.floatX)
+        for i in xrange(odims):
+            # initialise the (before compilation) kernel function
+            loghyps = (self.loghyp[i,:idims+1],self.loghyp[i,idims+1])
+            self.kernel_func[i] = partial(cov.Sum, loghyps, covs)
 
-        # initialise the (before compilation) kernel function
-        self.kernel_func = [ partial(cov.Sum, (self.loghyp[i,:idims+1],self.loghyp[i,idims+1]), covs) for i in xrange(odims) ]
-        
-        # We initialise the kernel matrices (one for each output dimension)
-        self.K = [ self.kernel_func[i](self.X) for i in xrange(odims)]
-        self.L = [ cholesky(self.K[i]) for i in xrange(odims) ]
-        Yc = T.stack([ solve_lower_triangular(self.L[i],self.Y[:,i]) for i in xrange(odims)])
-        self.beta = T.stack([ solve_upper_triangular(self.L[i].T,Yc[i].T) for i in xrange(odims)])
-        
-        # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
-        # the loghyperparameters across all output dimensions and train the GPs jointly)
-        diag_idx = T.arange(self.X.shape[0])
-        nlml = 0.5*T.sum(Yc*Yc,1) + 0.5*N*T.log(2*np.pi) + T.stack([T.sum(T.log(T.diag(self.L[i]))) for i in xrange(odims)])
+            # We initialise the kernel matrices (one for each output dimension)
+            self.K[i] = self.kernel_func[i](self.X)
+            self.L[i] = cholesky(self.K[i])
+            Yc = solve_lower_triangular(self.L[i],self.Y[:,i])
+            self.beta[i] = solve_upper_triangular(self.L[i].T,Yc)
+
+            # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
+            # the loghyperparameters across all output dimensions and train the GPs jointly)
+            nlml[i] = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(self.L[i]))) + N*T.log(2*np.pi) )
+
+        nlml = T.stack(nlml)
 
         # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
@@ -773,21 +778,19 @@ class SSGP(GP):
         self.nlml_ss = None
         self.dnlml_ss = None
         self.n_basis = n_basis
-        self.A_jitter = S(np.float32(1e-9)) # this variable is a hack!
         super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def set_state(self,state):
-        i = integer_generator(-9)
+        i = integer_generator(-8)
         self.w = state[i.next()]
         self.w_ = state[i.next()]
         self.sr = state[i.next()]
         self.beta_ss = state[i.next()]
         self.A = state[i.next()]
-        self.A_jitter = state[i.next()]
         self.Lmm = state[i.next()]
         self.nlml_ss = state[i.next()]
         self.dnlml_ss = state[i.next()]
-        super(SSGP,self).set_state(state[:-9])
+        super(SSGP,self).set_state(state[:-8])
         self.should_recompile = False
 
     def get_state(self):
@@ -797,7 +800,6 @@ class SSGP(GP):
         state.append(self.sr)
         state.append(self.beta_ss)
         state.append(self.A)
-        state.append(self.A_jitter)
         state.append(self.Lmm)
         state.append(self.nlml_ss)
         state.append(self.dnlml_ss)
@@ -829,7 +831,7 @@ class SSGP(GP):
         
         # TODO vectorize these ops
         for i in xrange(odims):
-            self.A[i] = sf2M[i]*phi_f[i].dot(phi_f[i].T) + (sn2[i]+self.A_jitter.astype(theano.config.floatX))*T.eye(2*self.sr.shape[1])
+            self.A[i] = sf2M[i]*phi_f[i].dot(phi_f[i].T) + sn2[i]*T.eye(2*self.sr.shape[1])
             self.Lmm[i] = cholesky(self.A[i])
             Yi = self.Y[:,i]
             Yci = solve_lower_triangular(self.Lmm[i],phi_f[i].dot(Yi))
@@ -872,7 +874,6 @@ class SSGP(GP):
         retvars = super(SSGP,self).get_params(symbolic)
         if symbolic:
             retvars.append(self.w)
-            retvars.append(self.A_jitter)
         else:
             retvars.append(self.w_)
         return retvars
@@ -881,19 +882,7 @@ class SSGP(GP):
         loghyp,w = unwrap_params(params,parameter_shapes)
         self.set_loghyp(loghyp)
         self.set_spectral_samples(w)
-        success=False
-        self.A_jitter.set_value(np.float32(1e-9))
-        while not success:
-            try:
-                nlml,dnlml_lh,dnlml_sr = self.dnlml_ss()
-                success=True
-            except np.linalg.linalg.LinAlgError,e:
-                jit = self.A_jitter.get_value()
-                if jit < 1.0:
-                    self.A_jitter.set_value(self.A_jitter.get_value()*np.float32(1.25))
-                else:
-                    raise e
-    
+        nlml,dnlml_lh,dnlml_sr = self.dnlml_ss()
         nlml = nlml.sum()
         dnlml = wrap_params([dnlml_lh,dnlml_sr])
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
@@ -949,9 +938,8 @@ class SSGP(GP):
         p0 = [self.loghyp_,self.w_]
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = MemoizeJac(self.loss_ss)
-        opt_res = minimize(m_loss_ss, wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 750})
+        opt_res = minimize(m_loss_ss, wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
         print ''
-        print self.A_jitter.get_value()
         loghyp,w = unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
         self.set_spectral_samples(w)
@@ -1079,7 +1067,7 @@ class VSSGP(GP):
         self.fc_mean_ = np.zeros(self.E,self.D)
         self.fc_cov_ = np.ones(self.E,self.D)
 
-        # initialize sahred variables for all parameters
+        # initialize shared variables for all parameters
         self.w_mean = S(self.w_mean_,name='%s>w_mean'%(self.name),borrow=True)
         self.w_cov = S(self.w_cov_,name='%s>w_cov'%(self.name),borrow=True)
         self.z = S(self.z_,name='%s>z'%(self.name),borrow=True)
@@ -1103,7 +1091,7 @@ class VSSGP(GP):
             m_phi = T.sqrt(2*sf2/M)*exp_x_Sw_x*m_cos_w # N x Ms
             m_K =  m_phi.T.dot(m_phi) # Ms x Ms
             m_K = m_K - T.diag(m_K) + 0.5*(1+(exp_x_Sx_x**4)*m_cos_2w)
-            A = m_K + (sn2[i]+self.A_jitter.astype(theano.config.floatX))*T.eye(self.w.shape[0])
+            A = m_K + sn2[i]*T.eye(self.w.shape[0])
             Lmm = cholesky(A)
             Yi = self.Y[:,i]
             Yci = solve_lower_triangular(Lmm,m_phi.dot(Yi))
