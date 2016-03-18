@@ -15,7 +15,7 @@ from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular
 import cov
 import SNRpenalty
 import utils
-from utils import gTrig, gTrig2,gTrig_np, wrap_params, unwrap_params,MemoizeJac
+from utils import gTrig, gTrig2,gTrig_np, wrap_params, unwrap_params,MemoizeJac, integer_generator
 
 class GP(object):
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, hyperparameter_gradients=False, snr_penalty=SNRpenalty.SEard):
@@ -117,6 +117,7 @@ class GP(object):
             self.X.set_value(self.X_,borrow=True)
             self.Y_ = np.vstack((self.Y_, Y_dataset.astype(theano.config.floatX)))
             self.Y.set_value(self.Y_,borrow=True)
+        print self.X_.flags
 
 
     def init_loghyp(self,reinit=False):
@@ -188,6 +189,7 @@ class GP(object):
             nlml[i] = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(self.L[i]))) + N*T.log(2*np.pi) )
 
         nlml = T.stack(nlml)
+        # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
             penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
             nlml += self.snr_penalty(self.loghyp)
@@ -330,19 +332,20 @@ class GP(object):
             self.state_changed = False
 
     def set_state(self,state):
-        self.X = state[0]
-        self.Y = state[1]
-        self.loghyp = state[2]
-        self.K = state[3]
-        self.L = state[4]
-        self.beta = state[5]
-        self.set_dataset(state[6],state[7])
-        self.set_loghyp(state[8])
-        self.nlml = state[9]
-        self.dnlml = state[10]
-        self.predict_ = state[11]
-        self.predict_d_ = state[12]
-        self.kernel_func = state[13]
+        i = integer_generator()
+        self.X = state[i.next()]
+        self.Y = state[i.next()]
+        self.loghyp = state[i.next()]
+        self.K = state[i.next()]
+        self.L = state[i.next()]
+        self.beta = state[i.next()]
+        self.set_dataset(state[i.next()],state[i.next()])
+        self.set_loghyp(state[i.next()])
+        self.nlml = state[i.next()]
+        self.dnlml = state[i.next()]
+        self.predict_ = state[i.next()]
+        self.predict_d_ = state[i.next()]
+        self.kernel_func = state[i.next()]
 
     def get_state(self):
         return [self.X,self.Y,self.loghyp,self.K,self.L,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func]
@@ -579,13 +582,14 @@ class SPGP(GP):
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
 
     def set_state(self,state):
-        self.X_sp = state[-7]
-        self.X_sp_ = state[-6]
-        self.beta_sp = state[-5]
-        self.Lmm = state[-4]
-        self.Amm = state[-3]
-        self.nlml_sp = state[-2]
-        self.dnlml_sp = state[-1]
+        i = integer_generator(-7)
+        self.X_sp = state[i.next()]
+        self.X_sp_ = state[i.next()]
+        self.beta_sp = state[i.next()]
+        self.Lmm = state[i.next()]
+        self.Amm = state[i.next()]
+        self.nlml_sp = state[i.next()]
+        self.dnlml_sp = state[i.next()]
         super(SPGP,self).set_state(state[:-7])
         self.should_recompile = False
 
@@ -779,15 +783,16 @@ class SSGP(GP):
         super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def set_state(self,state):
-        self.w = state[-9]
-        self.w_ = state[-8]
-        self.sr = state[-7]
-        self.beta_ss = state[-6]
-        self.A = state[-5]
-        self.A_jitter = state[-4]
-        self.Lmm = state[-3]
-        self.nlml_ss = state[-2]
-        self.dnlml_ss = state[-1]
+        i = integer_generator(-9)
+        self.w = state[i.next()]
+        self.w_ = state[i.next()]
+        self.sr = state[i.next()]
+        self.beta_ss = state[i.next()]
+        self.A = state[i.next()]
+        self.A_jitter = state[i.next()]
+        self.Lmm = state[i.next()]
+        self.nlml_ss = state[i.next()]
+        self.dnlml_ss = state[i.next()]
         super(SSGP,self).set_state(state[:-9])
         self.should_recompile = False
 

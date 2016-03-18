@@ -282,3 +282,8 @@ class MemoizeJac(object):
         else:
             self._compute(x, *args)
             return self.jac
+
+def integer_generator(i=0):
+    while True:
+        yield i
+        i += 1

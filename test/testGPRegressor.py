@@ -11,7 +11,7 @@ def test_random(gp_type='GP',angi=[0,1]):
         return np.exp(-500*(np.sum(0.0001*(X**2),1)))*np.sin(X.sum(1))
 
     n_samples = 1000
-    n_test = 200
+    n_test = 20
     idims = 7
     odims = 6
     np.random.seed(31337)
@@ -300,4 +300,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('SSGP_UI')
+    test_random('GP_UI')
