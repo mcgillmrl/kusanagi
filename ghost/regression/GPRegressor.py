@@ -164,31 +164,25 @@ class GP(object):
         utils.print_with_stamp('Initialising expression graph for full GP log likelihood',self.name)
         idims = self.D
         odims = self.E
-
-        self.kernel_func = [[]]*odims
-        self.K = [[]]*odims
-        self.L = [[]]*odims
-        self.beta = [[]]*odims
-        nlml = [[]]*odims
-        dnlml = [[]]*odims
+        
+        # initialise variables
         covs = (cov.SEard, cov.Noise)
         N = self.X.shape[0].astype(theano.config.floatX)
-        for i in xrange(odims):
-            # initialise the (before compilation) kernel function
-            loghyps = (self.loghyp[i,:idims+1],self.loghyp[i,idims+1])
-            self.kernel_func[i] = partial(cov.Sum, loghyps, covs)
 
-            # We initialise the kernel matrices (one for each output dimension)
-            self.K[i] = self.kernel_func[i](self.X)
-            self.L[i] = cholesky(self.K[i])
-            Yc = solve_lower_triangular(self.L[i],self.Y[:,i])
-            self.beta[i] = solve_upper_triangular(self.L[i].T,Yc)
+        # initialise the (before compilation) kernel function
+        self.kernel_func = [ partial(cov.Sum, (self.loghyp[i,:idims+1],self.loghyp[i,idims+1]), covs) for i in xrange(odims) ]
+        
+        # We initialise the kernel matrices (one for each output dimension)
+        self.K = [ self.kernel_func[i](self.X) for i in xrange(odims)]
+        self.L = [ cholesky(self.K[i]) for i in xrange(odims) ]
+        Yc = T.stack([ solve_lower_triangular(self.L[i],self.Y[:,i]) for i in xrange(odims)])
+        self.beta = T.stack([ solve_upper_triangular(self.L[i].T,Yc[i].T) for i in xrange(odims)])
+        
+        # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
+        # the loghyperparameters across all output dimensions and train the GPs jointly)
+        diag_idx = T.arange(self.X.shape[0])
+        nlml = 0.5*T.sum(Yc*Yc,1) + 0.5*N*T.log(2*np.pi) + T.stack([T.sum(T.log(T.diag(self.L[i]))) for i in xrange(odims)])
 
-            # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
-            # the loghyperparameters across all output dimensions and train the GPs jointly)
-            nlml[i] = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(self.L[i]))) + N*T.log(2*np.pi) )
-
-        nlml = T.stack(nlml)
         # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
             penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
@@ -957,6 +951,7 @@ class SSGP(GP):
         m_loss_ss = MemoizeJac(self.loss_ss)
         opt_res = minimize(m_loss_ss, wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 750})
         print ''
+        print self.A_jitter.get_value()
         loghyp,w = unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
         self.set_spectral_samples(w)

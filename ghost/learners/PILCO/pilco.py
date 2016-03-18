@@ -20,7 +20,7 @@ class PILCO(EpisodicLearner):
         #self.dynamics_model = GP_UI(idims=dyn_idims,odims=dyn_odims)
         #self.dynamics_model = SPGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
         self.dynamics_model = SSGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
-        self.last_episode = 0
+        self.next_episode = 0
 
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
@@ -128,7 +128,7 @@ class PILCO(EpisodicLearner):
         
         if n_episodes>0:
             # construct training dataset
-            for i in xrange(self.last_episode,n_episodes):
+            for i in xrange(self.next_episode,n_episodes):
                 x = np.array(self.experience.states[i])
                 u = np.array(self.experience.actions[i])
                 x0.append(x[0])
@@ -139,7 +139,7 @@ class PILCO(EpisodicLearner):
                 # outputs are changes in state
                 Y.append( x[1:] - x[:-1] )
 
-            self.last_episode = n_episodes - 1
+            self.next_episode = n_episodes 
             X = np.vstack(X)
             Y = np.vstack(Y)
             
