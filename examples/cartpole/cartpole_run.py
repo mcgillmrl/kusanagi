@@ -3,6 +3,7 @@ import numpy as np
 from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
+from shell.plant import SerialPlant
 from ghost.control import RBFPolicy
 from utils import gTrig_np
 
@@ -19,8 +20,10 @@ if __name__ == '__main__':
     model_parameters['g'] = 9.82
     x0 = [0,0,0,0]                                                   # initial state mean
     S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
+    maxU = [10]
     measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
-    plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
+    #plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
+    plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU)
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
     draw_cp.start()
     def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
@@ -31,7 +34,7 @@ if __name__ == '__main__':
 
     # initialize policy
     angle_dims = [3]
-    policy = RBFPolicy(x0,S0,[10],10, angle_dims)
+    policy = RBFPolicy(x0,S0,maxU,10, angle_dims)
 
     # initialize cost function
     cost_parameters = {}
@@ -43,7 +46,7 @@ if __name__ == '__main__':
     cost = partial(cartpole_loss, params=cost_parameters)
 
     # initialize learner
-    T = 4.0                                                          # controller horizon
+    T = 40.0                                                          # controller horizon
     J = 30                                                           # number of random initial trials
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
     
