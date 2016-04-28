@@ -177,6 +177,17 @@ class PILCO(EpisodicLearner):
         super(PILCO,self).save()
         self.dynamics_model.save()
 
+    def apply_controller(self,H=float('inf'),random_controls=False):
+        super(PILCO, self).apply_controller(H,random_controls)
+        # plot value
+        if self.dynamics_model.ready:
+            # plot predicted value vs actual value
+            pred_value = self.value(derivs=False)
+            #plt.plot(np.arange())
+
+        if H < float('inf'):
+            run_value = np.array(self.experience.immediate_cost[-1][:-1])
+
     def value(self, derivs=False):
         # compile the belef state propagation
         if self.rollout is None or (self.policy_gradients is None and derivs):

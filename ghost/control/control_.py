@@ -72,7 +72,8 @@ class RandPolicy:
         self.maxU = np.array(maxU)
 
     def evaluate(self, t, m, s=None, derivs=False):
-        return ((2*np.random.random(self.maxU.size)-1.0)*self.maxU).reshape(self.maxU.shape)
+        ret = ((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+        return ret
 
 # linear time varying policy
 class LocalLinearPolicy:

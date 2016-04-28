@@ -6,10 +6,15 @@ from enum import Enum
 
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Cursor
+from matplotlib.colors import cnames
 from scipy.integrate import ode
 from time import time, sleep
-from threading import Thread
+from threading import Thread, Lock
+from multiprocessing import Process
+from multiprocessing.managers import BaseManager
 from utils import print_with_stamp
+
+color_generator = cnames.iteritems()
 
 class Plant(object):
     def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Plant'):
@@ -105,24 +110,29 @@ class SerialPlant(Plant):
     cmds = ['RESET_STATE','GET_STATE','APPLY_CONTROL','CMD_OK','STATE']
     cmds = dict(zip(cmds,[str(i) for i in xrange(len(cmds))]))
 
-    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='SerialPlant', baud_rate='115200', port='/dev/ttyACM3', state_indices=None, maxU=None):
+    def __init__(self, params, x0, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None):
         super(SerialPlant,self).__init__(params, x0, S0, dt, noise, name)
         self.port = port
         self.baud_rate = baud_rate
         self.serial = serial.Serial(self.port,self.baud_rate)
         self.state_indices = state_indices if state_indices is not None else range(len(x0))
-        self.maxU = np.array(maxU)/2048.0
+        self.U_scaling = 1.0/np.array(maxU);
+        self.t=-1
     
     def apply_control(self,u):
         self.u = np.array(u,dtype=np.float64)
         if len(self.u.shape) < 2:
             self.u = self.u[:,None]
-        if self.maxU is not None:
-            self.u /= self.maxU;
+        if self.U_scaling is not None:
+            self.u *= self.U_scaling;
+        if self.t < 0:
+            self.x,self.t= self.state_from_serial()
 
         u_array = self.u.flatten().tolist()
-        u_array.append(self.dt)
+        u_array.append(self.t+self.dt)
         u_string = ','.join([ str(ui) for ui in u_array ] ) #TODO pack as binary
+        self.serial.flushInput()
+        self.serial.flushOutput()
         cmd = self.cmds['APPLY_CONTROL']+','+u_string+";"
         self.serial.write(cmd)
 
@@ -135,6 +145,7 @@ class SerialPlant(Plant):
         return self.x
 
     def state_from_serial(self):
+        self.serial.flushInput()
         self.serial.write(self.cmds['GET_STATE']+";")
         c = self.serial.read()
         buf = c
@@ -160,18 +171,24 @@ class SerialPlant(Plant):
                     break
             buf.append(c)
             escaped = False
-        #print res
-        #if sum([len(i) for i in res]) != 40:
-        #    for r in res:
-        #        print len(r),r
-        #    raw_input()
-        res = np.array([struct.unpack('<d',ri) for ri in res])
+
+        res = np.array([struct.unpack('<d',ri) for ri in res]).flatten()
         return res[self.state_indices],res[-1]
 
     def reset_state(self):
         print_with_stamp('Please reset your plant to its initial state and hit Enter',self.name)
         raw_input()
+        if not self.serial.isOpen():
+            self.serial.open()
+        self.serial.flushInput()
+        self.serial.flushOutput()
         self.serial.write(self.cmds['RESET_STATE']+";")
+        sleep(self.dt)
+        self.t=-1
+
+    def stop(self):
+        super(SerialPlant,self).stop()
+        self.serial.close()
 
 class PlantDraw(object):
     def __init__(self, plant, refresh_period=(1.0/60), name='PlantDraw'):
@@ -187,13 +204,14 @@ class PlantDraw(object):
         self.running = False
 
     def init_ui(self):
-        self.fig = plt.figure(self.name)
-        plt.xlim([-2,2])
-        plt.ylim([-2,2])
+        self.fig = plt.figure(self.name,figsize=(16,10))
+        plt.xlim([-1.5,1.5])
+        plt.ylim([-1.5,1.5])
         plt.ion()
         plt.show()
         self.ax = plt.gca()
         self.ax.set_aspect('equal','datalim')
+        self.ax.grid(True)
         self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
         self.init_artists()
         self.fig.canvas.draw()
@@ -211,6 +229,7 @@ class PlantDraw(object):
             state,t = self.plant.get_state()
             updts = self.update(state,t)
             self.fig.canvas.restore_region(self.bg)
+
             for artist in updts:
                 self.ax.draw_artist(artist)
             self.fig.canvas.blit(self.ax.bbox)
@@ -225,13 +244,63 @@ class PlantDraw(object):
 
     def start(self):
         print_with_stamp('Starting drawing loop',self.name)
-        self.plant_thread = Thread(target=self.run)
+        self.drawing_thread = Thread(target=self.run)
+        #self.drawing_thread = Process(target=self.run)
         self.running = True
-        self.plant_thread.start()
+        self.drawing_thread.start()
     
     def stop(self):
-        print_with_stamp('Stopping drawing loop',self.name)
         self.running = False
+        if self.drawing_thread.is_alive():
+            # wait until thread stops
+            self.drawing_thread.join(10)
+            # create new thread object, since python threads can only be started once
+            self.drawing_thread = Thread(target=self.run)
+            #self.drawing_thread = Process(target=self.run)
+        print_with_stamp('Stopped drawing loop',self.name)
     
     def update(self):
         print "You need to implement the self.update(qp) function in your PlantDraw class."
+
+# an example that plots lines
+class LivePlot(PlantDraw):
+    def __init__(self, plant, refresh_period=0.01, name='Serial Data',H=50, angi=[]):
+        super(LivePlot, self).__init__(plant, refresh_period,name)
+        self.H = H
+        self.angi = angi
+        # get first measurement
+        state, t = plant.get_state()
+        self.data = np.array([state])
+        self.t_labels = np.array([t])
+        # initialize the patches to draw the cartpole
+        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in xrange(self.data.shape[1]) ]
+        # keep track of latest time stamp and state
+        self.current_t = t
+
+    def init_artists(self):
+        self.ax.set_aspect('auto','datalim')
+        for line in self.lines:
+            self.ax.add_line(line)
+
+    def update(self, state, t):
+        if t!=self.current_t:
+            if len(self.data)<=1:
+                self.data = np.array([state]*self.H)
+                self.t_labels = np.array([t]*self.H)
+
+            if len(self.angi)>0:
+                state[self.angi] = (state[self.angi] + np.pi) % (2 * np.pi ) - np.pi
+
+            self.current_t = t
+            self.data = np.vstack((self.data,state))[-self.H:,:]
+            self.t_labels = np.append(self.t_labels,t)[-self.H:]
+            for i in xrange(len(self.lines)):
+                self.lines[i].set_data(self.t_labels,self.data[:,i])
+            plt.xlim([self.t_labels.min(),self.t_labels.max()])
+            mm = self.data.mean()
+            ll = 1.05*np.abs(self.data).max()
+            plt.ylim([mm-ll,mm+ll])
+            #self.ax.relim()
+            self.ax.autoscale_view(tight=True,scalex=True,scaley=True)
+
+        return self.lines

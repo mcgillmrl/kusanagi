@@ -74,6 +74,7 @@ class GP(object):
                 self.set_dataset(X_dataset,Y_dataset)
                 self.init_log_likelihood()
         
+        self.ready = False
         utils.print_with_stamp('Finished initialising GP regressor',self.name)
     
     def set_dataset(self,X_dataset,Y_dataset):
@@ -108,6 +109,8 @@ class GP(object):
 
         # we should be saving, since we updated the trianing dataset
         self.state_changed = True
+        if (self.N > 0):
+            self.ready = True
 
     def append_dataset(self,X_dataset,Y_dataset):
         if self.X is None:
@@ -1038,11 +1041,11 @@ class SSGP_UI(SSGP, GP_UI):
         
         return M,S,V
 
-class VSSGP(GP):
+class VSSGP(SSGP):
     ''' Variational Sparse Spectral Gaussian Process Regression'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='VSSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, hyperparameter_gradients=False):
         self.n_basis = n_basis
-        super(VSSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+        super(VSSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def init_log_likelihood(self):
         super(VSSGP, self).init_log_likelihood()
@@ -1096,7 +1099,8 @@ class VSSGP(GP):
             Yi = self.Y[:,i]
             Yci = solve_lower_triangular(Lmm,m_phi.dot(Yi))
             Yi = self.Y[:,i]
-            lelb[i] = -0.5*N*T.log(2*np.pi/sn2) - 0.5*sn2*Yi.dot(Yi) + 0.5*sn2*Yci.dot(Yci) + T.sum(T.log(T.diag(Lmm/sn2)))
+            
+            nlml_ss[i] = -0.5*N*T.log(2*np.pi/sn2) - 0.5*sn2*Yi.dot(Yi) + 0.5*sn2*Yci.dot(Yci) + T.sum(T.log(T.diag(Lmm/sn2)))
         
         nlml_ss = T.stack(nlml_ss)
         if self.snr_penalty is not None:

@@ -37,19 +37,19 @@ def test_random(gp_type='GP',angi=[0,1]):
     
     profile = theano.config.profile
     if gp_type == 'GP_UI':
-        gp = GP_UI(Xd,Yd, profile=profile)
+        gp = GP_UI(idims=idims,odims=odims,profile=profile)
     elif gp_type == 'RBFGP':
-        gp = RBFGP(Xd,Yd, profile=profile)
+        gp = RBFGP(idims=idims,odims=odims,profile=profile)
     elif gp_type == 'SPGP':
-        gp = SPGP(Xd,Yd, profile=profile, n_basis = 100)
+        gp = SPGP(idims=idims,odims=odims,profile=profile,n_basis=100)
     elif gp_type == 'SPGP_UI':
-        gp = SPGP_UI(Xd,Yd, profile=profile, n_basis = 100)
+        gp = SPGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
     elif gp_type == 'SSGP':
-        gp = SSGP(Xd,Yd, profile=profile, n_basis = 100)
+        gp = SSGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
     elif gp_type == 'SSGP_UI':
-        gp = SSGP_UI(Xd,Yd, profile=profile, n_basis = 100)
+        gp = SSGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
     else:
-        gp = GP(Xd,Yd, profile=profile)
+        gp = GP(idims=idims,odims=odims,profile=profile)
 
     #gp.train()
     #gp.save()
@@ -300,4 +300,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('GP_UI')
+    test_random('SSGP_UI')

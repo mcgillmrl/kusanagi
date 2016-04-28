@@ -76,6 +76,7 @@ class EpisodicLearner(object):
         # start robot
         if self.async_plant:
             self.plant.start()
+        exec_time = time()
         x_t, t0 = self.plant.get_state()
         Sx_t = np.zeros((x_t.shape[0],x_t.shape[0]))
         L_noise = np.linalg.cholesky(self.plant.noise)
@@ -88,12 +89,10 @@ class EpisodicLearner(object):
         # do rollout
         #while t <= t0 + H:
         for i in xrange(H_steps):
-            exec_time = time()
             # convert input angle dimensions to complex representation
             x_t_ = gTrig_np(x_t[None,:], self.angle_idims).flatten()
             #  get command from policy (this should be fast, or at least account for delays in processing):
             u_t = policy.evaluate(t, x_t_)[0].flatten()
-            #print x_t_,u_t
             #  send command to robot:
             self.plant.apply_control(u_t)
             if self.cost is not None:
@@ -108,11 +107,14 @@ class EpisodicLearner(object):
             # step the plant if necessary
             if not self.async_plant:
                 self.plant.step()
+
             # sleep to match the desired sample rate
             exec_time = time() - exec_time
-            sleep(max(self.plant.dt-exec_time,0))
+            if exec_time < self.plant.dt:
+                sleep(self.plant.dt-exec_time)
 
             #  get robot state (this should ensure synchronicity by blocking until dt seconds have passed):
+            exec_time = time()
             x_t, t = self.plant.get_state()
             if self.plant.noise is not None:
                 # randomize state
@@ -130,9 +132,6 @@ class EpisodicLearner(object):
         # stop robot
         run_value = np.array(self.experience.immediate_cost[-1][:-1])
         print_with_stamp('Done. Stopping robot. Value of run [%f]'%(run_value.sum()),self.name)
-        # plot predicted value vs actual value
-        #pred_value = self.value(derivs=False)
-        #plt.plot(np.arange())
 
         self.plant.stop()
         self.n_episodes += 1

@@ -5,6 +5,7 @@ from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from shell.plant import SerialPlant
 from ghost.control import RBFPolicy
+from utils import gTrig_np
 
 if __name__ == '__main__':
     #np.random.seed(31337)
@@ -21,10 +22,15 @@ if __name__ == '__main__':
     S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
     maxU = [10]
     measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
-    plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
-    #plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU, port='/dev/ttyACM0')
+    #plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
+    plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU,port='/dev/ttyACM0')
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
     draw_cp.start()
+    def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
+        draw_cp.stop()
+        plant.stop()
+        sys.exit(0)
+    signal.signal(signal.SIGINT, signal_handler)
 
     # initialize policy
     angle_dims = [3]
@@ -41,40 +47,35 @@ if __name__ == '__main__':
 
     # initialize learner
     T = 4.0                                                          # controller horizon
-    J = 2                                                            # number of random initial trials
-    N = 100                                                           # learning iterations
+    J = 30                                                           # number of random initial trials
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
     
-    def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
-        print 'Caught CTRL-C!'
-        draw_cp.stop()
-        plant.stop()
-        sys.exit(0)
-    signal.signal(signal.SIGINT, signal_handler)
-
-    if learner.dynamics_model.X_ is None: #if we have no prior data
-        # gather data with random trials
-        for i in xrange(J):
-            plant.reset_state()
-            learner.apply_controller(H=T,random_controls=True)
- #   else:
- #       plant.reset_state()
- 
-    plant.reset_state()
-    learner.apply_controller(H=T)
-        
-    for i in xrange(N):
-        # train the dynamics models given the collected data
-        learner.train_dynamics()
-
-        # train policy
-        learner.train_policy(H=T)
-
-        # execute it on the robot
+    # gather data with random trials
+    for i in xrange(J):
         plant.reset_state()
         learner.apply_controller(H=T)
 
-        # save latest state of the learner
-        learner.save()
-    
     draw_cp.stop()
+    
+    X = []
+    Y = []
+    x0 = []
+    n_episodes = len(learner.experience.states)
+    # construct training dataset
+    for i in xrange(n_episodes):
+        x = np.array(learner.experience.states[i])
+        u = np.array(learner.experience.actions[i])
+        x0.append(x[0])
+
+        # inputs are states, concatenated with actions (except for the last entry)
+        x_ = gTrig_np(x, learner.angle_idims)
+        X.append( np.hstack((x_[:-1],u[:-1])) )
+        # outputs are changes in state
+        Y.append( x[1:] - x[:-1] )
+
+    X = np.vstack(X)
+    Y = np.vstack(Y)
+    x0 = np.array(x0)
+
+    np.savez('cartpole',X=X,Y=Y,x0=x0)
+
