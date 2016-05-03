@@ -207,8 +207,6 @@ class PlantDraw(object):
         self.fig = plt.figure(self.name,figsize=(16,10))
         plt.xlim([-1.5,1.5])
         plt.ylim([-1.5,1.5])
-        plt.ion()
-        plt.show()
         self.ax = plt.gca()
         self.ax.set_aspect('equal','datalim')
         self.ax.grid(True)
@@ -216,6 +214,7 @@ class PlantDraw(object):
         self.init_artists()
         self.fig.canvas.draw()
         self.cursor = Cursor(self.ax, useblit=True, color='red', linewidth=2 )
+        plt.ion()
         plt.show()
         pass
 

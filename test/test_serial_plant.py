@@ -11,7 +11,7 @@ if __name__ == '__main__':
     #np.random.seed(31337)
     np.set_printoptions(linewidth=500)
     # initliaze plant
-    dt = 0.02                                                      # simulation time step
+    dt = 0.1                                                      # simulation time step
     model_parameters ={}                                             # simulation parameters
     x0 = [0,0,0,0]                                                   # initial state mean
     S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
@@ -28,17 +28,17 @@ if __name__ == '__main__':
         sys.exit(0)
 
     try:
-        w = 2*np.pi*1.5;
-        A = 0;
+        w = 2*np.pi*0.5;
+        A = 10.0;
         plant.reset_state()
         while True:
             exec_time = time()
             #u_t = A*w*np.cos(w*(time()+0.5*dt))[None]
             u_t = A*np.cos(w*time())[None]
-            #if u_t >= 0:
-            #    u_t[0] = A
-            #else:
-            #    u_t[0] = -A
+            if u_t >= 0:
+                u_t[0] = A
+            else:
+                u_t[0] = -A
             plant.apply_control(u_t)
             plant.step()
             exec_time = time() - exec_time

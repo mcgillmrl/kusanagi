@@ -4,16 +4,15 @@
 #include <Encoder.h>
 #include <CmdMessenger.h>
 #define BAUD_RATE 4000000
-#define ENCODER_SAMPLING_PERIOD 200 // microsecs
+#define ENCODER_SAMPLING_PERIOD 128 // microsecs
 #define ENC_DT 1e-6*ENCODER_SAMPLING_PERIOD
-#define CONTROL_SAMPLING_PERIOD 200 // microsecs
-#define CONTROL_DT 1e-6*ENCODER_SAMPLING_PERIOD
+#define CONTROL_SAMPLING_PERIOD 128 // microsecs
+#define CONTROL_DT 1e-6*CONTROL_SAMPLING_PERIOD
 #define FORCE_TO_ANG_ACCEL 2048
 #define VEL_SCALING 2048
 //#define ACCEL_CONTROL
 
 // General params
-double phase =0 ;
 double twopi = PI * 2;
 elapsedMicros usec = 0;
 unsigned long t_end = 0;
@@ -33,16 +32,17 @@ union joint_states_type{
 joint_states_type joint_states;
 
 // velocity estimator params
-double joint_integral_error[] = {0,0};
-double joint_angle_estimates[] = {0,0};
+//double joint_angle_estimates[] = {0,0};
+//double encoder_gains[2][2] = {{25,100},{25,100}};
+double joint_integral_error[2] = {0,0};
 double joint_angles[2] = {0,0};
 double w_slow[2] = {0,0};
 double w_fast[2] = {0,0};
-double encoder_gains[2][2] = {{25,100},{25,100}};
-double tau = 0.008;
-double a = 1/(tau + 0.5*ENC_DT);
-double b = a*(tau - 0.5*ENC_DT);
-double Kfast= 167;
+double tau[2] = {0.008,0.008};
+double Kfast[2] = {375,25};
+double a[2] = {0,0};
+double b[2] = {0,0};
+double current_angle,angle_error;
 
 // current control signal
 double u_t = 0;
@@ -52,6 +52,7 @@ double angle_limits[2] = {-2.5*PI,2.5*PI};
 double min_angle_diff = 0;
 double max_angle_diff = 0;
 double limit_force = 0;
+
 // serial command interface
 CmdMessenger cmd = CmdMessenger(Serial);
 // commands
@@ -72,8 +73,13 @@ void setup() {
   analogWriteResolution(12);
   analogWrite(A14, 2048);
 
+  // initialize velocity estimator params
+  for (int i=0; i<N_joints;i++){
+    a[i] = 1/(tau[i] + 0.5*ENC_DT);
+    b[i] = a[i]*(tau[i] - 0.5*ENC_DT);
+  }
+  
   // wait and initialize encoder loop
-  delay(100);
   Timer1.initialize(ENCODER_SAMPLING_PERIOD);
   Timer1.attachInterrupt(readEncoders);
   Timer3.initialize(CONTROL_SAMPLING_PERIOD);
@@ -109,7 +115,8 @@ void loop() {
     Serial.print(' ');
     Serial.println(motor_vel,10);
     delayMicroseconds(100);
-  }*/
+  }
+  */
 }
 
 void onUnknownCommand(){
@@ -122,7 +129,6 @@ void resetState(){
   for (int i=0; i<N_joints;i++){
     encoders[i]->write(0);
     joint_integral_error[i]=0;
-    joint_angle_estimates[i]=0;
     joint_angles[i]=0;
     w_fast[i]=0;
     w_slow[i]=0;
@@ -168,18 +174,18 @@ void readEncoders(){
       joint_states.as_double[i+N_joints] = angle_error*encoder_gains[i][0] + joint_integral_error[i];
     }
     */
-    double angle = degrees_per_count[i]*encoders[i]->read();
-    w_slow[i] = a*(angle - joint_angles[i]) +b*w_slow[i];
+    current_angle = degrees_per_count[i]*encoders[i]->read();
+    w_slow[i] = a[i]*(current_angle - joint_angles[i]) +b[i]*w_slow[i];
     w_fast[i] = 0;
-    double angle_error = angle - joint_states.as_double[i];
+    angle_error = current_angle - joint_states.as_double[i];
     if (abs(angle_error) >= degrees_per_count[i]){
-      w_fast[i] = angle_error*Kfast;
+      w_fast[i] = angle_error*Kfast[i];
     }
     
     joint_states.as_double[i+N_joints] = w_slow[i] + w_fast[i];
     joint_integral_error[i] += joint_states.as_double[i+N_joints]*ENC_DT;
     joint_states.as_double[i] = w_slow[i]*0.5*ENC_DT + joint_integral_error[i];
-    joint_angles[i] = angle;
+    joint_angles[i] = current_angle;
   }
   joint_states.as_double[2*N_joints] = usec*1e-6;
 }

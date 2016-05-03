@@ -41,7 +41,7 @@ if __name__ == '__main__':
 
     # initialize learner
     T = 4.0                                                          # controller horizon
-    J = 4                                                            # number of random initial trials
+    J = 3                                                            # number of random initial trials
     N = 100                                                           # learning iterations
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
     
@@ -54,14 +54,13 @@ if __name__ == '__main__':
 
     if learner.dynamics_model.X_ is None: #if we have no prior data
         # gather data with random trials
-        for i in xrange(J-1):
+        for i in xrange(J):
             plant.reset_state()
             learner.apply_controller(H=T,random_controls=True)
- #   else:
- #       plant.reset_state()
- 
-    plant.reset_state()
-    learner.apply_controller(H=T)
+    else:
+        #TODO make this an option when running the script from the command line
+        plant.reset_state()
+        learner.apply_controller(H=T)
         
     for i in xrange(N):
         # train the dynamics models given the collected data
