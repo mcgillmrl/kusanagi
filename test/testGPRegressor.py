@@ -11,7 +11,7 @@ def test_random(gp_type='GP',angi=[0,1]):
         return np.exp(-500*(np.sum(0.0001*(X**2),1)))*np.sin(X.sum(1))
 
     n_samples = 1000
-    n_test = 20
+    n_test = 1000
     idims = 7
     odims = 6
     np.random.seed(31337)
@@ -50,8 +50,9 @@ def test_random(gp_type='GP',angi=[0,1]):
         gp = SSGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
     else:
         gp = GP(idims=idims,odims=odims,profile=profile)
-
-    #gp.train()
+    
+    gp.set_dataset(Xd,Yd)
+    gp.train()
     #gp.save()
 
     ss = convolve2d(np.eye(Xtest.shape[1]),kk,'same')
