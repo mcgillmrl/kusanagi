@@ -204,7 +204,7 @@ class PlantDraw(object):
         self.running = False
 
     def init_ui(self):
-        self.fig = plt.figure(self.name,figsize=(16,10))
+        self.fig = plt.figure(self.name)#,figsize=(16,10))
         plt.xlim([-1.5,1.5])
         plt.ylim([-1.5,1.5])
         self.ax = plt.gca()
