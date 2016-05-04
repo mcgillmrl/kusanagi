@@ -980,16 +980,13 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=4):
+    def predict_symbolic(self,mx,Sx, method=2):
         if method == 1:
+            # fast compilation
             return self.predict_symbolic_1(mx,Sx)
-        elif method == 2:
+        else:
+            # fast running
             return self.predict_symbolic_2(mx,Sx)
-        elif method == 3:
-            return self.predict_symbolic_3(mx,Sx)
-        elif method == 4:
-            return self.predict_symbolic_4(mx,Sx)
-        return self.predict_symbolic(mx,Sx)
 
     def predict_symbolic_1(self,mx,Sx):
         if self.N < self.n_basis:
@@ -1059,168 +1056,11 @@ class SSGP_UI(SSGP, GP_UI):
 
         idims = self.D
         odims = self.E
-
-        M = [] # mean
-        V = [] # inv(Sx).dot(input_output_cov)
-        M2 = [[]]*(odims**2) # second moment
-        sr=[[]]*odims
-        srdotx=[[]]*odims
-        for i in xrange(odims):
-            # get the spectral samples for dimension i
-            sr[i] = self.sr[i]         # Ms x D
-            srdotx[i] = sr[i].dot(mx)  # Ms x 1
-            # initalize some variables
-            Ms = sr[i].shape[0]
-            D = mx.shape[0]
-            sf2 = T.exp(2*self.loghyp[i,idims])
-            sn2 = T.exp(2*self.loghyp[i,idims+1])
-
-            # compute the Mx1 vector of input covariance dependent weights
-            e = T.exp(-0.5*T.sum((sr[i].dot(Sx))*sr[i],1))
-            # compute the mean vector
-            mphi_i = T.concatenate( [ T.sin( srdotx[i] )*e, T.cos( srdotx[i] )*e ] ) # 2*Ms x 1
-            M.append( mphi_i.T.dot(self.beta_ss[i]) )
-
-            # inv(s) times input output covariance
-            c = T.horizontal_stack( ( T.outer( mx, T.sin( srdotx[i] ) ) + Sx.dot(sr[i].T)*T.cos( srdotx[i] ) )*e , ( T.outer( mx, T.cos( srdotx[i] ) ) - Sx.dot(sr[i].T)*T.sin( srdotx[i] ) )*e ) # D x 2*Ms
-            v = c.dot(self.beta_ss[i]) - mx*M[i]
-            V.append( matrix_inverse(Sx).dot(v) )
-            
-            # predictive covariance
-            for j in xrange(i+1):
-                # compute the second moments of the spectral feature vectors
-                srdotx_m_ij = (srdotx[i][:,None] - srdotx[j][None,:])   # MsxMs
-                srdotx_p_ij = (srdotx[i][:,None] + srdotx[j][None,:])   # MsxMs
-                sr_m_ij = (sr[i][:,None,:] - sr[j][None,:,:])           # MsxMsxD
-                sr_p_ij = (sr[i][:,None,:] + sr[j][None,:,:])           # MsxMsxD
-                em =  T.exp(-0.5*T.sum(sr_m_ij.dot(Sx)*sr_m_ij,2))      # MsxMs
-                ep =  T.exp(-0.5*T.sum(sr_p_ij.dot(Sx)*sr_p_ij,2))      # MsxMs
-                sm = T.sin( srdotx_m_ij )*em
-                sp = T.sin( srdotx_p_ij )*ep
-                cm = T.cos( srdotx_m_ij )*em
-                cp = T.cos( srdotx_p_ij )*ep
-                
-                # Populate the second moment matrix of the feature vector
-                Qij = T.zeros((2*Ms,2*Ms))
-                Qij = T.set_subtensor( Qij[:Ms,:Ms] , cm - cp )
-                Qij = T.set_subtensor( Qij[:Ms,Ms:] , sm + sp )
-                Qij = T.set_subtensor( Qij[Ms:,:Ms] , sp - sm )
-                Qij = T.set_subtensor( Qij[Ms:,Ms:] , cm + cp )
-
-                # Compute the second moment of the output
-                m2 = matrix_dot(self.beta_ss[i], 0.5*Qij, self.beta_ss[j].T)
-
-                if i == j:
-                    # if i==j we need to add the trace term
-                    m2 =  m2 + sn2*(1 + T.sum(self.iA[i]*Qij))
-                else:
-                    M2[j*odims+i] = m2
-                M2[i*odims+j] = m2
-
-        M = T.stack(M)
-        V = T.stack(V).T
-        M2 = T.stack(M2)
-        S = M2.reshape((odims,odims))
-        S = S - T.outer(M,M)
-
-        return M,S,V
-
-    def predict_symbolic_3(self,mx,Sx):
-        if self.N < self.n_basis:
-            # stick with the full GP
-            return GP_UI.predict_symbolic(self,mx,Sx)
-
-        idims = self.D
-        odims = self.E
-
-        M = [] # mean
-        V = [] # inv(Sx).dot(input_output_cov)
-        M2 = [[]]*(odims**2) # second moment
-        sr=[[]]*odims
-        srdotx=[[]]*odims
-        srdotSx=[[]]*odims
-        cos_srdotx=[[]]*odims
-        sin_srdotx=[[]]*odims
-        for i in xrange(odims):
-            # get the spectral samples for dimension i
-            sr[i] = self.sr[i]         # Ms x D
-            srdotx[i] = sr[i].dot(mx)  # Ms x 1
-            srdotSx[i] = sr[i].dot(Sx)  # Ms x D
-
-            # initalize some variables
-            Ms = sr[i].shape[0]
-            D = mx.shape[0]
-            sf2 = T.exp(2*self.loghyp[i,idims])
-            sn2 = T.exp(2*self.loghyp[i,idims+1])
-
-            # compute the Mx1 vector of input covariance dependent weights
-            e = T.exp(-0.5*T.sum(srdotSx[i]*sr[i],1))
-            sin_srdotx[i] = T.sin( srdotx[i] )*e
-            cos_srdotx[i] = T.cos( srdotx[i] )*e
-            # compute the mean vector
-            mphi_i = T.concatenate( [ sin_srdotx[i], cos_srdotx[i] ] ) # 2*Ms x 1
-            M.append( mphi_i.T.dot(self.beta_ss[i]) )
-
-            # inv(s) times input output covariance
-            c = T.horizontal_stack( ( T.outer( mx, sin_srdotx[i] )  + srdotSx[i].T*cos_srdotx[i] ) , ( T.outer( mx, cos_srdotx[i] ) - srdotSx[i].T*sin_srdotx[i] ) ) # D x 2*Ms
-            v = c.dot(self.beta_ss[i]) - mx*M[i]
-            V.append( matrix_inverse(Sx).dot(v) )
-            
-            # predictive covariance
-            for j in xrange(i+1):
-                # compute the second moments of the spectral feature vectors
-                siSxsj = srdotSx[i].dot(sr[j].T)
-                em =  T.exp(siSxsj)      # MsxMs
-                ep =  T.exp(-siSxsj)     # MsxMs
-                si = sin_srdotx[i]       # Msx1
-                ci = cos_srdotx[i]       # Msx1   
-                sj = sin_srdotx[j]       # Msx1
-                cj = cos_srdotx[j]       # Msx1
-                sicj = T.outer(si,cj)    # MsxMs
-                cisj = T.outer(ci,sj)    # MsxMs
-                sisj = T.outer(si,sj)    # MsxMs
-                cicj = T.outer(ci,cj)    # MsxMs
-                sm = (sicj-cisj)*em
-                sp = (sicj+cisj)*ep
-                cm = (sisj+cicj)*em
-                cp = (cicj-sisj)*ep
-                
-                # Populate the second moment matrix of the feature vector
-                Qij = T.zeros((2*Ms,2*Ms))
-                Qij = T.set_subtensor( Qij[:Ms,:Ms] , cm - cp )
-                Qij = T.set_subtensor( Qij[:Ms,Ms:] , sm + sp )
-                Qij = T.set_subtensor( Qij[Ms:,:Ms] , sp - sm )
-                Qij = T.set_subtensor( Qij[Ms:,Ms:] , cm + cp )
-
-                # Compute the second moment of the output
-                m2 = matrix_dot(self.beta_ss[i], 0.5*Qij, self.beta_ss[j].T)
-
-                if i == j:
-                    # if i==j we need to add the trace term
-                    iAi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms)))
-                    m2 =  m2 + sn2*(1 + T.sum(iAi*Qij))
-                else:
-                    M2[j*odims+i] = m2
-                M2[i*odims+j] = m2
-
-        M = T.stack(M)
-        V = T.stack(V).T
-        M2 = T.stack(M2)
-        S = M2.reshape((odims,odims))
-        S = S - T.outer(M,M)
-
-        return M,S,V
-
-    def predict_symbolic_4(self,mx,Sx):
-        if self.N < self.n_basis:
-            # stick with the full GP
-            return GP_UI.predict_symbolic(self,mx,Sx)
-
-        idims = self.D
-        odims = self.E
         
         # precompute some variables
         Ms = self.sr.shape[1]
+        sf2 = T.exp(2*self.loghyp[:,idims])
+        sn2 = T.exp(2*self.loghyp[:,idims+1])
         srdotx = self.sr.dot(mx)
         srdotSx = self.sr.dot(Sx) 
         srdotSxdotsr = T.sum(srdotSx*self.sr,2)
@@ -1242,9 +1082,6 @@ class SSGP_UI(SSGP, GP_UI):
         # TODO vectorize this operation
         M2 = [[]]*(odims**2) # second moment
         for i in xrange(odims):
-            # initalize some variables
-            sf2 = T.exp(2*self.loghyp[i,idims])
-            sn2 = T.exp(2*self.loghyp[i,idims+1])
             # predictive covariance
             for j in xrange(i+1):
                 # compute the second moments of the spectral feature vectors
@@ -1278,7 +1115,7 @@ class SSGP_UI(SSGP, GP_UI):
                 if i == j:
                     # if i==j we need to add the trace term
                     iAi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms)))
-                    m2 =  m2 + sn2*(1 + (sf2/Ms)*T.sum(iAi*Qij))
+                    m2 =  m2 + sn2[i]*(1 + (sf2[i]/Ms)*T.sum(iAi*Qij))
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2

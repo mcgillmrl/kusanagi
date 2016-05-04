@@ -19,7 +19,7 @@ class PILCO(EpisodicLearner):
         dyn_odims = len(self.plant.x0)
         #self.dynamics_model = GP_UI(idims=dyn_idims,odims=dyn_odims)
         #self.dynamics_model = SPGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
-        self.dynamics_model = SSGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
+        self.dynamics_model = SSGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=85)
         self.next_episode = 0
 
     def init_rollout(self, derivs=False):
