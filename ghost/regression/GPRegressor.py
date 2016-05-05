@@ -307,9 +307,9 @@ class GP(object):
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         m_loss = MemoizeJac(self.loss)
         try:
-            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 500})
         except ValueError:
-            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-9, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-12, options={'maxiter': 500})
         print ''
         loghyp = opt_res.x.reshape(self.loghyp_.shape)
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
