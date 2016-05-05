@@ -148,11 +148,11 @@ class EpisodicLearner(object):
         parameter_shapes = [p.shape for p in p0]
         m_loss = MemoizeJac(self.loss)
         try:
-            opt_res = minimize(m_loss, wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=1e-6, options={'maxiter': 100})
+            opt_res = minimize(m_loss, wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=1e-9, options={'maxiter': 100})
         except ValueError:
             print '' 
             print_with_stamp('%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
-            opt_res = minimize(m_loss, wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-6, options={'maxiter': 100})
+            opt_res = minimize(m_loss, wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-9, options={'maxiter': 100})
 
         self.policy.set_params(unwrap_params(opt_res.x,parameter_shapes))
         print '' 
