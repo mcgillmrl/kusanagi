@@ -119,7 +119,9 @@ class EpisodicLearner(object):
             if self.plant.noise is not None:
                 # randomize state
                 x_t = x_t + np.random.randn(x_t.shape[0]).dot(L_noise);
-        
+            
+            if self.plant.done:
+                break
         # add last state to experience
         x_t_ = gTrig_np(x_t[None,:], self.angle_idims).flatten()
         u_t = np.zeros_like(u_t)
