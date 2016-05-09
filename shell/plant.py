@@ -28,6 +28,7 @@ class Plant(object):
         self.dt = dt
         self.noise = noise
         self.async = False
+        self.done = False
         self.plant_thread = Thread(target=self.run)
     
     def apply_control(self,u):

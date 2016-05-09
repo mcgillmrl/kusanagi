@@ -196,9 +196,13 @@ class PILCO(EpisodicLearner):
         # setp initial state
         mx = np.array(self.plant.x0).squeeze()
         Sx = np.array(self.plant.S0).squeeze()
-
-        H_steps = np.ceil(self.H/self.plant.dt)
         
+        # we will perform a rollout with a horizon that is as long as the longest run, but at most self.H
+        max_steps = max([len(episode_states) for episode_states in self.experience.states])
+        H_steps = np.ceil(self.H/self.plant.dt)
+        if max_steps > 1:
+            H_steps = min(max_steps, H_steps)
+        print H_steps
         if not derivs:
             # self.H is the number of steps to rollout ( finite horizon )
             ret = self.rollout(mx,Sx,H_steps,self.discount)

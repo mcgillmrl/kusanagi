@@ -103,6 +103,7 @@ class OAIPlant(Plant):
         # 	self.u = self.u[:,None]
 
 	def reset_state(self):
+	        self.done = False
 		self.env.reset()
 
 	def setEnv(self, env):

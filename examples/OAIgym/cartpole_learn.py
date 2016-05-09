@@ -43,14 +43,14 @@ if __name__ == '__main__':
     cost_parameters = {}
     cost_parameters['angle_dims'] = angle_dims
     cost_parameters['target'] = [0,0,0,0]                           
-    cost_parameters['width'] = 0.05
+    cost_parameters['width'] = 0.25
     cost_parameters['expl'] = 0.0
     cost_parameters['pendulum_length'] = model_parameters['l']
     cost = partial(cartpole_loss, params=cost_parameters)
 
     # initialize learner
-    T = 8.0                                                          # controller horizon
-    J = 2                                                            # number of random initial trials
+    T = 4.0                                                          # controller horizon
+    J = 4                                                           # number of random initial trials
     N = 100                                                           # learning iterations
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
     
@@ -66,11 +66,9 @@ if __name__ == '__main__':
         for i in xrange(J):
             plant.reset_state()
             learner.apply_controller(H=T,random_controls=True)
- #   else:
- #       plant.reset_state()
- 
-    plant.reset_state()
-    learner.apply_controller(H=T)
+    else:
+        plant.reset_state()
+        learner.apply_controller(H=T)
         
     for i in xrange(N):
         # train the dynamics models given the collected data
