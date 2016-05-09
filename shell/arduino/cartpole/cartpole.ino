@@ -4,22 +4,26 @@
 #include <Encoder.h>
 #include <CmdMessenger.h>
 #define BAUD_RATE 4000000
-#define ENCODER_SAMPLING_PERIOD 128 // microsecs
+#define ENCODER_SAMPLING_PERIOD 100 // microsecs
 #define ENC_DT 1e-6*ENCODER_SAMPLING_PERIOD
-#define CONTROL_SAMPLING_PERIOD 128 // microsecs
+#define CONTROL_SAMPLING_PERIOD 100 // microsecs
 #define CONTROL_DT 1e-6*CONTROL_SAMPLING_PERIOD
 #define FORCE_TO_ANG_ACCEL 2048
-#define VEL_SCALING 2048
+
+#define DIR_PIN 4
+#define PWM_PIN 3
+#define PWM_RESOLUTION 16
 //#define ACCEL_CONTROL
 
 // General params
 double twopi = PI * 2;
 elapsedMicros usec = 0;
 unsigned long t_end = 0;
+int PWM_MAX = 0.23*pow(2,PWM_RESOLUTION);
 
 // Encoder params
 #define N_joints 2
-Encoder* encoders[] = {new Encoder(0, 1),new Encoder(2, 3)};
+Encoder* encoders[] = {new Encoder(8, 9),new Encoder(5, 6)};
 double degrees_per_count[] = {twopi/30000, twopi/2000};
 //double joint_angles[] = {0,0};
 bool new_measurement=true;
@@ -38,8 +42,8 @@ double joint_integral_error[2] = {0,0};
 double joint_angles[2] = {0,0};
 double w_slow[2] = {0,0};
 double w_fast[2] = {0,0};
-double tau[2] = {0.008,0.008};
-double Kfast[2] = {375,25};
+double tau[2] = {0.01,0.01};
+double Kfast[2] = {00.0,0.5};
 double a[2] = {0,0};
 double b[2] = {0,0};
 double current_angle,angle_error;
@@ -69,9 +73,11 @@ enum
 void setup() {
   // initialize serial port
   //Serial.begin(BAUD_RATE);
-  // setup DAC
-  analogWriteResolution(12);
-  analogWrite(A14, 2048);
+  // setup PWM
+  pinMode(DIR_PIN, OUTPUT);
+  analogWriteResolution(PWM_RESOLUTION);
+  analogWriteFrequency(PWM_PIN,732.4218);
+  analogWrite(PWM_PIN,0);
 
   // initialize velocity estimator params
   for (int i=0; i<N_joints;i++){
@@ -135,15 +141,20 @@ void resetState(){
     joint_states.as_double[i]=0;
     joint_states.as_double[i+N_joints]=0;
   }
-  
+  w_slow[1]= 6;
   //cmd.sendCmd(CMD_OK,"Reset joint states to 0");
 }
 
 void getCurrentState(){
   cmd.sendCmdStart(STATE);
-  for (int i=0; i<(2*N_joints+1);i++){
-    cmd.sendCmdBinArg<double>(joint_states.as_double[i]);
-  }
+  //for (int i=0; i<(2*N_joints+1);i++){
+  //  cmd.sendCmdBinArg<double>(joint_states.as_double[i]);
+  //}
+  cmd.sendCmdBinArg<double>(degrees_per_count[0]*encoders[0]->read() - joint_states.as_double[0]);
+  cmd.sendCmdBinArg<double>(0);
+  cmd.sendCmdBinArg<double>(0);
+  cmd.sendCmdBinArg<double>(0);
+  cmd.sendCmdBinArg<double>(joint_states.as_double[2*N_joints]);
   cmd.sendCmdEnd();
 }
 
@@ -151,15 +162,22 @@ void applyControl(){
 #ifdef ACCEL_CONTROL
   u_t = cmd.readDoubleArg()*FORCE_TO_ANG_ACCEL*CONTROL_DT;
 #else
-  u_t = cmd.readDoubleArg()*VEL_SCALING;
+  u_t = cmd.readDoubleArg()*PWM_MAX;
 #endif
   t_end = (unsigned long)(cmd.readDoubleArg()*1e6);
 }
 
 void setMotorSpeed(double v){
-  v += 2048.0;
-  v = min(4096,max(0,v));
-  analogWrite(A14,(int)v);
+  //v += 2048.0;
+  if (v>=0){
+    v = min(PWM_MAX,v);
+    digitalWrite(DIR_PIN,HIGH);
+  }
+  else{
+    v = -max(-PWM_MAX,v);
+    digitalWrite(DIR_PIN,LOW);
+  }
+  analogWrite(PWM_PIN,(int)v);
 }
 
 void readEncoders(){  
@@ -193,7 +211,7 @@ void readEncoders(){
 void controlLoop(){
 #ifdef ACCEL_CONTROL  
   motor_vel += u_t;
-  motor_vel = min(2048,max(-2048,motor_vel));
+  motor_vel = min(PWM_MAX,max(-PWM_MIN,motor_vel));
 #else
   motor_vel = u_t;
 #endif

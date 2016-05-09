@@ -41,7 +41,7 @@ if __name__ == '__main__':
 
     # initialize learner
     T = 4.0                                                          # controller horizon
-    J = 3                                                            # number of random initial trials
+    J = 4                                                            # number of random initial trials
     N = 100                                                           # learning iterations
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
     
