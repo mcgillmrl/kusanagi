@@ -4,6 +4,7 @@ import serial
 import struct
 from enum import Enum
 import gym
+from gym.envs.mujoco import mujoco_env
 
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Cursor
@@ -78,7 +79,7 @@ class Plant(object):
         raise NotImplementedError("You need to implement the reset_state method in your Plant subclass.")
 
 class OAIPlant(Plant):
-	def __init__(self, params, x0, S0=None, dt=0.02, noise=None, name='OAIPlant', discrete=False):
+	def __init__(self, discrete, params, x0, S0=None, dt=0.02, noise=None, name='OAIPlant'):
 		super(OAIPlant, self).__init__(params,x0,S0,dt,noise,name)
 		if discrete:
 			self.step = self.step_discrete

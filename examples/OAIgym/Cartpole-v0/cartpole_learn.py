@@ -27,9 +27,9 @@ if __name__ == '__main__':
 
 
     env = gym.make('CartPole-v0')                                   # creates the cartpole visualization and environment
-    discrete = False
+    discrete = True
     env.render()
-    plant = OAIPlant(model_parameters,x0,S0, dt, measurement_noise, discrete)
+    plant = OAIPlant(discrete, model_parameters,x0,S0, dt, measurement_noise)
     plant.setEnv(env)
     x0, _ = plant.get_state()
     # initialize policy
