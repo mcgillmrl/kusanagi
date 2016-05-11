@@ -41,6 +41,38 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
     
     return sum(M_cost), sum(S_cost)
 
+def double_cartpole_loss_openAI(mx,Sx,params, loss_func=quadratic_saturating_loss):
+    angle_dims = params['angle_dims']
+    cw = params['width']
+    if type(cw) is not list:
+        cw = [cw]
+    b = params['expl']
+    ell1,ell2 = params['pendulum_lengths']
+    target = np.array(params['target'])
+    D = target.size
+
+    # build cost scaling function
+    cost_dims = np.arange(5)[:,None]
+    Q = np.zeros((D,D))
+    C = np.array([ [ 1, -ell1, -ell2,    0,    0], 
+                   [ 0,     0,     0, ell1, ell2]]);
+    Q[cost_dims,cost_dims.T] = C.T.dot(C)
+    
+    M_cost = [] ; S_cost = []
+    
+    # total cost is the sum of costs with different widths
+    for c in cw:
+        loss_params = {}
+        loss_params['target'] = target
+        loss_params['Q'] = Q/c**2
+        m_cost, s_cost = loss_func(mx,Sx,loss_params)
+        if b is not None:
+            m_cost += b*theano.tensor.sqrt(s_cost) # UCB  exploration term
+        M_cost.append(m_cost)
+        S_cost.append(s_cost)
+    
+    return sum(M_cost), sum(S_cost)
+
 class DoubleCartpole(ODEPlant):
     def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='DoubleCartpole', integrator='dopri5', atol=1e-12, rtol=1e-12):
         super(DoubleCartpole, self).__init__(params, x0, S0, dt=dt, noise=noise, name=name, integrator=integrator, atol=atol, rtol=rtol)

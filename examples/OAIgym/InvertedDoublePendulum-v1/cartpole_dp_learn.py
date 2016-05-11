@@ -8,6 +8,7 @@ from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from shell.plant import SerialPlant
 from ghost.control import RBFPolicy
 from examples.OAIgym.new_plant import Plant, OAIPlant
+from shell.double_cartpole import DoubleCartpole, DoubleCartpoleDraw, double_cartpole_loss_openAI as double_cartpole_loss
 
 if __name__ == '__main__':
     #np.random.seed(31337)
@@ -15,35 +16,37 @@ if __name__ == '__main__':
     # initliaze plant
     dt = 0.02                                                         # simulation time step
     model_parameters ={}                                             # simulation parameters
-    model_parameters['l'] = 0.5                                      
-    model_parameters['m'] = 0.1
-    model_parameters['M'] = 1
+    model_parameters['m1'] = 0.5
+    model_parameters['m2'] = 0.5
+    model_parameters['m3'] = 0.5
+    model_parameters['l2'] = 0.6#
+    model_parameters['l3'] = 0.6#
     model_parameters['b'] = 0.1
-    model_parameters['g'] = 9.8
-    x0 = [0,0,0,0]
-    S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
-    maxU = [10]
-    measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
-
+    model_parameters['g'] = 9.82
+    x0 = [0,0,0,1,1,0,0,0,0,0,0] #                                              # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2
+    S0 = np.eye(11)*(0.1**2) 
+    measurement_noise = np.diag(np.ones(len(x0))*0.01**2) 
 
     env = gym.make('InvertedDoublePendulum-v1')                                   # creates the cartpole visualization and environment
+                                           
     discrete = False
-    env.render()
-    plant = OAIPlant(discrete, model_parameters,x0,S0, dt, measurement_noise)
+    env.render()  
+
+    plant = OAIPlant(discrete, model_parameters,x0,S0,dt,measurement_noise)
     plant.setEnv(env)
     x0, _ = plant.get_state()
     # initialize policy
-    angle_dims = [3]                                                
-    policy = RBFPolicy(x0,S0,maxU,10, angle_dims)
+    angle_dims = [] #
+    policy = RBFPolicy(x0,S0,[20],200, angle_dims)
 
     # initialize cost function
     cost_parameters = {}
     cost_parameters['angle_dims'] = angle_dims
-    cost_parameters['target'] = [0,0,0,0]                           
-    cost_parameters['width'] = 0.25
+    cost_parameters['target'] = [0,0,0,1,1,0,0,0,0,0,0] #
+    cost_parameters['width'] = 0.5
     cost_parameters['expl'] = 0.0
-    cost_parameters['pendulum_length'] = model_parameters['l']
-    cost = partial(cartpole_loss, params=cost_parameters)
+    cost_parameters['pendulum_lengths'] = [model_parameters['l2'],model_parameters['l3']]
+    cost = partial(double_cartpole_loss, params=cost_parameters)
 
     # initialize learner
     T = 4.0                                                          # controller horizon

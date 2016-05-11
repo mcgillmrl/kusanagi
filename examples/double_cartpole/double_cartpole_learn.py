@@ -18,7 +18,7 @@ if __name__ == '__main__':
     model_parameters['l3'] = 0.6
     model_parameters['b'] = 0.1
     model_parameters['g'] = 9.82
-    x0 = [0,0,0,0,np.pi,np.pi]                                               # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2
+    x0 = [0,0,0,0,np.pi,np.pi] #                                              # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2
     S0 = np.eye(6)*(0.1**2)                                          # initial state covariance
     measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
     plant = DoubleCartpole(model_parameters,x0,S0,dt,measurement_noise)
@@ -26,13 +26,13 @@ if __name__ == '__main__':
     draw_dcp.start()
 
     # initialize policy
-    angle_dims = [4,5]
+    angle_dims = [4,5] #
     policy = RBFPolicy(x0,S0,[20],200, angle_dims)
 
     # initialize cost function
     cost_parameters = {}
     cost_parameters['angle_dims'] = angle_dims
-    cost_parameters['target'] = [0,0,0,0,0,0]
+    cost_parameters['target'] = [0,0,0,0,0,0] #
     cost_parameters['width'] = 0.5
     cost_parameters['expl'] = 0.0
     cost_parameters['pendulum_lengths'] = [model_parameters['l2'],model_parameters['l3']]
