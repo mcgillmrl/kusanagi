@@ -89,6 +89,9 @@ def gTrig(x,angi,D):
     return m
 
 def gTrig2(m, v, angi, D, derivs=False):
+    if len(angi)<1:
+        return m,v,None
+    
     non_angle_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
     Dna = len(non_angle_dims)

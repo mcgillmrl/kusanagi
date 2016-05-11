@@ -51,14 +51,17 @@ class PILCO(EpisodicLearner):
             Sxu = theano.tensor.set_subtensor(Sxu[Da:,:Da], q.T )
 
             # state control covariance without angle dimensions
-            na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
-            Dna = len(na_dims)
-            Sx_xa = theano.tensor.zeros((D,Da))
-            Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,:Dna], Sx[:,na_dims])
-            Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,Dna:], Sx.dot(Ca))
-            Sxu_ = theano.tensor.zeros((D,Da+U))
-            Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,:Da], Sx_xa)
-            Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,Da:], Sx_xa.dot(Cu))
+	    if Ca is not None:
+	        na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
+                Dna = len(na_dims)
+                Sx_xa = theano.tensor.zeros((D,Da))
+                Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,:Dna], Sx[:,na_dims])
+                Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,Dna:], Sx.dot(Ca))
+                Sxu_ = theano.tensor.zeros((D,Da+U))
+                Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,:Da], Sx_xa)
+                Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,Da:], Sx_xa.dot(Cu))
+	    else:
+                Sxu_ = Sxu
 
             #  predict the change in state given current state-action
             # C_deltax = inv (Sxu) dot Sxu_deltax
