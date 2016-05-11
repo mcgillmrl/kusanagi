@@ -205,7 +205,7 @@ class PILCO(EpisodicLearner):
         H_steps = np.ceil(self.H/self.plant.dt)
         if max_steps > 1:
             H_steps = min(max_steps, H_steps)
-        print H_steps
+
         if not derivs:
             # self.H is the number of steps to rollout ( finite horizon )
             ret = self.rollout(mx,Sx,H_steps,self.discount)

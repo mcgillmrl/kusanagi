@@ -4,9 +4,9 @@
 #include <Encoder.h>
 #include <CmdMessenger.h>
 #define BAUD_RATE 4000000
-#define ENCODER_SAMPLING_PERIOD 100 // microsecs
+#define ENCODER_SAMPLING_PERIOD 200 // microsecs
 #define ENC_DT 1e-6*ENCODER_SAMPLING_PERIOD
-#define CONTROL_SAMPLING_PERIOD 100 // microsecs
+#define CONTROL_SAMPLING_PERIOD 200 // microsecs
 #define CONTROL_DT 1e-6*CONTROL_SAMPLING_PERIOD
 #define FORCE_TO_ANG_ACCEL 2048
 
@@ -19,7 +19,7 @@
 double twopi = PI * 2;
 elapsedMicros usec = 0;
 unsigned long t_end = 0;
-int PWM_MAX = 0.23*pow(2,PWM_RESOLUTION);
+int PWM_MAX = 0.22*pow(2,PWM_RESOLUTION);
 
 // Encoder params
 #define N_joints 2
@@ -36,14 +36,15 @@ union joint_states_type{
 joint_states_type joint_states;
 
 // velocity estimator params
-//double joint_angle_estimates[] = {0,0};
-//double encoder_gains[2][2] = {{25,100},{25,100}};
+double encoder_gains[2][4] = {{50,1000,50,100},{50,1000,50,100}};
 double joint_integral_error[2] = {0,0};
-double joint_angles[2] = {0,0};
+double vel_integral_error[2] = {0,0};
+double joint_accels[2] = {0,0};
+double previous_angles[2] = {0,0};
 double w_slow[2] = {0,0};
 double w_fast[2] = {0,0};
-double tau[2] = {0.01,0.01};
-double Kfast[2] = {00.0,0.5};
+double tau[2] = {0.008,0.008};
+double Kfast[2] = {1.0,1.0};
 double a[2] = {0,0};
 double b[2] = {0,0};
 double current_angle,angle_error;
@@ -135,7 +136,7 @@ void resetState(){
   for (int i=0; i<N_joints;i++){
     encoders[i]->write(0);
     joint_integral_error[i]=0;
-    joint_angles[i]=0;
+    previous_angles[i]=0;
     w_fast[i]=0;
     w_slow[i]=0;
     joint_states.as_double[i]=0;
@@ -147,14 +148,16 @@ void resetState(){
 
 void getCurrentState(){
   cmd.sendCmdStart(STATE);
-  //for (int i=0; i<(2*N_joints+1);i++){
-  //  cmd.sendCmdBinArg<double>(joint_states.as_double[i]);
-  //}
-  cmd.sendCmdBinArg<double>(degrees_per_count[0]*encoders[0]->read() - joint_states.as_double[0]);
+  for (int i=0; i<(2*N_joints+1);i++){
+    cmd.sendCmdBinArg<double>(joint_states.as_double[i]);
+  }
+  /*
+  cmd.sendCmdBinArg<double>(degrees_per_count[1]*encoders[1]->read() - joint_states.as_double[1]);
   cmd.sendCmdBinArg<double>(0);
   cmd.sendCmdBinArg<double>(0);
   cmd.sendCmdBinArg<double>(0);
   cmd.sendCmdBinArg<double>(joint_states.as_double[2*N_joints]);
+  */
   cmd.sendCmdEnd();
 }
 
@@ -181,19 +184,46 @@ void setMotorSpeed(double v){
 }
 
 void readEncoders(){  
+  PITrackingLoop_Accel();
+  joint_states.as_double[2*N_joints] = usec*1e-6;
+}
+
+void PITrackingLoop(){
+  // tracking loop for speed estimate (see https://www.embeddedrelated.com/showarticle/530.php)
   for (int i=0; i<N_joints;i++){
-    /*
-    joint_states.as_double[i] = degrees_per_count[i]*encoders[i]->read();
-    // tracking loop for speed estimate (see https://www.embeddedrelated.com/showarticle/530.php)
-    joint_angle_estimates[i] += joint_states.as_double[i+N_joints]*ENC_DT;
-    double angle_error = joint_states.as_double[i] - joint_angle_estimates[i];
-    if (abs(angle_error) > 1e-38){
-      joint_integral_error[i] += angle_error*encoder_gains[i][1]*ENC_DT;
-      joint_states.as_double[i+N_joints] = angle_error*encoder_gains[i][0] + joint_integral_error[i];
-    }
-    */
+    joint_states.as_double[i] += joint_states.as_double[i+N_joints]*ENC_DT;
+    
     current_angle = degrees_per_count[i]*encoders[i]->read();
-    w_slow[i] = a[i]*(current_angle - joint_angles[i]) +b[i]*w_slow[i];
+    double angle_error = current_angle - joint_states.as_double[i];
+    joint_integral_error[i] += angle_error*encoder_gains[i][1]*ENC_DT;
+    joint_states.as_double[i+N_joints] = angle_error*encoder_gains[i][0] + joint_integral_error[i];
+  }
+}
+
+
+void PITrackingLoop_Accel(){
+  // tracking loop for speed estimate (see https://www.embeddedrelated.com/showarticle/530.php)
+  for (int i=0; i<N_joints;i++){
+    current_angle = degrees_per_count[i]*encoders[i]->read();
+    double current_vel = joint_states.as_double[i+N_joints];
+    
+    angle_error = current_angle - joint_states.as_double[i];
+    double vel_error = current_vel - joint_states.as_double[i+N_joints];
+    joint_integral_error[i] += angle_error*encoder_gains[i][1]*ENC_DT;
+    vel_integral_error[i] += vel_error*encoder_gains[i][3]*ENC_DT;
+    joint_states.as_double[i+N_joints] = angle_error*encoder_gains[i][0] + joint_integral_error[i];
+    joint_accels[i] = vel_error*encoder_gains[i][2] + vel_integral_error[i];
+
+    joint_states.as_double[i] += joint_states.as_double[i+N_joints]*ENC_DT;
+    joint_states.as_double[i+N_joints] += joint_accels[i]*ENC_DT;
+  }
+}
+
+
+void VelocityTrackingLoop(){
+  for (int i=0; i<N_joints;i++){
+    current_angle = degrees_per_count[i]*encoders[i]->read();
+    w_slow[i] = a[i]*(current_angle - previous_angles[i]) +b[i]*w_slow[i];
     w_fast[i] = 0;
     angle_error = current_angle - joint_states.as_double[i];
     if (abs(angle_error) >= degrees_per_count[i]){
@@ -203,9 +233,8 @@ void readEncoders(){
     joint_states.as_double[i+N_joints] = w_slow[i] + w_fast[i];
     joint_integral_error[i] += joint_states.as_double[i+N_joints]*ENC_DT;
     joint_states.as_double[i] = w_slow[i]*0.5*ENC_DT + joint_integral_error[i];
-    joint_angles[i] = current_angle;
+    previous_angles[i] = current_angle;
   }
-  joint_states.as_double[2*N_joints] = usec*1e-6;
 }
 
 void controlLoop(){

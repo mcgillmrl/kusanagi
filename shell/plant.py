@@ -10,8 +10,7 @@ from matplotlib.colors import cnames
 from scipy.integrate import ode
 from time import time, sleep
 from threading import Thread, Lock
-from multiprocessing import Process
-from multiprocessing.managers import BaseManager
+from multiprocessing import Process,Pipe
 from utils import print_with_stamp
 
 color_generator = cnames.iteritems()
@@ -29,7 +28,7 @@ class Plant(object):
         self.noise = noise
         self.async = False
         self.done = False
-        self.plant_thread = Thread(target=self.run)
+        self.plant_thread = None
     
     def apply_control(self,u):
         self.u = np.array(u,dtype=np.float64)
@@ -50,21 +49,24 @@ class Plant(object):
             sleep(max(self.dt-exec_time,0))
 
     def start(self):
-        if self.plant_thread.is_alive():
+        if self.plant_thread is not None and self.plant_thread.is_alive():
             print_with_stamp('Waiting until robot stops',self.name)
             while self.plant_thread.is_alive():
                 sleep(1.0)
         
+        self.plant_thread = Thread(target=self.run)
+        self.plant_thread.daemon = True
         self.async = True
         self.plant_thread.start()
     
     def stop(self):
         self.async = False
-        if self.plant_thread.is_alive():
+        if self.plant_thread is not None and self.plant_thread.is_alive():
             # wait until thread stops
             self.plant_thread.join(10)
             # create new thread object, since python threads can only be started once
             self.plant_thread = Thread(target=self.run)
+            self.plant_thread.daemon = True
         print_with_stamp('Stopped simulation loop',self.name)
 
     def step(self):
@@ -192,10 +194,12 @@ class SerialPlant(Plant):
         self.serial.close()
 
 class PlantDraw(object):
-    def __init__(self, plant, refresh_period=(1.0/60), name='PlantDraw'):
+    def __init__(self, plant, refresh_period=(1.0/20), name='PlantDraw'):
         super(PlantDraw,self).__init__()
         self.name = name
         self.plant = plant
+        self.drawing_thread=None
+        self.polling_thread=None
 
         self.dt = refresh_period
         self.scale =  150 # pixels per meter
@@ -203,6 +207,8 @@ class PlantDraw(object):
         self.center_x = 0
         self.center_y = 0
         self.running = False
+
+        self.polling_pipe,self.drawing_pipe = Pipe()
 
     def init_ui(self):
         self.fig = plt.figure(self.name)#,figsize=(16,10))
@@ -217,22 +223,33 @@ class PlantDraw(object):
         self.cursor = Cursor(self.ax, useblit=True, color='red', linewidth=2 )
         plt.ion()
         plt.show()
-        pass
 
-    def run(self):
+    def drawing_loop(self,drawing_pipe):
         # start the matplotlib plotting
         self.init_ui()
 
         while self.running:
             exec_time = time()
-            # update the drawing from the plant state
-            state,t = self.plant.get_state()
-            updts = self.update(state,t)
-            self.fig.canvas.restore_region(self.bg)
+            
+            # get any data from the polling loop
+            updts = None
+            while drawing_pipe.poll():
+                data_from_plant= drawing_pipe.recv()
+                if data_from_plant is None:
+                    self.running = False
+                    break
+                
+                # get the visuzlization updates from the latest state
+                state,t = data_from_plant
+                updts = self.update(state,t)
 
-            for artist in updts:
-                self.ax.draw_artist(artist)
-            self.fig.canvas.blit(self.ax.bbox)
+            if updts is not None:
+                # update the drawing from the plant state
+                self.fig.canvas.restore_region(self.bg)
+
+                for artist in updts:
+                    self.ax.draw_artist(artist)
+                self.fig.canvas.blit(self.ax.bbox)
 
             # sleep to guarantee the desired frame rate
             exec_time = time() - exec_time
@@ -242,21 +259,40 @@ class PlantDraw(object):
         plt.ioff()
         plt.close('all')
 
+    def polling_loop(self,polling_pipe):
+        current_t = -1
+        while self.running:
+            exec_time = time()
+            state, t = self.plant.get_state()
+            if t != current_t:
+                polling_pipe.send((state,t))
+
+            # sleep to guarantee the desired frame rate
+            exec_time = time() - exec_time
+            sleep(max(self.dt-exec_time,0))
+
     def start(self):
         print_with_stamp('Starting drawing loop',self.name)
-        self.drawing_thread = Thread(target=self.run)
+        self.drawing_thread = Process(target=self.drawing_loop,args=(self.drawing_pipe,))
+        self.drawing_thread.daemon = True
+        self.polling_thread = Thread(target=self.polling_loop,args=(self.polling_pipe,))
+        self.polling_thread.daemon = True
         #self.drawing_thread = Process(target=self.run)
         self.running = True
+        self.polling_thread.start()
         self.drawing_thread.start()
     
     def stop(self):
         self.running = False
-        if self.drawing_thread.is_alive():
+
+        if self.drawing_thread is not None and self.drawing_thread.is_alive():
             # wait until thread stops
             self.drawing_thread.join(10)
-            # create new thread object, since python threads can only be started once
-            self.drawing_thread = Thread(target=self.run)
-            #self.drawing_thread = Process(target=self.run)
+
+        if self.polling_thread is not None and self.polling_thread.is_alive():
+            # wait until thread stops
+            self.polling_thread.join(10)
+
         print_with_stamp('Stopped drawing loop',self.name)
     
     def update(self):
@@ -264,7 +300,7 @@ class PlantDraw(object):
 
 # an example that plots lines
 class LivePlot(PlantDraw):
-    def __init__(self, plant, refresh_period=0.01, name='Serial Data',H=50, angi=[]):
+    def __init__(self, plant, refresh_period=1.0, name='Serial Data',H=5.0, angi=[]):
         super(LivePlot, self).__init__(plant, refresh_period,name)
         self.H = H
         self.angi = angi
@@ -276,31 +312,43 @@ class LivePlot(PlantDraw):
         self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in xrange(self.data.shape[1]) ]
         # keep track of latest time stamp and state
         self.current_t = t
+        self.previous_update_time = time()
+        self.update_period = refresh_period
 
     def init_artists(self):
         self.ax.set_aspect('auto','datalim')
         for line in self.lines:
             self.ax.add_line(line)
+        self.previous_update_time = time()
 
     def update(self, state, t):
         if t!=self.current_t:
             if len(self.data)<=1:
-                self.data = np.array([state]*self.H)
-                self.t_labels = np.array([t]*self.H)
+                self.data = np.array([state]*2)
+                self.t_labels = np.array([t]*2)
 
             if len(self.angi)>0:
                 state[self.angi] = (state[self.angi] + np.pi) % (2 * np.pi ) - np.pi
 
             self.current_t = t
-            self.data = np.vstack((self.data,state))[-self.H:,:]
-            self.t_labels = np.append(self.t_labels,t)[-self.H:]
+            # only keep enough data points to fill the window to avoid using up too much memory
+            curr_time = time()
+            self.update_period = 0.95*self.update_period + 0.05*(curr_time-self.previous_update_time)
+            self.previous_update_time = curr_time
+            history_size = int(1.5*self.H/self.update_period)
+            self.data = np.vstack((self.data,state))[-history_size:,:]
+            self.t_labels = np.append(self.t_labels,t)[-history_size:]
+
+            # update the lines
             for i in xrange(len(self.lines)):
                 self.lines[i].set_data(self.t_labels,self.data[:,i])
+
+            # update the plot limits
             plt.xlim([self.t_labels.min(),self.t_labels.max()])
+            plt.xlim([t-self.H,t])
             mm = self.data.mean()
-            ll = 1.05*np.abs(self.data).max()
+            ll = 1.05*np.abs(self.data[:,:]).max()
             plt.ylim([mm-ll,mm+ll])
-            #self.ax.relim()
             self.ax.autoscale_view(tight=True,scalex=True,scaley=True)
 
         return self.lines

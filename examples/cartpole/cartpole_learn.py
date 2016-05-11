@@ -4,7 +4,6 @@ import numpy as np
 from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
-from shell.plant import SerialPlant
 from ghost.control import RBFPolicy
 
 if __name__ == '__main__':
@@ -23,7 +22,6 @@ if __name__ == '__main__':
     maxU = [10]
     measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
     plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
-    #plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU, port='/dev/ttyACM0')
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
     draw_cp.start()
 

@@ -34,7 +34,7 @@ if __name__ == '__main__':
     cost_parameters = {}
     cost_parameters['angle_dims'] = angle_dims
     cost_parameters['target'] = [0,0,0,np.pi]
-    cost_parameters['width'] = 0.25
+    cost_parameters['width'] = 0.3
     cost_parameters['expl'] = 0.0
     cost_parameters['pendulum_length'] = model_parameters['l']
     cost = partial(cartpole_loss, params=cost_parameters)
