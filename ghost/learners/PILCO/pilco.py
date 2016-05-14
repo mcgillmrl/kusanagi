@@ -188,7 +188,7 @@ class PILCO(EpisodicLearner):
         max_steps = max([len(episode_states) for episode_states in self.experience.states])
         H_steps = np.ceil(self.H/self.plant.dt)
         if max_steps > 1:
-            H_steps = min(max_steps, H_steps)
+            H_steps = min(2*max_steps, H_steps)
 
         # if we have no data to compute the value, return dummy values
         if self.dynamics_model.N < 1:

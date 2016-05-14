@@ -98,7 +98,6 @@ class EpisodicLearner(object):
             if self.cost is not None:
                 #  get cost:
                 c_t = self.cost(x_t, Sx_t)
-                print x_t,u_t,c_t[0]
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
             else:
