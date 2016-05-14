@@ -290,3 +290,22 @@ def integer_generator(i=0):
     while True:
         yield i
         i += 1
+
+def update_errorbar(errobj, x, y, y_error):
+    # from http://stackoverflow.com/questions/25210723/matplotlib-set-data-for-errorbar-plot
+    ln, (erry_top, erry_bot), (barsy,) = errobj
+    ln.set_xdata(x)
+    ln.set_ydata(y)
+    x_base = x
+    y_base = y
+
+    yerr_top = y_base + y_error
+    yerr_bot = y_base - y_error
+
+    erry_top.set_xdata(x_base)
+    erry_bot.set_xdata(x_base)
+    erry_top.set_ydata(yerr_top)
+    erry_bot.set_ydata(yerr_bot)
+
+    new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
+    barsy.set_segments(new_segments_y)

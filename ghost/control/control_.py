@@ -15,7 +15,10 @@ class RBFPolicy:
         self.angle_idims = angle_idims
         # set the model to be a RBF with saturated outputs
         sat_func = partial(gSat, e=maxU)
-        self.model = RBFGP(idims=self.m0.shape[0], odims=len(maxU), sat_func=sat_func)
+
+        policy_idims = len(self.m0) + len(self.angle_idims)
+        policy_odims = len(self.maxU)
+        self.model = RBFGP(idims=policy_idims, odims=policy_odims, sat_func=sat_func)
 
         # check if we need to initialize
         params = self.get_params()

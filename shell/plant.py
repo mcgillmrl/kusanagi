@@ -123,6 +123,8 @@ class SerialPlant(Plant):
         self.t=-1
     
     def apply_control(self,u):
+        if not self.serial.isOpen():
+            self.serial.open()
         self.u = np.array(u,dtype=np.float64)
         if len(self.u.shape) < 2:
             self.u = self.u[:,None]
@@ -140,6 +142,8 @@ class SerialPlant(Plant):
         self.serial.write(cmd)
 
     def step(self,dt=None):
+        if not self.serial.isOpen():
+            self.serial.open()
         if dt is None:
             dt = self.dt
         t1 = self.t + dt
@@ -187,6 +191,7 @@ class SerialPlant(Plant):
         self.serial.flushOutput()
         self.serial.write(self.cmds['RESET_STATE']+";")
         sleep(self.dt)
+        self.x,self.t= self.state_from_serial()
         self.t=-1
 
     def stop(self):

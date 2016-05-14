@@ -97,7 +97,8 @@ class EpisodicLearner(object):
             self.plant.apply_control(u_t)
             if self.cost is not None:
                 #  get cost:
-                c_t = self.cost(x_t, Sx_t) 
+                c_t = self.cost(x_t, Sx_t)
+                print x_t,u_t,c_t[0]
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
             else:
@@ -137,6 +138,7 @@ class EpisodicLearner(object):
 
         self.plant.stop()
         self.n_episodes += 1
+        return self.experience
 
     def train_policy(self, H=None):
         if H is not None:

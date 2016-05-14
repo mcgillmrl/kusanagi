@@ -1,5 +1,6 @@
+from matplotlib import pyplot as plt
 import numpy as np
-from utils import print_with_stamp,gTrig_np,gTrig2
+from utils import print_with_stamp,gTrig_np,gTrig2, update_errorbar
 from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
 import theano
@@ -21,6 +22,8 @@ class PILCO(EpisodicLearner):
         #self.dynamics_model = SPGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
         self.dynamics_model = SSGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
         self.next_episode = 0
+        self.mx0 = np.array(self.plant.x0).squeeze()
+        self.Sx0 = np.array(self.plant.S0).squeeze()
 
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
@@ -180,18 +183,17 @@ class PILCO(EpisodicLearner):
         super(PILCO,self).save()
         self.dynamics_model.save()
 
-    def apply_controller(self,H=float('inf'),random_controls=False):
-        super(PILCO, self).apply_controller(H,random_controls)
-        # plot value
-        if self.dynamics_model.ready:
-            # plot predicted value vs actual value
-            pred_value = self.value(derivs=False)
-            #plt.plot(np.arange())
-
-        if H < float('inf'):
-            run_value = np.array(self.experience.immediate_cost[-1][:-1])
-
     def value(self, derivs=False):
+        # we will perform a rollout with a horizon that is as long as the longest run, but at most self.H
+        max_steps = max([len(episode_states) for episode_states in self.experience.states])
+        H_steps = np.ceil(self.H/self.plant.dt)
+        if max_steps > 1:
+            H_steps = min(max_steps, H_steps)
+
+        # if we have no data to compute the value, return dummy values
+        if self.dynamics_model.N < 1:
+            return np.zeros((H_steps,)),np.ones((H_steps,))
+
         # compile the belef state propagation
         if self.rollout is None or (self.policy_gradients is None and derivs):
             self.init_rollout(derivs=derivs)
@@ -199,13 +201,19 @@ class PILCO(EpisodicLearner):
         # setp initial state
         mx = np.array(self.plant.x0).squeeze()
         Sx = np.array(self.plant.S0).squeeze()
-        
-        # we will perform a rollout with a horizon that is as long as the longest run, but at most self.H
-        max_steps = max([len(episode_states) for episode_states in self.experience.states])
-        H_steps = np.ceil(self.H/self.plant.dt)
-        if max_steps > 1:
-            H_steps = min(max_steps, H_steps)
 
+        if False: # TODO make this a debug option
+            # plot results
+            plt.figure('Current policy rollout')
+	    plt.gca().clear()
+            ret = self.rollout(mx,Sx,H_steps,self.discount)
+	    plt.errorbar(np.arange(0,self.H,self.plant.dt),ret[0],yerr=2*np.sqrt(ret[1]))
+	    for i in xrange(len(self.experience.states)):
+		cost = np.array(self.experience.immediate_cost[i])[:-1,0]
+		plt.plot(np.arange(0,self.H,self.plant.dt),cost)
+	    plt.show(False)
+	    plt.pause(0.05)
+        
         if not derivs:
             # self.H is the number of steps to rollout ( finite horizon )
             ret = self.rollout(mx,Sx,H_steps,self.discount)

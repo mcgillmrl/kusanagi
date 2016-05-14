@@ -1,10 +1,34 @@
+import atexit
 import signal,sys
 #sys.path.append('/home/adaptation/achatr/Desktop/Summer2016/PILCO_clone/kusanagi')
 import numpy as np
+from matplotlib import pyplot as plt
 from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import RBFPolicy
+
+def plot_results(learner):
+    # plot last run cost vs predicted cost
+    plt.figure('Cost of last run and Predicted cost')
+    plt.gca().clear()
+    cost = np.array(learner.experience.immediate_cost[-1])[1:,0]
+    rollout_ =  learner.rollout(x0,S0,H_steps,1)
+    plt.errorbar(np.arange(0,T,dt),rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+    plt.plot(np.arange(0,T,dt),cost)
+
+    states = np.array(learner.experience.states[-1])[1:]
+    predicted_means = np.array(rollout_[2])
+    predicted_vars = np.array(rollout_[3])
+    
+    for d in xrange(learner.mx0.size):
+        plt.figure('Last run vs Predicted rollout %d'%(d))
+        plt.gca().clear()
+        plt.errorbar(np.arange(0,T,dt),predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+        plt.plot(np.arange(0,T,dt),states[:,d])
+
+    plt.show(False)
+    plt.pause(0.05)
 
 if __name__ == '__main__':
     #np.random.seed(31337)
@@ -24,6 +48,9 @@ if __name__ == '__main__':
     plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
     draw_cp.start()
+    
+    atexit.register(plant.stop)
+    atexit.register(draw_cp.stop)
 
     # initialize policy
     angle_dims = [3]
@@ -40,16 +67,10 @@ if __name__ == '__main__':
 
     # initialize learner
     T = 4.0                                                          # controller horizon
+    H_steps = np.ceil(T/dt)
     J = 4                                                            # number of random initial trials
     N = 100                                                           # learning iterations
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
-    
-    def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
-        print 'Caught CTRL-C!'
-        draw_cp.stop()
-        plant.stop()
-        sys.exit(0)
-    signal.signal(signal.SIGINT, signal_handler)
 
     if learner.dynamics_model.X_ is None: #if we have no prior data
         # gather data with random trials
@@ -58,7 +79,11 @@ if __name__ == '__main__':
             learner.apply_controller(H=T,random_controls=True)
     else:
         plant.reset_state()
-        learner.apply_controller(H=T)
+        experience_data = learner.apply_controller(H=T)
+        
+        # plot results
+        learner.init_rollout(derivs=False)
+        plot_results(learner)
 
     # learning loop
     for i in xrange(N):
@@ -70,9 +95,12 @@ if __name__ == '__main__':
 
         # execute it on the robot
         plant.reset_state()
-        learner.apply_controller(H=T)
+        experience_data = learner.apply_controller(H=T)
+
+        # plot results
+        plot_results(learner)
 
         # save latest state of the learner
         learner.save()
     
-    draw_cp.stop()
+    sys.exit(0)
