@@ -19,7 +19,7 @@
 double twopi = PI * 2;
 elapsedMicros usec = 0;
 unsigned long t_end = 0;
-int PWM_MAX = 0.35*pow(2,PWM_RESOLUTION);
+int PWM_MAX = 0.3*pow(2,PWM_RESOLUTION);
 
 // Encoder params
 #define N_joints 2
@@ -44,8 +44,8 @@ double joint_accels[2] = {0,0};
 double previous_angles[2] = {0,0};
 double w_slow[2] = {0,0};
 double w_fast[2] = {0,0};
-double tau[2] = {0.008,0.008};
-double Kfast[2] = {1.0,1.0};
+double tau[2] = {0.008,0.016};
+double Kfast[2] = {1.0,10.0};
 double a[2] = {0,0};
 double b[2] = {0,0};
 double current_angle,angle_error;
@@ -189,9 +189,9 @@ void setMotorSpeed(double v){
 }
 
 void readEncoders(){
-  //PITrackingLoop();
+  PITrackingLoop();
   //PITrackingLoop_Accel();
-  VelocityTrackingLoop();
+  //VelocityTrackingLoop();
   joint_states.as_double[2*N_joints] = usec*1e-6;
 }
 

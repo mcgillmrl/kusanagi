@@ -44,7 +44,7 @@ if __name__ == '__main__':
     x0 = [0,0,0,0]                                                   # initial state mean
     S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
     maxU = [10]
-    measurement_noise = np.diag(np.ones(len(x0))*0.001**2)            # model measurement noise (randomizes the output of the plant)
+    measurement_noise = np.diag(np.ones(len(x0))*0.0001**2)            # model measurement noise (randomizes the output of the plant)
     #plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
     plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU,baud_rate=4000000,port='/dev/ttyACM0')
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     cost_parameters = {}
     cost_parameters['angle_dims'] = angle_dims
     cost_parameters['target'] = [0,0,0,np.pi]
-    cost_parameters['width'] = 0.3
+    cost_parameters['width'] = 0.25
     cost_parameters['expl'] = 0.0
     cost_parameters['pendulum_length'] = model_parameters['l']
     cost = partial(cartpole_loss, params=cost_parameters)
