@@ -10,6 +10,28 @@ from ghost.control import RBFPolicy
 from examples.OAIgym.new_plant import Plant, OAIPlant
 from shell.double_cartpole import DoubleCartpole, DoubleCartpoleDraw, double_cartpole_loss_openAI as double_cartpole_loss
 
+def plot_results(learner):
+    # plot last run cost vs predicted cost
+    plt.figure('Cost of last run and Predicted cost')
+    plt.gca().clear()
+    cost = np.array(learner.experience.immediate_cost[-1])[1:,0]
+    rollout_ =  learner.rollout(x0,S0,H_steps,1)
+    plt.errorbar(np.arange(0,T,dt),rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+    plt.plot(np.arange(0,T,dt),cost)
+
+    states = np.array(learner.experience.states[-1])[1:]
+    predicted_means = np.array(rollout_[2])
+    predicted_vars = np.array(rollout_[3])
+    
+    for d in xrange(learner.mx0.size):
+        plt.figure('Last run vs Predicted rollout %d'%(d))
+        plt.gca().clear()
+        plt.errorbar(np.arange(0,T,dt),predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+        plt.plot(np.arange(0,T,dt),states[:,d])
+
+    plt.show(False)
+    plt.pause(0.05)
+
 if __name__ == '__main__':
     #np.random.seed(31337)
     np.set_printoptions(linewidth=500)
@@ -23,7 +45,7 @@ if __name__ == '__main__':
     model_parameters['l3'] = 0.6#
     model_parameters['b'] = 0.1
     model_parameters['g'] = 9.82
-    x0 = [0,0,0,1,1,0,0,0,0,0,0] #                                              # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2
+    x0 = [0,1,0,1,0,0,0,0,0,0,0] #                                              # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2
     S0 = np.eye(11)*(0.1**2) 
     measurement_noise = np.diag(np.ones(len(x0))*0.01**2) 
 
@@ -42,7 +64,7 @@ if __name__ == '__main__':
     # initialize cost function
     cost_parameters = {}
     cost_parameters['angle_dims'] = angle_dims
-    cost_parameters['target'] = [0,0,0,1,1,0,0,0,0,0,0] #
+    cost_parameters['target'] = [0,1,0,1,0,0,0,0,0,0,0] #
     cost_parameters['width'] = 0.5
     cost_parameters['expl'] = 0.0
     cost_parameters['pendulum_lengths'] = [model_parameters['l2'],model_parameters['l3']]
@@ -66,6 +88,7 @@ if __name__ == '__main__':
         for i in xrange(J):
             plant.reset_state()
             learner.apply_controller(H=T,random_controls=True)
+
  #   else:
  #       plant.reset_state()
  
@@ -81,9 +104,12 @@ if __name__ == '__main__':
 
         # execute it on the robot564,
         plant.reset_state()
-        learner.apply_controller(H=T)
+        experience_data = learner.apply_controller(H=T)
+
+        # plot results
+        plot_results(learner)
 
         # save latest state of the learner
         learner.save()
     
-    #draw_cp.stop()
+    sys.exit(0)
