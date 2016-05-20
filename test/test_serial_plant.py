@@ -35,16 +35,16 @@ if __name__ == '__main__':
     atexit.register(draw_cp.stop)
 
     w = 2*np.pi*0.5;
-    A = 4;
+    A = 0;
     plant.reset_state()
     while True:
         exec_time = time()
         #u_t = A*w*np.cos(w*(time()+0.5*dt))[None]
         u_t = A*np.cos(w*time())[None]
-        if u_t >= 0:
-            u_t[0] = A
-        else:
-            u_t[0] = -A
+        #if u_t >= 0:
+        #    u_t[0] = A
+        #else:
+        #    u_t[0] = -A
         plant.apply_control(u_t)
         plant.step()
         #print plant.get_state()

@@ -91,20 +91,26 @@ class PILCO(EpisodicLearner):
         def get_discounted_reward(mv,Sv,mx,Sx,gamma,*args):
             mv_next, Sv_next, mx_next, Sx_next = rollout_single_step(mx,Sx)
             return gamma*mv_next,(gamma**2)*Sv_next, mx_next, Sx_next, gamma*gamma
+        
         # this are the initial values for the value and its variance
-        zero_ct = theano.tensor.as_tensor_variable(np.asarray(0,mx.dtype))
+        mv0, Sv0 = self.cost_symbolic(mx,Sx)
+
         # these are the shared variables that will be used in the graph, we need to let theano know about these
         # to reduce compilation times
         shared_vars = []
         shared_vars.extend(self.dynamics_model.get_params(symbolic=True))
         shared_vars.extend(self.policy.get_params(symbolic=True))
         (mV_,SV_,mx_,Sx_,gamma_), updts = theano.scan(fn=get_discounted_reward, 
-                                                      outputs_info=[zero_ct,zero_ct,mx,Sx,gamma], 
+                                                      outputs_info=[mv0,Sv0,mx,Sx,gamma], 
                                                       non_sequences=shared_vars,
                                                       n_steps=H, 
                                                       strict=True,
                                                       allow_gc=False)
-        
+        mV_ = theano.tensor.concatenate([mv0[None], mV_])
+        SV_ = theano.tensor.concatenate([Sv0[None], SV_])
+        mx_ = theano.tensor.concatenate([mx[None,:], mx_])
+        Sx_ = theano.tensor.concatenate([Sx[None,:,:], Sx_])
+
         if derivs :
             print_with_stamp('Computing symbolic expression for policy gradients',self.name)
             dretvars = [mV_.sum()]
