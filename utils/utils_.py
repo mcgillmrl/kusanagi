@@ -309,3 +309,26 @@ def update_errorbar(errobj, x, y, y_error):
 
     new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
     barsy.set_segments(new_segments_y)
+
+# the function plots the evolution of the learning process qhwn called in _learn.py files
+def plot_results(learner, _x0, _S0, _H_steps):
+    # plot last run cost vs predicted cost
+    plt.figure('Cost of last run and Predicted cost')
+    plt.gca().clear()
+    cost = np.array(learner.experience.immediate_cost[-1])[1:,0]
+    rollout_ =  learner.rollout( _x0, _S0, _H_steps,1)
+    plt.errorbar(np.arange(0,T,dt),rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+    plt.plot(np.arange(0,T,dt),cost)
+
+    states = np.array(learner.experience.states[-1])[1:]
+    predicted_means = np.array(rollout_[2])
+    predicted_vars = np.array(rollout_[3])
+    
+    for d in xrange(learner.mx0.size):
+        plt.figure('Last run vs Predicted rollout %d'%(d))
+        plt.gca().clear()
+        plt.errorbar(np.arange(0,T,dt),predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+        plt.plot(np.arange(0,T,dt),states[:,d])
+
+    plt.show(False)
+    plt.pause(0.05)

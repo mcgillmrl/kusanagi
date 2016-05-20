@@ -31,8 +31,8 @@ class Plant(object):
         self.noise = noise
         self.async = False
         self.plant_thread = Thread(target=self.run)
-        self.done = False 								#OpenAI "done" condition
-        self.discrete = False							#OpenAI sometimes uses discrete action spaces
+        self.done = False                               #OpenAI "done" condition
+        self.discrete = False                           #OpenAI sometimes uses discrete action spaces
     
     def apply_control(self,u):
         self.u = np.array(u,dtype=np.float64)
@@ -79,42 +79,42 @@ class Plant(object):
         raise NotImplementedError("You need to implement the reset_state method in your Plant subclass.")
 
 class OAIPlant(Plant):
-	def __init__(self, discrete, params, x0, S0=None, dt=0.02, noise=None, name='OAIPlant'):
-		super(OAIPlant, self).__init__(params,x0,S0,dt,noise,name)
-		if discrete:
-			self.step = self.step_discrete
-		else:
-			self.step = self.step_cont
+    def __init__(self, discrete, params, x0, S0=None, dt=0.02, noise=None, name='OAIPlant'):
+        super(OAIPlant, self).__init__(params,x0,S0,dt,noise,name)
+        if discrete:
+            self.step = self.step_discrete
+        else:
+            self.step = self.step_cont
 
-	def get_state(self):
-		return self.x.flatten(), self.t
+    def get_state(self):
+        return self.x.flatten(), self.t
 
-	def step_discrete(self, dt = None):
-		self.t = self.t + self.dt
-		action = 0
-		if (self.u > 0):
-			action = 1
-		elif (self.u == 0):
-			action = randint(0,1)
-		self.x, reward, self.done, info = self.env.step(action)
-		self.env.render()
-		return self.x
-	
-	def step_cont(self, dt = None):
-		self.t = self.t + self.dt
-		self.x, reward, self.done, info = self.env.step(self.u)
-		self.env.render()
-		return self.x
+    def step_discrete(self, dt = None):
+        self.t = self.t + self.dt
+        action = 0
+        if (self.u > 0):
+            action = 1
+        elif (self.u == 0):
+            action = randint(0,1)
+        self.x, reward, self.done, info = self.env.step(action)
+        self.env.render()
+        return self.x
+    
+    def step_cont(self, dt = None):
+        self.t = self.t + self.dt
+        self.x, reward, self.done, info = self.env.step(self.u)
+        self.env.render()
+        return self.x
 
-	def apply_control(self, u):
-		self.u = np.array(u,dtype=np.float64)
+    def apply_control(self, u):
+        self.u = np.array(u,dtype=np.float64)
 
-	def reset_state(self):
+    def reset_state(self):
         self.done = False
-		self.env.reset()
+        self.env.reset()
 
-	def setEnv(self, env):
-		self.env = env
+    def setEnv(self, env):
+        self.env = env
 
 class ODEPlant(Plant):
     def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='ODEPlant', integrator='dopri5', atol=1e-12, rtol=1e-12):
