@@ -980,7 +980,7 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=2):
+    def predict_symbolic(self,mx,Sx, method=1):
         if method == 1:
             # fast compilation
             return self.predict_symbolic_1(mx,Sx)
