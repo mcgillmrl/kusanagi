@@ -79,6 +79,8 @@ if __name__ == '__main__':
         for i in xrange(J):
             plant.reset_state()
             learner.apply_controller(H=T,random_controls=True)
+        #plant.reset_state()
+        #learner.apply_controller(H=T)
     else:
         #TODO make this an option when running the script from the command line
         plant.reset_state()

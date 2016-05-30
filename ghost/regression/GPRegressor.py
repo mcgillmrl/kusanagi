@@ -27,6 +27,7 @@ class GP(object):
         self.min_method = "L-BFGS-B"
         self.state_changed = False
         self.should_recompile = False
+        self.trained = False
         self.uncertain_inputs = uncertain_inputs
         self.hyperparameter_gradients = hyperparameter_gradients
         self.snr_penalty = snr_penalty
@@ -67,6 +68,7 @@ class GP(object):
             self.load()
             if (X_dataset is not None and Y_dataset is not None):
                 self.set_dataset(X_dataset,Y_dataset)
+
         except IOError:
             utils.print_with_stamp('Initiliasing new GP regressor [ Could not open %s.zip ]'%(self.filename),self.name)
             # initialize the class if no pickled version is available
@@ -111,6 +113,7 @@ class GP(object):
         self.state_changed = True
         if (self.N > 0):
             self.ready = True
+        self.trained = False
 
     def append_dataset(self,X_dataset,Y_dataset):
         if self.X is None:
@@ -136,6 +139,7 @@ class GP(object):
             self.loghyp_ = np.log(self.loghyp_)
 
         self.set_loghyp(self.loghyp_)
+        self.trained = False
 
     def set_loghyp(self, loghyp):
         loghyp = loghyp.reshape(self.loghyp_.shape).astype(theano.config.floatX)
@@ -317,6 +321,7 @@ class GP(object):
         utils.print_with_stamp('New hyperparameters:',self.name)
         print (self.loghyp_)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
+        self.trained = True
 
     def load(self):
         with open(self.filename+'.zip','rb') as f:
@@ -348,9 +353,10 @@ class GP(object):
         self.predict_ = state[i.next()]
         self.predict_d_ = state[i.next()]
         self.kernel_func = state[i.next()]
+        #self.trained = state[i.next()]
 
     def get_state(self):
-        return [self.X,self.Y,self.loghyp,self.K,self.L,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func]
+        return [self.X,self.Y,self.loghyp,self.K,self.L,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func,self.trained]
 
 class GP_UI(GP):
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'GP_UI', idims=None, odims=None, profile=False, uncertain_inputs=True, hyperparameter_gradients=False):
@@ -582,6 +588,7 @@ class SPGP(GP):
             X_sp = opt_res.x.reshape(self.X_sp_.shape)
             self.set_X_sp(X_sp)
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
+        self.trained = True
 
     def set_state(self,state):
         i = integer_generator(-7)
@@ -947,6 +954,7 @@ class SSGP(GP):
         self.set_loghyp(loghyp)
         self.set_spectral_samples(w)
         utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss())),self.name)
+        self.trained = True
 
     def predict_symbolic(self,mx,Sx):
         odims = self.E
@@ -980,7 +988,7 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=1):
+    def predict_symbolic(self,mx,Sx, method=2):
         if method == 1:
             # fast compilation
             return self.predict_symbolic_1(mx,Sx)

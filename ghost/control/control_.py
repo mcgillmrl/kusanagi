@@ -7,18 +7,19 @@ import theano
 
 # GP based controller
 class RBFPolicy:
-    def __init__(self, m0, S0, maxU=[10], n_basis_functions=10, angle_idims=[]):
+    def __init__(self, m0, S0, maxU=[10], n_basis_functions=10, angle_idims=[], name='RBF'):
         self.m0 = np.array(m0)
         self.S0 = np.array(S0)
         self.maxU = np.array(maxU)
         self.n_basis_functions = n_basis_functions
         self.angle_idims = angle_idims
+        self.name = name
         # set the model to be a RBF with saturated outputs
         sat_func = partial(gSat, e=maxU)
 
         policy_idims = len(self.m0) + len(self.angle_idims)
         policy_odims = len(self.maxU)
-        self.model = RBFGP(idims=policy_idims, odims=policy_odims, sat_func=sat_func)
+        self.model = RBFGP(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name+'GP')
 
         # check if we need to initialize
         params = self.get_params()
@@ -127,3 +128,36 @@ class LocalLinearPolicy:
 
     def save(self):
         self.model.save()
+
+class AdjustedPolicy:
+    def __init__(self, source_policy):
+        # TODO initialize adjustment model
+        self.source_policy = source_policy
+
+    def evaluate(self, t, m, S=None, derivs=False, symbolic=False):
+        T = theano.tensor if symbolic else np
+        # get the output of the source policy
+        ret = self.source_policy.evaluate(t,m,derivs,symbolic)
+        
+        # initialize the inputs to the policy adjustment function
+        adj_input_m = m
+        if self.use_control_input:
+            adj_input_m = T.concatenate([adj_input_m,ret[0]])
+        adj_D = adj_input_m.size
+        adj_input_S = T.zeros((adj_D,adj_D))
+        # TODO fill the covariance matrix appropriately if S is not None
+        adj_ret = self.adjustment_model.evaluate(t,m,S,derivs,symbolic)
+        # TODO fill the output covariance correctly
+        ret[0] += adj_ret[0]
+        return ret
+
+    def get_params(self, symbolic=False):
+        if symbolic:
+            pass
+        return self.adjustment_model.get_params(symbolic)
+
+    def set_params(self,params):
+        return self.adjustment_model.set_params(symbolic)
+
+    def save(self):
+        self.adjustment_model.save()

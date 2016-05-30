@@ -5,9 +5,9 @@ from ghost.regression.GPRegressor import GP_UI
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
-class PILCO(EpisodicLearner):
+class PDDP(EpisodicLearner):
     def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
-        super(PILCO, self).__init__(plant, policy, cost, angle_idims, discount, experience, async_plant, name)
+        super(PDDP, self).__init__(plant, policy, cost, angle_idims, discount, experience, async_plant, name)
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
         self.rollout=None
@@ -85,9 +85,6 @@ class PILCO(EpisodicLearner):
         dx0 = T.zeros((x0.shape[0],x0.shape[0]))
         (x_t,dx_t), updts = theano.scan(fn=forward_dynamics, outputs_info=[x0,dx0], non_sequences=[mx.shape[0]], n_steps=H)
             
-
-
-        
         if derivs :
             print_with_stamp('Computing symbolic expression for policy gradients',self.name)
             dretvars = [mV_.sum()]
