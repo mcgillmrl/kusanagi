@@ -1,9 +1,10 @@
-import os,sys
-from functools import partial
-
+import os
 import numpy as np
+import sys
 import theano
 import theano.tensor as T
+
+from functools import partial
 from scipy.optimize import minimize, basinhopping
 from scipy.cluster.vq import kmeans
 from theano import function as F, shared as S
@@ -15,7 +16,6 @@ from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular
 import cov
 import SNRpenalty
 import utils
-from utils import gTrig, gTrig2,gTrig_np, wrap_params, unwrap_params,MemoizeJac, integer_generator
 
 class GP(object):
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, hyperparameter_gradients=False, snr_penalty=SNRpenalty.SEard):
@@ -309,7 +309,7 @@ class GP(object):
         loghyp0 = self.loghyp_.copy()
         print (loghyp0)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
-        m_loss = MemoizeJac(self.loss)
+        m_loss = utils.MemoizeJac(self.loss)
         try:
             opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 500})
         except ValueError:
@@ -339,7 +339,7 @@ class GP(object):
             self.state_changed = False
 
     def set_state(self,state):
-        i = integer_generator()
+        i = utils.integer_generator()
         self.X = state[i.next()]
         self.Y = state[i.next()]
         self.loghyp = state[i.next()]
@@ -353,7 +353,10 @@ class GP(object):
         self.predict_ = state[i.next()]
         self.predict_d_ = state[i.next()]
         self.kernel_func = state[i.next()]
-        #self.trained = state[i.next()]
+        try:
+            self.trained = state[i.next()]
+        except:
+            self.trained = True
 
     def get_state(self):
         return [self.X,self.Y,self.loghyp,self.K,self.L,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func,self.trained]
@@ -582,7 +585,7 @@ class SPGP(GP):
             if self.nlml_sp is None:
                 self.init_log_likelihood()
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
-            m_loss_sp = MemoizeJac(self.loss_sp)
+            m_loss_sp = utils.MemoizeJac(self.loss_sp)
             opt_res = minimize(m_loss_sp, self.X_sp_, jac=m_loss_sp.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
             print ''
             X_sp = opt_res.x.reshape(self.X_sp_.shape)
@@ -591,7 +594,7 @@ class SPGP(GP):
         self.trained = True
 
     def set_state(self,state):
-        i = integer_generator(-7)
+        i = utils.integer_generator(-7)
         self.X_sp = state[i.next()]
         self.X_sp_ = state[i.next()]
         self.beta_sp = state[i.next()]
@@ -791,7 +794,7 @@ class SSGP(GP):
         super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def set_state(self,state):
-        i = integer_generator(-8)
+        i = utils.integer_generator(-8)
         self.w = state[i.next()]
         self.w_ = state[i.next()]
         self.sr = state[i.next()]
@@ -889,12 +892,12 @@ class SSGP(GP):
         return retvars
 
     def loss_ss(self, params, parameter_shapes):
-        loghyp,w = unwrap_params(params,parameter_shapes)
+        loghyp,w = utils.unwrap_params(params,parameter_shapes)
         self.set_loghyp(loghyp)
         self.set_spectral_samples(w)
         nlml,dnlml_lh,dnlml_sr = self.dnlml_ss()
         nlml = nlml.sum()
-        dnlml = wrap_params([dnlml_lh,dnlml_sr])
+        dnlml = utils.wrap_params([dnlml_lh,dnlml_sr])
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (nlml.astype(np.float64), dnlml.astype(np.float64))
         #utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
@@ -947,10 +950,10 @@ class SSGP(GP):
         # wrap loghyp plus sr (save shapes)
         p0 = [self.loghyp_,self.w_]
         parameter_shapes = [p.shape for p in p0]
-        m_loss_ss = MemoizeJac(self.loss_ss)
-        opt_res = minimize(m_loss_ss, wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
+        m_loss_ss = utils.MemoizeJac(self.loss_ss)
+        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
         print ''
-        loghyp,w = unwrap_params(opt_res.x,parameter_shapes)
+        loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
         self.set_spectral_samples(w)
         utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss())),self.name)
@@ -988,7 +991,7 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=2):
+    def predict_symbolic(self,mx,Sx, method=1):
         if method == 1:
             # fast compilation
             return self.predict_symbolic_1(mx,Sx)

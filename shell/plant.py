@@ -16,7 +16,7 @@ from utils import print_with_stamp
 color_generator = cnames.iteritems()
 
 class Plant(object):
-    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Plant'):
+    def __init__(self, params=None, x0=None, S0=None, dt=0.01, noise=None, name='Plant'):
         self.name = name
         self.params = params
         self.x0 = x0
@@ -113,7 +113,7 @@ class SerialPlant(Plant):
     cmds = ['RESET_STATE','GET_STATE','APPLY_CONTROL','CMD_OK','STATE']
     cmds = dict(zip(cmds,[str(i) for i in xrange(len(cmds))]))
 
-    def __init__(self, params, x0, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None):
+    def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None):
         super(SerialPlant,self).__init__(params, x0, S0, dt, noise, name)
         self.port = port
         self.baud_rate = baud_rate

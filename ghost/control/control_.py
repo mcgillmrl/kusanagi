@@ -7,7 +7,7 @@ import theano
 
 # GP based controller
 class RBFPolicy:
-    def __init__(self, m0, S0, maxU=[10], n_basis_functions=10, angle_idims=[], name='RBF'):
+    def __init__(self, m0, S0, maxU=[10], n_basis_functions=10, angle_idims=[], name='RBFGP'):
         self.m0 = np.array(m0)
         self.S0 = np.array(S0)
         self.maxU = np.array(maxU)
@@ -19,7 +19,7 @@ class RBFPolicy:
 
         policy_idims = len(self.m0) + len(self.angle_idims)
         policy_odims = len(self.maxU)
-        self.model = RBFGP(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name+'GP')
+        self.model = RBFGP(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name)
 
         # check if we need to initialize
         params = self.get_params()

@@ -35,7 +35,7 @@ if __name__ == '__main__':
     atexit.register(draw_cp.stop)
 
     w = 2*np.pi*0.5;
-    A = 0;
+    A = 10;
     plant.reset_state()
     while True:
         exec_time = time()

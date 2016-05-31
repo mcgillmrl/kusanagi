@@ -17,7 +17,7 @@
 double twopi = PI * 2;
 elapsedMicros usec = 0;
 unsigned long t_end = 0;
-int PWM_MAX = 0.3*pow(2,PWM_RESOLUTION);
+int PWM_MAX = 0.35*pow(2,PWM_RESOLUTION);
 double IDEAL_PWM_FREQ = F_BUS/pow(2,PWM_RESOLUTION);
 elapsedMicros encoder_usec = 0;
 elapsedMicros control_usec = 0;

@@ -1,11 +1,13 @@
 from matplotlib import pyplot as plt
 import numpy as np
-from utils import print_with_stamp,gTrig_np,gTrig2, update_errorbar
+import sys
+import theano
+import utils
+
+from theano.misc.pkl_utils import dump as t_dump, load as t_load
+
 from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
-import theano
-from theano.misc.pkl_utils import dump as t_dump, load as t_load
-from theano.compile.nanguardmode import NanGuardMode
 
 class PILCO(EpisodicLearner):
     def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
@@ -13,7 +15,7 @@ class PILCO(EpisodicLearner):
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
         self.rollout=None
-        self.policy_gradients=None
+        self.policy_gradient=None
         # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
         dyn_idims = len(self.plant.x0) + len(self.angle_idims) + len(self.policy.maxU)
         # output dimensions are state dims
@@ -24,6 +26,35 @@ class PILCO(EpisodicLearner):
         self.next_episode = 0
         self.mx0 = np.array(self.plant.x0).squeeze()
         self.Sx0 = np.array(self.plant.S0).squeeze()
+        self.state_changed = False
+    
+    def save(self):
+        super(PILCO,self).save()
+        self.dynamics_model.save()
+
+    def load(self):
+        super(PILCO,self).load()
+        self.dynamics_model.load()
+    
+    def set_state(self,state):
+        i = integer_generator(-6)
+        self.wrap_angles = state[i.next()]
+        self.rollout = state[i.next()]
+        self.policy_gradient = state[i.next()]
+        self.next_episode = state[i.next()]
+        self.mx0 = state[i.next()]
+        self.Sx0 = state[i.next()]
+        super(PILCO,self).set_state(state[:-6])
+
+    def get_state(self):
+        state = super(PILCO,self).get_state()
+        state.append(self.wrap_angles)
+        state.append(self.rollout)
+        state.append(self.policy_gradient)
+        state.append(self.next_episode)
+        state.append(self.mx0)
+        state.append(self.Sx0)
+        return state
 
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
@@ -34,12 +65,12 @@ class PILCO(EpisodicLearner):
             D=mx.shape[0]
 
             # convert angles from input distribution to its complex representation
-            mxa,Sxa,Ca = gTrig2(mx,Sx,self.angle_idims,self.mx0.size)
+            mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,self.mx0.size)
 
             # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
-            mxa_,Sxa_,Ca = gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
+            mxa_,Sxa_,Ca = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
             mu, Su, Cu = self.policy.model.predict_symbolic(mxa_, Sxa_)
             
             # compute state control joint distribution
@@ -81,7 +112,7 @@ class PILCO(EpisodicLearner):
             return [mcost,Scost,mx_next,Sx_next]
 
         # define input variables
-        print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
+        utils.print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
         mx = theano.tensor.vector('mx')
         Sx = theano.tensor.matrix('Sx')
         H = theano.tensor.iscalar('H')
@@ -112,7 +143,7 @@ class PILCO(EpisodicLearner):
         Sx_ = theano.tensor.concatenate([Sx[None,:,:], Sx_])
 
         if derivs :
-            print_with_stamp('Computing symbolic expression for policy gradients',self.name)
+            utils.print_with_stamp('Computing symbolic expression for policy gradients',self.name)
             dretvars = [mV_.sum()]
             params = self.policy.get_params(symbolic=True)
             if not isinstance(params,list):
@@ -120,18 +151,18 @@ class PILCO(EpisodicLearner):
             for p in params:
                 dretvars.append( theano.tensor.grad(mV_.sum(), p ) ) # we are only interested in the derivative of the sum of expected values
 
-            print_with_stamp('Compiling belief state propagation',self.name)
+            utils.print_with_stamp('Compiling belief state propagation',self.name)
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
-            print_with_stamp('Compiling policy gradients',self.name)
-            self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)#,mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=False))
+            utils.print_with_stamp('Compiling policy gradients',self.name)
+            self.policy_gradient = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)#,mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=False))
             #theano.function_dump('policy_gradient.pkl',[mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)
         else:
-            print_with_stamp('Compiling belief state propagation',self.name)
+            utils.print_with_stamp('Compiling belief state propagation',self.name)
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
-        print_with_stamp('Done compiling.',self.name)
+        utils.print_with_stamp('Done compiling.',self.name)
 
     def train_dynamics(self):
-        print_with_stamp('Training dynamics model',self.name)
+        utils.print_with_stamp('Training dynamics model',self.name)
 
         X = []
         Y = []
@@ -146,7 +177,7 @@ class PILCO(EpisodicLearner):
                 x0.append(x[0])
 
                 # inputs are states, concatenated with actions ( excluding the last entry) 
-                x_ = gTrig_np(x, self.angle_idims)
+                x_ = utils.gTrig_np(x, self.angle_idims)
                 X.append( np.hstack((x_[:-1],u[:-1])) )
                 # outputs are changes in state
                 Y.append( x[1:] - x[:-1] )
@@ -175,7 +206,7 @@ class PILCO(EpisodicLearner):
             self.mx0 = np.array(self.plant.x0).squeeze()
             self.Sx0 = np.array(self.plant.S0).squeeze()
 
-        print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X_.shape,self.dynamics_model.Y_.shape),self.name)
+        utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X_.shape,self.dynamics_model.Y_.shape),self.name)
         if self.dynamics_model.should_recompile:
             # reinitialize log likelihood
             self.dynamics_model.init_log_likelihood()
@@ -183,11 +214,7 @@ class PILCO(EpisodicLearner):
             self.init_rollout(derivs=True)
  
         self.dynamics_model.train()
-        print_with_stamp('Done training dynamics model',self.name)
-    
-    def save(self):
-        super(PILCO,self).save()
-        self.dynamics_model.save()
+        utils.print_with_stamp('Done training dynamics model',self.name)
 
     def value(self, derivs=False):
         # we will perform a rollout with a horizon that is as long as the longest run, but at most self.H
@@ -201,7 +228,7 @@ class PILCO(EpisodicLearner):
             return np.zeros((H_steps,)),np.ones((H_steps,))
 
         # compile the belef state propagation
-        if self.rollout is None or (self.policy_gradients is None and derivs):
+        if self.rollout is None or (self.policy_gradient is None and derivs):
             self.init_rollout(derivs=derivs)
 
         # setp initial state
@@ -225,6 +252,6 @@ class PILCO(EpisodicLearner):
             ret = self.rollout(mx,Sx,H_steps,self.discount)
             return ret[0].sum()
         else:
-            ret = self.policy_gradients(mx,Sx,H_steps,self.discount)
+            ret = self.policy_gradient(mx,Sx,H_steps,self.discount)
             # first return argument is the value of the policy, second are the gradients wrt the policy params
             return [ret[0], ret[1:]]
