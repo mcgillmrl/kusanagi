@@ -70,7 +70,7 @@ class GP(object):
                 self.set_dataset(X_dataset,Y_dataset)
 
         except IOError:
-            utils.print_with_stamp('Initiliasing new GP regressor [ Could not open %s.zip ]'%(self.filename),self.name)
+            utils.print_with_stamp('Initialising new GP regressor [ Could not open %s.zip ]'%(self.filename),self.name)
             # initialize the class if no pickled version is available
             if X_dataset is not None and Y_dataset is not None:
                 self.set_dataset(X_dataset,Y_dataset)

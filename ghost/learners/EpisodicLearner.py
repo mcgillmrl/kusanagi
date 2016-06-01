@@ -12,14 +12,22 @@ from matplotlib import pyplot as plt
 from ghost.control import RandPolicy
 
 class ExperienceDataset(object):
-    def __init__(self, name='Experience'):
-        self.time_stamps = []
-        self.states = []
-        self.actions = []
-        self.immediate_cost = []
-        self.curr_episode = -1
+    def __init__(self, name='Experience', filename=None):
         self.name = name
-        self.state_changed = False
+        if filename is None:
+            self.filename = self.name+'_dataset'
+        else:
+            self.filename = filename+'_dataset'
+        try:
+            self.load()   
+        except IOError:
+            utils.print_with_stamp('Initialising new experience dataset [ Could not open %s.zip ]'%(self.filename),self.name)
+            self.time_stamps = []
+            self.states = []
+            self.actions = []
+            self.immediate_cost = []
+            self.curr_episode = -1
+            self.state_changed = False
 
     def add_sample(self,t,x_t=None,u_t=None,c_t=None):
         curr_episode = self.curr_episode
@@ -38,8 +46,8 @@ class ExperienceDataset(object):
         self.state_changed = True
 
     def load(self):
-        with open(self.name+'.zip','rb') as f:
-            utils.print_with_stamp('Loading experience dataset from %s.zip'%(self.name),self.name)
+        with open(self.filename+'.zip','rb') as f:
+            utils.print_with_stamp('Loading experience dataset from %s.zip'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
         self.state_changed = False
@@ -47,8 +55,8 @@ class ExperienceDataset(object):
     def save(self):
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            with open(self.name+'.zip','wb') as f:
-                utils.print_with_stamp('Saving experience dataset to %s.zip'%(self.name),self.name)
+            with open(self.filename+'.zip','wb') as f:
+                utils.print_with_stamp('Saving experience dataset to %s.zip'%(self.filename),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
 
@@ -64,22 +72,31 @@ class ExperienceDataset(object):
         return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
 
 class EpisodicLearner(object):
-    def __init__(self, plant, policy, cost=None, angle_idims=None, discount=1, experience = None, async_plant=True, name='EpisodicLearner'):
+    def __init__(self, plant, policy, cost=None, angle_idims=None, discount=1, experience = None, async_plant=True, name='EpisodicLearner', filename=None):
         self.name = name
-        self.min_method = "L-BFGS-B"
-        self.n_episodes = 0
-        self.experience = ExperienceDataset() if experience is None else experience
         self.plant = plant
         self.policy = policy
+        if filename is None:
+            self.filename = self.name+'_'+self.plant.name+'_'+self.policy.name
+        else:
+            self.filename = filename
+        self.min_method = "L-BFGS-B"
+        self.n_episodes = 0
         self.angle_idims = angle_idims
         self.async_plant = async_plant
         self.cost=None
-        if cost is not None:
-            self.init_cost(cost)
+        self.experience = ExperienceDataset(filename=self.filename) if experience is None else experience
         self.H = 10
         self.discount = 1
         self.learning_iteration = 0;
         self.n_evals = 0
+        # try loading from file, initialize from scratch otherwise
+        try:
+            self.load()   
+        except IOError:
+            utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
+            if cost is not None:
+                self.init_cost(cost)
         self.state_changed = False
 
     def load(self):
@@ -88,8 +105,8 @@ class EpisodicLearner(object):
         self.experience.load()
         
         # load learner state
-        with open(self.name+'_state.zip','rb') as f:
-            utils.print_with_stamp('Loading learner state from %s_state.zip'%(self.name),self.name)
+        with open(self.filename+'.zip','rb') as f:
+            utils.print_with_stamp('Loading learner state from %s.zip'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
         self.state_changed = False
@@ -102,24 +119,25 @@ class EpisodicLearner(object):
         # save learner state
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            with open(self.name+'_state.zip','wb') as f:
-                utils.print_with_stamp('Saving learner state to %s_state.zip'%(self.name),self.name)
+            with open(self.filename+'.zip','wb') as f:
+                utils.print_with_stamp('Saving learner state to %s.zip'%(self.filename),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
 
     def set_state(self,state):
-        i = integer_generator()
+        i = utils.integer_generator()
         self.n_episodes = state[i.next()]
         self.angle_idims = state[i.next()]
         self.async_plant = state[i.next()]
         self.cost = state[i.next()]
+        self.cost_symbolic = state[i.next()]
         self.H = state[i.next()]
         self.discount = state[i.next()]
         self.learning_iteration = state[i.next()]
         self.n_evals = state[i.next()]
 
     def get_state(self):
-        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.H,self.discount,self.learning_iteration,self.n_evals]
+        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.cost_symbolic,self.H,self.discount,self.learning_iteration,self.n_evals]
 
     def init_cost(self,cost):
         self.cost_symbolic = cost
@@ -161,7 +179,7 @@ class EpisodicLearner(object):
             # convert input angle dimensions to complex representation
             x_t_ = utils.gTrig_np(x_t[None,:], self.angle_idims).flatten()
             #  get command from policy (this should be fast, or at least account for delays in processing):
-            u_t = policy.evaluate(t, x_t_)[0].flatten()
+            u_t = policy.evaluate(x_t_)[0].flatten()
             #  send command to robot:
             self.plant.apply_control(u_t)
             if self.cost is not None:
@@ -221,11 +239,11 @@ class EpisodicLearner(object):
         parameter_shapes = [p.shape for p in p0]
         m_loss = utils.MemoizeJac(self.loss)
         try:
-            opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=1e-12, options={'maxiter': 15})
+            opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=1e-12, options={'maxiter': 120})
         except ValueError:
             print '' 
             utils.print_with_stamp('%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
-            opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-12, options={'maxiter': 15})
+            opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-12, options={'maxiter': 120})
 
         self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
         print '' 

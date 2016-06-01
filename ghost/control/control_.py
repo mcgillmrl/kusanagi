@@ -1,12 +1,51 @@
 import numpy as np
+import theano
+import sys
+
+from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from ghost.regression.GPRegressor import RBFGP
 from utils import print_with_stamp, gTrig2_np
 from ghost.control.saturation import gSat
 from functools import partial
-import theano
+
+class BaseControl(object):
+    '''
+        Class that specifies the basic interface for a controller. Any class implementing this interface should provide the  following methods:
+        set_default_parameters, evaluate, get_params, set_params
+    '''
+    def __init__(self, name='BaseControl'):
+        # load from disk
+        self.load()
+        # check if we need to initialize
+        params = self.get_params()
+        for p in params:
+            if p is None or p.size == 0:
+                self.set_default_parameters()
+                break
+
+    def set_default_parameters(self):
+        raise NotImplementedError("You need to implement the set_default_parameters method in your BaseControl subclass.")
+
+    def evaluate(self, m, s=None, derivs=False, symbolic=False):
+        raise NotImplementedError("You need to implement evaluate method in your BaseControl subclass.")
+
+    def get_params(self, symbolic=False):
+        raise NotImplementedError("You need to implement the get_params method in your BaseControl subclass.")
+
+    def set_params(self,params):
+        raise NotImplementedError("You need to implement the set_params method in your BaseControl subclass.")
+
+    def save(self):
+        # call get_params and write them to disk
+        pass
+
+    def load(self):
+        # load params from disk and pass them to set_params
+        pass
+        
 
 # GP based controller
-class RBFPolicy:
+class RBFPolicy(RBFGP):
     def __init__(self, m0, S0, maxU=[10], n_basis_functions=10, angle_idims=[], name='RBFGP'):
         self.m0 = np.array(m0)
         self.S0 = np.array(S0)
@@ -19,16 +58,16 @@ class RBFPolicy:
 
         policy_idims = len(self.m0) + len(self.angle_idims)
         policy_odims = len(self.maxU)
-        self.model = RBFGP(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name)
-
+        super(RBFPolicy, self).__init__(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name)
+        
         # check if we need to initialize
         params = self.get_params()
         for p in params:
             if p is None or p.size == 0:
-                self.initialize_policy_default()
+                self.set_default_parameters()
                 break
 
-    def initialize_policy_default(self):
+    def set_default_parameters(self):
         # init policy inputs near the given initial state
         m0 = self.m0
         S0 = self.S0
@@ -43,41 +82,40 @@ class RBFPolicy:
         targets = 0.1*np.random.randn(self.n_basis_functions,self.maxU.size)
 
         # set the initial inputs and targets
-        self.model.set_dataset(inputs,targets)
+        self.set_dataset(inputs,targets)
 
         # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
         l0 = np.hstack([np.ones(self.m0.size-len(self.angle_idims)),0.7*np.ones(2*len(self.angle_idims)),1,0.01])
-        self.model.set_loghyp(np.log(np.tile(l0,(self.maxU.size,1))))
-        self.model.init_log_likelihood()
-        self.model.init_predict()
+        self.set_loghyp(np.log(np.tile(l0,(self.maxU.size,1))))
+        self.init_log_likelihood()
+        self.init_predict()
 
-    def evaluate(self, t, m, s=None, derivs=False, symbolic=False):
+    def evaluate(self, m, s=None, derivs=False, symbolic=False):
         D = m.shape[0]
-        if s is None:
-            s = np.zeros((D,D))
         if symbolic:
-            ret = self.model.predict_symbolic(m,s)
+            if s is None:
+                s = theano.tensor.zeros((D,D))
+            ret = self.predict_symbolic(m,s)
         else:
-            ret = self.model.predict(m,s) if not derivs else self.model.predict_d(m,s)
+            if s is None:
+                s = np.zeros((D,D))
+            ret = self.predict(m,s) if not derivs else self.predict_d(m,s)
         return ret 
-
-    def get_params(self, symbolic=False):
-        return self.model.get_params(symbolic)
-
-    def set_params(self,params):
-        self.model.set_params(params)
-
-    def save(self):
-        self.model.save()
 
 # random controller
 class RandPolicy:
     def __init__(self, maxU=[10]):
         self.maxU = np.array(maxU)
 
-    def evaluate(self, t, m, s=None, derivs=False):
+    def evaluate(self, m, s=None, derivs=False):
         ret = ((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
         return ret
+
+    def save(self):
+        pass # nothing to save
+
+    def load(self):
+        pass # nothing to load
 
 # linear time varying policy
 class LocalLinearPolicy:
@@ -96,7 +134,7 @@ class LocalLinearPolicy:
         self.u_nominal = theano.shared(self.u_nominal_,borrow=True)
         self.z_nominal = theano.shared(self.z_nominal_,borrow=True)
 
-    def evaluate(self, t, m, s=None, derivs=False, symbolic=False):
+    def evaluate(self, m, s=None, derivs=False, symbolic=False):
         D = m.shape[0]
         if symbolic:
             u_t = self.u_nominal[t]
@@ -134,7 +172,7 @@ class AdjustedPolicy:
         # TODO initialize adjustment model
         self.source_policy = source_policy
 
-    def evaluate(self, t, m, S=None, derivs=False, symbolic=False):
+    def evaluate(self, m, S=None, derivs=False, symbolic=False):
         T = theano.tensor if symbolic else np
         # get the output of the source policy
         ret = self.source_policy.evaluate(t,m,derivs,symbolic)

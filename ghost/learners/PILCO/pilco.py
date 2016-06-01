@@ -11,22 +11,24 @@ from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
 
 class PILCO(EpisodicLearner):
     def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
-        super(PILCO, self).__init__(plant, policy, cost, angle_idims, discount, experience, async_plant, name)
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
         self.rollout=None
         self.policy_gradient=None
+
         # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
-        dyn_idims = len(self.plant.x0) + len(self.angle_idims) + len(self.policy.maxU)
+        dyn_idims = len(plant.x0) + len(angle_idims) + len(policy.maxU)
         # output dimensions are state dims
-        dyn_odims = len(self.plant.x0)
-        #self.dynamics_model = GP_UI(idims=dyn_idims,odims=dyn_odims)
-        #self.dynamics_model = SPGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
+        dyn_odims = len(plant.x0)
+        # initialize dynamics model (TODO pass this as argument to constructor)
         self.dynamics_model = SSGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
         self.next_episode = 0
-        self.mx0 = np.array(self.plant.x0).squeeze()
-        self.Sx0 = np.array(self.plant.S0).squeeze()
-        self.state_changed = False
+        self.mx0 = np.array(plant.x0).squeeze()
+        self.Sx0 = np.array(plant.S0).squeeze()
+
+        # initialise parent class
+        filename = name+'_'+plant.name+'_'+policy.name+'_'+self.dynamics_model.name
+        super(PILCO, self).__init__(plant, policy, cost, angle_idims, discount, experience, async_plant, name, filename)
     
     def save(self):
         super(PILCO,self).save()
@@ -37,29 +39,35 @@ class PILCO(EpisodicLearner):
         self.dynamics_model.load()
     
     def set_state(self,state):
-        i = integer_generator(-6)
+        i = utils.integer_generator(-4)
         self.wrap_angles = state[i.next()]
-        self.rollout = state[i.next()]
-        self.policy_gradient = state[i.next()]
         self.next_episode = state[i.next()]
         self.mx0 = state[i.next()]
         self.Sx0 = state[i.next()]
-        super(PILCO,self).set_state(state[:-6])
+        super(PILCO,self).set_state(state[:-4])
 
     def get_state(self):
         state = super(PILCO,self).get_state()
         state.append(self.wrap_angles)
-        state.append(self.rollout)
-        state.append(self.policy_gradient)
         state.append(self.next_episode)
         state.append(self.mx0)
         state.append(self.Sx0)
         return state
 
+    def save_rollout(self):
+        sys.setrecursionlimit(100000)
+        with open(self.filename+'_rollout.zip','wb') as f:
+            utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
+            t_dump([self.rollout,self.policy_gradient],f,2)
+
+    def load_rollout(self):
+        with open(self.filename+'_rollout.zip','rb') as f:
+            utils.print_with_stamp('Loading compiled rollout from %s_rollout.zip'%(self.filename),self.name)
+            self.rollout,self.policy_gradient = t_load(f)
+
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
             of the system using the learn GP dynamics model '''
-        
         # define the function for a single propagation step
         def rollout_single_step(mx,Sx):
             D=mx.shape[0]
@@ -71,7 +79,7 @@ class PILCO(EpisodicLearner):
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
             mxa_,Sxa_,Ca = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
-            mu, Su, Cu = self.policy.model.predict_symbolic(mxa_, Sxa_)
+            mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
             
             # compute state control joint distribution
             n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
@@ -160,6 +168,7 @@ class PILCO(EpisodicLearner):
             utils.print_with_stamp('Compiling belief state propagation',self.name)
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
         utils.print_with_stamp('Done compiling.',self.name)
+        self.save_rollout()
 
     def train_dynamics(self):
         utils.print_with_stamp('Training dynamics model',self.name)
@@ -229,7 +238,16 @@ class PILCO(EpisodicLearner):
 
         # compile the belef state propagation
         if self.rollout is None or (self.policy_gradient is None and derivs):
-            self.init_rollout(derivs=derivs)
+            # try loading the compiled rollout from disk
+            try:
+                self.load_rollout()
+                # if after loading from disk, the function we want does not exist
+                if (self.rollout is None and not derivs) or (self.policy_gradient is None and derivs):
+                    self.init_rollout(derivs=derivs)
+            except IOError:
+                utils.print_with_stamp('Initialising rollout [ Could not open %s_rollout.zip ]'%(self.filename),self.name)
+                self.init_rollout(derivs=derivs)
+
 
         # setp initial state
         mx = np.array(self.plant.x0).squeeze()
