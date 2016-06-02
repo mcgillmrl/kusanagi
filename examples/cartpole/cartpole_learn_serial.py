@@ -12,20 +12,21 @@ def plot_results(learner):
     # plot last run cost vs predicted cost
     plt.figure('Cost of last run and Predicted cost')
     plt.gca().clear()
-    cost = np.array(learner.experience.immediate_cost[-1])[1:,0]
+    T_range = np.arange(0,T+dt,dt)
+    cost = np.array(learner.experience.immediate_cost[-1])[:,0]
     rollout_ =  learner.rollout(x0,S0,H_steps,1)
-    plt.errorbar(np.arange(0,T,dt),rollout_[0],yerr=2*np.sqrt(rollout_[1]))
-    plt.plot(np.arange(0,T,dt),cost)
+    plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+    plt.plot(T_range,cost)
 
-    states = np.array(learner.experience.states[-1])[1:]
+    states = np.array(learner.experience.states[-1])
     predicted_means = np.array(rollout_[2])
     predicted_vars = np.array(rollout_[3])
     
     for d in xrange(learner.mx0.size):
         plt.figure('Last run vs Predicted rollout %d'%(d))
         plt.gca().clear()
-        plt.errorbar(np.arange(0,T,dt),predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
-        plt.plot(np.arange(0,T,dt),states[:,d])
+        plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+        plt.plot(T_range,states[:,d])
 
     plt.show(False)
     plt.pause(0.05)
@@ -44,7 +45,7 @@ if __name__ == '__main__':
     x0 = [0,0,0,0]                                                   # initial state mean
     S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
     maxU = [10]
-    measurement_noise = np.diag(np.ones(len(x0))*0.0001**2)            # model measurement noise (randomizes the output of the plant)
+    measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
     #plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
     plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU,baud_rate=4000000,port='/dev/ttyACM0')
     draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
@@ -55,7 +56,7 @@ if __name__ == '__main__':
 
     # initialize policy
     angle_dims = [3]
-    policy = RBFPolicy(x0,S0,maxU,10, angle_dims)
+    policy = RBFPolicy(x0,S0,maxU,20, angle_dims)
 
     # initialize cost function
     cost_parameters = {}
@@ -78,6 +79,8 @@ if __name__ == '__main__':
         for i in xrange(J):
             plant.reset_state()
             learner.apply_controller(H=T,random_controls=True)
+        #plant.reset_state()
+        #learner.apply_controller(H=T)
     else:
         #TODO make this an option when running the script from the command line
         plant.reset_state()

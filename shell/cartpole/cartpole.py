@@ -67,11 +67,15 @@ class Cartpole(ODEPlant):
 class CartpoleDraw(PlantDraw):
     def __init__(self, cartpole_plant, refresh_period=0.1, name='CartpoleDraw'):
         super(CartpoleDraw, self).__init__(cartpole_plant, refresh_period,name)
-        l = self.plant.params['l']
-        m = self.plant.params['m']
-        M = self.plant.params['M']
-        b = self.plant.params['b']
-        g = self.plant.params['g']
+        if self.plant.params is not None:
+            l = self.plant.params['l']
+            m = self.plant.params['m']
+            M = self.plant.params['M']
+        else:
+            l = 0.5
+            m = 0.5
+            M = 0.5
+
         self.mass_r = 0.05*np.sqrt( m ) # distance to corner of bounding box
         self.body_h = 0.5*np.sqrt( M )
 

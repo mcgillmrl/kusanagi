@@ -7,7 +7,29 @@ from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import RBFPolicy
-from utils import plot_results
+
+def plot_results(learner):
+    # plot last run cost vs predicted cost
+    plt.figure('Cost of last run and Predicted cost')
+    plt.gca().clear()
+    T_range = np.arange(0,T+dt,dt)
+    cost = np.array(learner.experience.immediate_cost[-1])[:,0]
+    rollout_ =  learner.rollout(x0,S0,H_steps,1)
+    plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+    plt.plot(T_range,cost)
+
+    states = np.array(learner.experience.states[-1])
+    predicted_means = np.array(rollout_[2])
+    predicted_vars = np.array(rollout_[3])
+    
+    for d in xrange(learner.mx0.size):
+        plt.figure('Last run vs Predicted rollout %d'%(d))
+        plt.gca().clear()
+        plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+        plt.plot(T_range,states[:,d])
+
+    plt.show(False)
+    plt.pause(0.05)
 
 if __name__ == '__main__':
     #np.random.seed(31337)
@@ -62,7 +84,7 @@ if __name__ == '__main__':
         
         # plot results
         learner.init_rollout(derivs=False)
-        plot_results(learner, x0, S0, H_steps)
+        plot_results(learner)
 
     # learning loop
     for i in xrange(N):
@@ -77,7 +99,7 @@ if __name__ == '__main__':
         experience_data = learner.apply_controller(H=T)
 
         # plot results
-        plot_results(learner, x0, S0, H_steps)
+        plot_results(learner)
 
         # save latest state of the learner
         learner.save()
