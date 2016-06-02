@@ -58,16 +58,37 @@ class PILCO(EpisodicLearner):
         sys.setrecursionlimit(100000)
         with open(self.filename+'_rollout.zip','wb') as f:
             utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
-            t_dump([self.rollout,self.policy_gradient],f,2)
+            t_vars = [self.rollout,self.policy_gradient]
+            t_vars.extend([self.dynamics_model.get_params(symbolic=True)])
+            t_vars.extend([self.policy.get_params(symbolic=True)])
+            t_dump(t_vars,f,2)
 
     def load_rollout(self):
         with open(self.filename+'_rollout.zip','rb') as f:
             utils.print_with_stamp('Loading compiled rollout from %s_rollout.zip'%(self.filename),self.name)
-            self.rollout,self.policy_gradient = t_load(f)
+            t_vars = t_load(f)
+            self.rollout = t_vars[0]
+            self.policy_gradient = t_vars[1]
+            print self.rollout
+            print self.policy_gradient
 
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
             of the system using the learn GP dynamics model '''
+        loaded_from_disk = True
+        try:
+            self.load_rollout()
+            # if after loading from disk, the function we want does not exist
+            if (self.rollout is None and not derivs) or (self.policy_gradient is None and derivs):
+                self.init_rollout(derivs=derivs)
+                loaded_from_disk = False
+        except IOError:
+            utils.print_with_stamp('Initialising rollout [ Could not open %s_rollout.zip ]'%(self.filename),self.name)
+            loaded_from_disk = False
+
+        if loaded_from_disk:
+            return
+
         # define the function for a single propagation step
         def rollout_single_step(mx,Sx):
             D=mx.shape[0]
@@ -237,16 +258,9 @@ class PILCO(EpisodicLearner):
             return np.zeros((H_steps,)),np.ones((H_steps,))
 
         # compile the belef state propagation
-        if self.rollout is None or (self.policy_gradient is None and derivs):
+        if (self.rollout is None and not derivs) or (self.policy_gradient is None and derivs):
             # try loading the compiled rollout from disk
-            try:
-                self.load_rollout()
-                # if after loading from disk, the function we want does not exist
-                if (self.rollout is None and not derivs) or (self.policy_gradient is None and derivs):
-                    self.init_rollout(derivs=derivs)
-            except IOError:
-                utils.print_with_stamp('Initialising rollout [ Could not open %s_rollout.zip ]'%(self.filename),self.name)
-                self.init_rollout(derivs=derivs)
+            self.init_rollout(derivs=derivs)
 
 
         # setp initial state

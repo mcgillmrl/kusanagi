@@ -27,6 +27,8 @@ class PDDP(EpisodicLearner):
             # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
+
+            # TODO compute control signal ( use policy.evaluate(symbolic=True)
             
             # compute state control joint distribution
             n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
@@ -53,6 +55,8 @@ class PDDP(EpisodicLearner):
             mx_next = mx + m_deltax
             Sx_deltax = Sxu_.dot(C_deltax)
             Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
+            
+            #TODO return the cost
 
             return [mx_next,Sx_next]
 
@@ -62,46 +66,17 @@ class PDDP(EpisodicLearner):
         Sx = theano.tensor.matrix('Sx')
         H = theano.tensor.iscalar('H')
         gamma = theano.tensor.scalar('gamma')
+        
 
-        def forward_dynamics(z,u,dz,D):
-            mx = z[:D]
-            Sx = z[D:].reshape(D,D)
-            mx_next, Sx_next = rollout_single_step(mx,Sx,u)
-            z_next = theano.tensor.concatenate([mx_next,Sx_next.flatten()])
-            dz_next = theano.tensor.jacobian(z_next,z)
-            return z_next,dz_next
+        # For this, you'll need to read how theano.scan and theano.tensor.grad work ( look at pilco.py for an example )
+        def forward_dynamics(args):
+            # TODO use the rollout single step file to do the forward dynamics
+            # this should return the list of all matrices (F_k)^u and (F_k)^x
+            pass
 
-        def backward_propagation(z):
-            # get action
-
-            # get cost
-            mx = x[:D]; Sx = x[D:].reshape(D,D)
-            mcost, Scost = self.cost_symbolic(mx,Sx,mu) # this assumes determinitc controls
-
-        # this will generate the ditribution of the trajectory ( as a gaussian for each time step)
-
-        zero_ct = theano.tensor.as_tensor_variable(np.asarray(0,mx.dtype))
-        x0 = theano.tensor.concatenate([mx,Sx.flatten()])
-        dx0 = T.zeros((x0.shape[0],x0.shape[0]))
-        (x_t,dx_t), updts = theano.scan(fn=forward_dynamics, outputs_info=[x0,dx0], non_sequences=[mx.shape[0]], n_steps=H)
-            
-        if derivs :
-            print_with_stamp('Computing symbolic expression for policy gradients',self.name)
-            dretvars = [mV_.sum()]
-            params = self.policy.get_params(symbolic=True)
-            if not isinstance(params,list):
-                params = [params]
-            for p in params:
-                dretvars.append( theano.tensor.grad(mV_.sum(), p ) ) # we are only interested in the derivative of the sum of expected values
-
-            print_with_stamp('Compiling belief state propagation',self.name)
-            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
-            print_with_stamp('Compiling policy gradients',self.name)
-            self.policy_gradients = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)
-        else:
-            print_with_stamp('Compiling belief state propagation',self.name)
-            self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
-        print_with_stamp('Done compiling.',self.name)
+        def backward_propagation(args): 
+            #TODO compute Q_t and the associated L_t and I_t
+            pass
 
     def train_dynamics(self):
         print_with_stamp('Training dynamics model',self.name)
@@ -146,23 +121,3 @@ class PDDP(EpisodicLearner):
         self.dynamics_model.train()
         self.dynamics_model.save()
         print_with_stamp('Done training dynamics model',self.name)
-
-    def value(self, derivs=False):
-        # compile the belef state propagation
-        if self.rollout is None or self.policy_gradients is None:
-            self.init_rollout(derivs=derivs)
-
-        # setp initial state
-        mx = np.array(self.mx0).squeeze()
-        Sx = np.array(self.Sx0).squeeze()
-
-        H_steps = np.ceil(self.H/self.plant.dt)
-        
-        if not derivs:
-            # self.H is the number of steps to rollout ( finite horizon )
-            ret = self.rollout(mx,Sx,H_steps,self.discount)
-            return ret[0].sum()
-        else:
-            ret = self.policy_gradients(mx,Sx,H_steps,self.discount)
-            # first return argument is the value of the policy, second are the gradients wrt the policy params wrapped into single vector 
-            return [ret[0],self.wrap_policy_params(ret[1:])]
