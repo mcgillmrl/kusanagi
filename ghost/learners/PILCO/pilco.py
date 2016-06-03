@@ -111,7 +111,7 @@ class PILCO(EpisodicLearner):
             # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
-            mxa_,Sxa_,Ca = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
+            mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
             mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
             
             # compute state control joint distribution

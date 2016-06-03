@@ -18,34 +18,40 @@ class PDDP(EpisodicLearner):
             of the system using the learn GP dynamics model '''
         
         # define the function for a single propagation step
-        def rollout_single_step(mx,Sx,u):
+        def rollout_single_step(mx,Sx):
+            ''' This function takes as an input the mean and covariance of the state at time t, and returns the 
+            state and covariance of the next state (at time t+1) and the action at time t (same t as the input)
+            '''
             D=mx.shape[0]
 
             # convert angles from input distribution to its complex representation
             mxa,Sxa,Ca = gTrig2(mx,Sx,self.angle_idims,self.mx0.size)
 
-            # compute distribution of control signal
+            # compute the control signal for the next step( This is different from PILCO: the control 
+            # is a linear function  of the Gaussian belief vector, so its output is deterministic)
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
-
-            # TODO compute control signal ( use policy.evaluate(symbolic=True)
+            mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
+            u_prev, ~, ~ = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
             
             # compute state control joint distribution
-            n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
+            n = Sxa.shape[0]; Da = Sxa.shape[1]; U = u.size
             idimsa = Da + U
-            mxu = theano.tensor.concatenate([mxa,mu])
+            mxu = theano.tensor.concatenate([mxa,u])
             Sxu = theano.tensor.zeros((idimsa,idimsa))
             Sxu = theano.tensor.set_subtensor(Sxu[:Da,:Da], Sxa)
 
             # state control covariance without angle dimensions
-            na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
-            Dna = len(na_dims)
-            Sx_xa = theano.tensor.zeros((D,Da))
-            Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,:Dna], Sx[:,na_dims])
-            Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,Dna:], Sx.dot(Ca))
-            Sxu_ = theano.tensor.zeros((D,Da+U))
-            Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,:Da], Sx_xa)
-            Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,Da:], Sx_xa.dot(Cu))
+	    if Ca is not None:
+	        na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
+                Dna = len(na_dims)
+                Sx_xa = theano.tensor.zeros((D,Da))
+                Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,:Dna], Sx[:,na_dims])
+                Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,Dna:], Sx.dot(Ca))
+                Sxu_ = theano.tensor.zeros((D,Da+U))
+                Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,:Da], Sx_xa)
+	    else:
+                Sxu_ = Sxu
 
             #  predict the change in state given current state-action
             # C_deltax = inv (Sxu) dot Sxu_deltax
@@ -55,10 +61,8 @@ class PDDP(EpisodicLearner):
             mx_next = mx + m_deltax
             Sx_deltax = Sxu_.dot(C_deltax)
             Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
-            
-            #TODO return the cost
 
-            return [mx_next,Sx_next]
+            return [mx_next,Sx_next,u_prev]
 
         # define input variables
         print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
@@ -72,10 +76,15 @@ class PDDP(EpisodicLearner):
         def forward_dynamics(args):
             # TODO use the rollout single step file to do the forward dynamics
             # this should return the list of all matrices (F_k)^u and (F_k)^x
+            # we need: (d mx_next)/(d mx), (d Sx_next)/(d mx), (d mx_next)/(d Sx), (d Sx_next)/(d Sx), (d mx_next)/(d u_prev), (d Sx_next)/(d u_prev)
+            # ( Eq. (11) )
             pass
 
         def backward_propagation(args): 
             #TODO compute Q_t and the associated L_t and I_t
+            # ( Eq. (17) ). Use self.cost_symbolic(mx,Sx) to get the cost of the current state. We
+            # might need to create a new cost function that takes u as an optional input, so we can call self.cost_symbolic(mx,Sx,u)
+            # you only need to use the mean of the cost to compute the derivatives ( See the paragraph after Eq 13 )
             pass
 
     def train_dynamics(self):
