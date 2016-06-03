@@ -58,23 +58,35 @@ class PILCO(EpisodicLearner):
         sys.setrecursionlimit(100000)
         with open(self.filename+'_rollout.zip','wb') as f:
             utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
-            t_vars = [self.rollout,self.policy_gradient]
-            t_vars.extend([self.dynamics_model.get_params(symbolic=True)])
-            t_vars.extend([self.policy.get_params(symbolic=True)])
+            # this saves the shared variables used by the rollout and policy gradients. This means that the zip file
+            # will store the state of those variables from when this function is called
+            t_vars = [self.dynamics_model.get_state(), self.policy.get_state(), self.rollout, self.policy_gradient]
             t_dump(t_vars,f,2)
 
     def load_rollout(self):
+        ''' Loads the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
         with open(self.filename+'_rollout.zip','rb') as f:
             utils.print_with_stamp('Loading compiled rollout from %s_rollout.zip'%(self.filename),self.name)
             t_vars = t_load(f)
-            self.rollout = t_vars[0]
-            self.policy_gradient = t_vars[1]
-            print self.rollout
-            print self.policy_gradient
+            # here we are loading state variables that are probably outdated, but that are tied to the compiled rollout and policy_gradient functions
+            # we need to restore whatever value the dataset and loghyp variables had, which is why we call get_params before replace the state variables
+            params = self.dynamics_model.get_params(symbolic=False)
+            self.dynamics_model.set_state(t_vars[0])
+            self.dynamics_model.set_params(params)
+
+            params = self.policy.get_params(symbolic=False)
+            self.policy.set_state(t_vars[1])
+            self.policy.set_params(params)
+            
+            # At this point the dynamics model and policy state variables should be tied to the rollout and policy_graddient function, and contain the up to date values of the
+            # parameters
+            self.rollout = t_vars[2]
+            self.policy_gradient = t_vars[3]
 
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
-            of the system using the learn GP dynamics model '''
+            of the system using the learn GP dynamics model. If loading from disk, this should be called ONLY
+            after calls to self.dynamics_model.load() and self.policy.load(). (See load_rollout for details)'''
         loaded_from_disk = True
         try:
             self.load_rollout()
@@ -99,7 +111,7 @@ class PILCO(EpisodicLearner):
             # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
-            mxa_,Sxa_,Ca = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
+            mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
             mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
             
             # compute state control joint distribution
@@ -179,12 +191,11 @@ class PILCO(EpisodicLearner):
                 params = [params]
             for p in params:
                 dretvars.append( theano.tensor.grad(mV_.sum(), p ) ) # we are only interested in the derivative of the sum of expected values
-
+            
             utils.print_with_stamp('Compiling belief state propagation',self.name)
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
             utils.print_with_stamp('Compiling policy gradients',self.name)
             self.policy_gradient = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)#,mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=False))
-            #theano.function_dump('policy_gradient.pkl',[mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)
         else:
             utils.print_with_stamp('Compiling belief state propagation',self.name)
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
