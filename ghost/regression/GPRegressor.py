@@ -185,9 +185,14 @@ class GP(object):
 
             # We initialise the kernel matrices (one for each output dimension)
             self.K[i] = self.kernel_func[i](self.X)
+            self.K[i].name = '%s>K[%d]'%(self.name,i)
+            
             self.L[i] = cholesky(self.K[i])
+            self.L[i].name = '%s>L[%d]'%(self.name,i)
+            
             Yc = solve_lower_triangular(self.L[i],self.Y[:,i])
             self.beta[i] = solve_upper_triangular(self.L[i].T,Yc)
+            self.beta[i].name = '%s>beta[%d]'%(self.name,i)
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
