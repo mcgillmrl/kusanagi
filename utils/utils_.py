@@ -6,6 +6,7 @@ import numpy as np
 import theano
 import theano.tensor as T
 from theano.sandbox.linalg import psd,matrix_inverse
+from matplotlib import pyplot as plt
 
 def maha(X1,X2=None,M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
@@ -309,3 +310,32 @@ def update_errorbar(errobj, x, y, y_error):
 
     new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
     barsy.set_segments(new_segments_y)
+
+def plot_results(learner,H=None):
+    dt = learner.plant.dt
+    x0 = learner.plant.x0
+    S0 = learner.plant.S0
+    if H is None:
+        H = learner.H
+    H_steps = np.ceil(H/dt)
+    # plot last run cost vs predicted cost
+    plt.figure('Cost of last run and Predicted cost')
+    plt.gca().clear()
+    T_range = np.arange(0,H+dt,dt)
+    cost = np.array(learner.experience.immediate_cost[-1])[:,0]
+    rollout_ =  learner.rollout(x0,S0,H_steps,1)
+    plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+    plt.plot(T_range,cost)
+
+    states = np.array(learner.experience.states[-1])
+    predicted_means = np.array(rollout_[2])
+    predicted_vars = np.array(rollout_[3])
+    
+    for d in xrange(learner.mx0.size):
+        plt.figure('Last run vs Predicted rollout %d'%(d))
+        plt.gca().clear()
+        plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+        plt.plot(T_range,states[:,d])
+
+    plt.show(False)
+    plt.pause(0.05)

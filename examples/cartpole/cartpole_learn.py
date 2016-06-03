@@ -2,34 +2,11 @@ import atexit
 import signal,sys
 #sys.path.append('/home/adaptation/achatr/Desktop/Summer2016/PILCO_clone/kusanagi')
 import numpy as np
-from matplotlib import pyplot as plt
 from functools import partial
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import RBFPolicy
-
-def plot_results(learner):
-    # plot last run cost vs predicted cost
-    plt.figure('Cost of last run and Predicted cost')
-    plt.gca().clear()
-    T_range = np.arange(0,T+dt,dt)
-    cost = np.array(learner.experience.immediate_cost[-1])[:,0]
-    rollout_ =  learner.rollout(x0,S0,H_steps,1)
-    plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
-    plt.plot(T_range,cost)
-
-    states = np.array(learner.experience.states[-1])
-    predicted_means = np.array(rollout_[2])
-    predicted_vars = np.array(rollout_[3])
-    
-    for d in xrange(learner.mx0.size):
-        plt.figure('Last run vs Predicted rollout %d'%(d))
-        plt.gca().clear()
-        plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
-        plt.plot(T_range,states[:,d])
-
-    plt.show(False)
-    plt.pause(0.05)
+from utils import plot_results
 
 if __name__ == '__main__':
     #np.random.seed(31337)
@@ -67,8 +44,8 @@ if __name__ == '__main__':
     cost = partial(cartpole_loss, params=cost_parameters)
 
     # initialize learner
-    T = 4.0                                                          # controller horizon
-    H_steps = np.ceil(T/dt)
+    H = 4.0                                                          # controller horizon
+    H_steps = np.ceil(H/dt)
     J = 4                                                            # number of random initial trials
     N = 100                                                           # learning iterations
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
@@ -77,10 +54,10 @@ if __name__ == '__main__':
         # gather data with random trials
         for i in xrange(J):
             plant.reset_state()
-            learner.apply_controller(H=T,random_controls=True)
+            learner.apply_controller(H=H,random_controls=True)
     else:
         plant.reset_state()
-        experience_data = learner.apply_controller(H=T)
+        experience_data = learner.apply_controller(H=H)
         
         # plot results
         learner.init_rollout(derivs=False)
@@ -92,11 +69,11 @@ if __name__ == '__main__':
         learner.train_dynamics()
 
         # train policy
-        learner.train_policy(H=T)
+        learner.train_policy(H=H)
 
         # execute it on the robot
         plant.reset_state()
-        experience_data = learner.apply_controller(H=T)
+        experience_data = learner.apply_controller(H=H)
 
         # plot results
         plot_results(learner)

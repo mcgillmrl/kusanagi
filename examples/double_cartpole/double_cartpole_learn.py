@@ -1,3 +1,4 @@
+import atexit
 import signal,sys
 import numpy as np
 from functools import partial
@@ -25,6 +26,9 @@ if __name__ == '__main__':
     draw_dcp = DoubleCartpoleDraw(plant,0.033)                              # initializes visualization
     draw_dcp.start()
 
+    atexit.register(plant.stop)
+    atexit.register(draw_dcp.stop)
+
     # initialize policy
     angle_dims = [4,5] #
     policy = RBFPolicy(x0,S0,[20],200, angle_dims)
@@ -39,39 +43,39 @@ if __name__ == '__main__':
     cost = partial(double_cartpole_loss, params=cost_parameters)
 
     # initialize learner
-    T = 5.0                                                          # controller horizon
+    H = 5.0                                                          # controller horizon
     J = 2                                                            # number of random initial trials
     N = 40                                                           # learning iterations
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
-
-    def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
-        print 'Caught CTRL-C!'
-        draw_dcp.stop()
-        plant.stop()
-        sys.exit(0)
-    signal.signal(signal.SIGINT, signal_handler)
 
     if learner.dynamics_model.X_ is None: #if we have no prior data
         # gather data with random trials
         for i in xrange(J):
             plant.reset_state()
-            learner.apply_controller(H=T,random_controls=True)
+            learner.apply_controller(H=H,random_controls=True)
     else:
         plant.reset_state()
-        learner.apply_controller(H=T)
+        learner.apply_controller(H=H)
+        
+        # plot results
+        learner.init_rollout(derivs=False)
+        plot_results(learner)
 
     for i in xrange(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()
 
         # train policy
-        learner.train_policy(H=T)
+        learner.train_policy(H=H)
 
         # execute it on the robot
         plant.reset_state()
-        learner.apply_controller(H=T)
+        learner.apply_controller(H=H)
+        
+        # plot results
+        plot_results(learner)
 
         # save latest state of the learner
         learner.save()
     
-    draw_cp.stop()
+    sys.exit(0)
