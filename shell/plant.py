@@ -261,8 +261,8 @@ class PlantDraw(object):
             sleep(max(self.dt-exec_time,0))
 
         # close the matplotlib windows, clean up
-        plt.close(self.fig)
         plt.ioff()
+        plt.close(self.fig)
 
     def polling_loop(self,polling_pipe):
         current_t = -1
@@ -292,18 +292,19 @@ class PlantDraw(object):
 
         if self.drawing_thread is not None and self.drawing_thread.is_alive():
             # wait until thread stops
-            print_with_stamp('Waiting for drawing thread to die',self.name)
             self.drawing_thread.join(10)
 
         if self.polling_thread is not None and self.polling_thread.is_alive():
             # wait until thread stops
-            print_with_stamp('Waiting for polling thread to die',self.name)
             self.polling_thread.join(10)
 
         print_with_stamp('Stopped drawing loop',self.name)
     
     def update(self):
-        print "You need to implement the self.update(qp) function in your PlantDraw class."
+        raise NotImplementedError("You need to implement the self.update() method in your PlantDraw class.")
+    
+    def init_artists(self):
+        raise NotImplementedError("You need to implement the self.init_artists() method in your PlantDraw class.")
 
 # an example that plots lines
 class LivePlot(PlantDraw):
@@ -315,14 +316,14 @@ class LivePlot(PlantDraw):
         state, t = plant.get_state()
         self.data = np.array([state])
         self.t_labels = np.array([t])
-        # initialize the patches to draw the cartpole
-        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in xrange(self.data.shape[1]) ]
+        
         # keep track of latest time stamp and state
         self.current_t = t
         self.previous_update_time = time()
         self.update_period = refresh_period
 
     def init_artists(self):
+        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in xrange(self.data.shape[1]) ]
         self.ax.set_aspect('auto','datalim')
         for line in self.lines:
             self.ax.add_line(line)
