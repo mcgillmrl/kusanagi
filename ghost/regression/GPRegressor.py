@@ -184,7 +184,7 @@ class GP(object):
             self.kernel_func[i] = partial(cov.Sum, loghyps, covs)
 
             # We initialise the kernel matrices (one for each output dimension)
-            self.K[i] = self.kernel_func[i](self.X)
+            self.K[i] = psd(self.kernel_func[i](self.X))
             self.K[i].name = '%s>K[%d]'%(self.name,i)
             
             self.L[i] = cholesky(self.K[i])
@@ -329,7 +329,7 @@ class GP(object):
         self.trained = True
 
     def load(self):
-        with open(self.filename+'.zip','rb') as f:
+        with open(utils.get_run_output_dir()+self.filename+'.zip','rb') as f:
             utils.print_with_stamp('Loading compiled GP with %d inputs and %d outputs'%(self.D,self.E),self.name)
             state = t_load(f)
             self.set_state(state)
@@ -338,7 +338,7 @@ class GP(object):
     def save(self):
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            with open(self.filename+'.zip','wb') as f:
+            with open(utils.get_run_output_dir()+self.filename+'.zip','wb') as f:
                 utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs'%(self.D,self.E),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
@@ -439,6 +439,29 @@ class SPGP(GP):
         # intialize parent class params
         super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
+    def set_state(self,state):
+        i = utils.integer_generator(-7)
+        self.X_sp = state[i.next()]
+        self.X_sp_ = state[i.next()]
+        self.beta_sp = state[i.next()]
+        self.Lmm = state[i.next()]
+        self.Amm = state[i.next()]
+        self.nlml_sp = state[i.next()]
+        self.dnlml_sp = state[i.next()]
+        super(SPGP,self).set_state(state[:-7])
+        self.should_recompile = False
+
+    def get_state(self):
+        state = super(SPGP,self).get_state()
+        state.append(self.X_sp)
+        state.append(self.X_sp_)
+        state.append(self.beta_sp)
+        state.append(self.Lmm)
+        state.append(self.Amm)
+        state.append(self.nlml_sp)
+        state.append(self.dnlml_sp)
+        return state
+
     def init_pseudo_inputs(self):
         assert self.N > self.n_basis, "Dataset must have more than n_basis [ %n ] to enable inference with sparse pseudo inputs"%(self.n_basis)
         self.should_recompile = True
@@ -499,7 +522,7 @@ class SPGP(GP):
                 N = self.X.shape[0].astype(theano.config.floatX)
                 M = X_sp_i.shape[0].astype(theano.config.floatX)
 
-                Kmm = self.kernel_func[i](X_sp_i) + ridge*T.eye(self.X_sp.shape[0])
+                Kmm = psd(self.kernel_func[i](X_sp_i)) + ridge*T.eye(self.X_sp.shape[0])
                 Kmn = self.kernel_func[i](X_sp_i, self.X)
                 Lmm = cholesky(Kmm)
                 Lmn = solve_lower_triangular(Lmm,Kmn)
@@ -517,8 +540,14 @@ class SPGP(GP):
 
                 Yci = solve_lower_triangular(Amm,Kmn_.dot(Yi) )
                 self.Lmm[i] = Lmm
+                self.Lmm[i].name = '%s>Lmm[%d]'%(self.name,i)
+
                 self.Amm[i] = Amm
+                self.Amm[i].name = '%s>Amm[%d]'%(self.name,i)
+
                 self.beta_sp[i] = solve_upper_triangular(Amm.T,Yci)
+                self.beta_sp[i].name = '%s>beta_sp[%d]'%(self.name,i)
+
 
                 log_det_K_sp = T.sum(T.log(Gamma)) - 2*T.sum(T.log(T.diag(Lmm))) + 2*T.sum(T.log(T.diag(Amm)))
 
@@ -597,29 +626,6 @@ class SPGP(GP):
             self.set_X_sp(X_sp)
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
         self.trained = True
-
-    def set_state(self,state):
-        i = utils.integer_generator(-7)
-        self.X_sp = state[i.next()]
-        self.X_sp_ = state[i.next()]
-        self.beta_sp = state[i.next()]
-        self.Lmm = state[i.next()]
-        self.Amm = state[i.next()]
-        self.nlml_sp = state[i.next()]
-        self.dnlml_sp = state[i.next()]
-        super(SPGP,self).set_state(state[:-7])
-        self.should_recompile = False
-
-    def get_state(self):
-        state = super(SPGP,self).get_state()
-        state.append(self.X_sp)
-        state.append(self.X_sp_)
-        state.append(self.beta_sp)
-        state.append(self.Lmm)
-        state.append(self.Amm)
-        state.append(self.nlml_sp)
-        state.append(self.dnlml_sp)
-        return state
 
 class SPGP_UI(SPGP,GP_UI):
     def __init__(self, X_dataset, Y_dataset, name = 'SPGP_UI',profile=False, n_basis = 100, hyperparameter_gradients=False):
@@ -718,9 +724,7 @@ class RBFGP(GP_UI):
         # this creates one theano shared variable for the log hyperparameters
         if self.loghyp_full is None:
             self.loghyp_full = S(self.loghyp_,name='%s>loghyp'%(self.name),borrow=True)
-            self.loghyp = T.zeros_like(self.loghyp_full)
-            self.loghyp = T.set_subtensor(self.loghyp[:,:-2], self.loghyp_full[:,:-2])
-            self.loghyp = T.set_subtensor(self.loghyp[:,-2:], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:]))
+            self.loghyp = T.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
         else:
             self.loghyp_full.set_value(self.loghyp_,borrow=True)
 
@@ -849,11 +853,17 @@ class SSGP(GP):
         
         # TODO vectorize these ops
         for i in xrange(odims):
-            self.A[i] = sf2M[i]*phi_f[i].dot(phi_f[i].T) + sn2[i]*T.eye(2*self.sr.shape[1])
+            self.A[i] = psd(sf2M[i]*phi_f[i].dot(phi_f[i].T) + sn2[i]*T.eye(2*self.sr.shape[1]))
+            self.A[i].name = '%s>A[%d]'%(self.name,i)
+
             self.Lmm[i] = cholesky(self.A[i])
+            self.Lmm[i].name = '%s>L[%d]'%(self.name,i)
+
             Yi = self.Y[:,i]
             Yci = solve_lower_triangular(self.Lmm[i],phi_f[i].dot(Yi))
             self.beta_ss[i] = sf2M[i]*solve_upper_triangular(self.Lmm[i].T,Yci)
+            self.beta_ss[i].name = '%s>beta_ss[%d]'%(self.name,i)
+            
             nlml_ss[i] = 0.5*( Yi.dot(Yi) - sf2M[i]*Yci.dot(Yci) )/sn2[i] + T.sum(T.log(T.diag(self.Lmm[i]))) + (0.5*N - M)*T.log(sn2[i]) + 0.5*N*np.log(2*np.pi).astype(theano.config.floatX)
 
         nlml_ss = T.stack(nlml_ss)
@@ -1109,21 +1119,19 @@ class SSGP_UI(SSGP, GP_UI):
                 ci = cos_srdotx[i]       # Msx1   
                 sj = sin_srdotx[j]       # Msx1
                 cj = cos_srdotx[j]       # Msx1
-                sicj = T.outer(si,cj)    # MsxMs
-                cisj = T.outer(ci,sj)    # MsxMs
-                sisj = T.outer(si,sj)    # MsxMs
-                cicj = T.outer(ci,cj)    # MsxMs
+                sicj = si[:,None].dot(cj[None,:])    # MsxMs
+                cisj = ci[:,None].dot(sj[None,:])    # MsxMs
+                sisj = si[:,None].dot(sj[None,:])    # MsxMs
+                cicj = ci[:,None].dot(cj[None,:])    # MsxMs
                 sm = (sicj-cisj)*em
                 sp = (sicj+cisj)*ep
                 cm = (sisj+cicj)*em
                 cp = (cicj-sisj)*ep
                 
                 # Populate the second moment matrix of the feature vector
-                Qij = T.zeros((2*Ms,2*Ms))
-                Qij = T.set_subtensor( Qij[:Ms,:Ms] , cm - cp )
-                Qij = T.set_subtensor( Qij[:Ms,Ms:] , sm + sp )
-                Qij = T.set_subtensor( Qij[Ms:,:Ms] , sp - sm )
-                Qij = T.set_subtensor( Qij[Ms:,Ms:] , cm + cp )
+                Qij_up = T.concatenate([cm-cp,sm+sp],axis=1)
+                Qij_lo = T.concatenate([sp-sm,cm+cp],axis=1)
+                Qij = T.concatenate([Qij_up,Qij_lo],axis=0)
 
                 # Compute the second moment of the output
                 m2 = matrix_dot(self.beta_ss[i], 0.5*Qij, self.beta_ss[j].T)

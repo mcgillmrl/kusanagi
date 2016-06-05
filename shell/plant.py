@@ -10,7 +10,7 @@ from matplotlib.colors import cnames
 from scipy.integrate import ode
 from time import time, sleep
 from threading import Thread, Lock
-from multiprocessing import Process,Pipe
+from multiprocessing import Process,Pipe,Event
 from utils import print_with_stamp
 
 color_generator = cnames.iteritems()
@@ -26,7 +26,7 @@ class Plant(object):
         self.t = 0
         self.dt = dt
         self.noise = noise
-        self.async = False
+        self.running = Event()
         self.done = False
         self.plant_thread = None
     
@@ -40,8 +40,8 @@ class Plant(object):
     
     def run(self):
         start_time = time()
-        print_with_stamp('Starting simulation loop',self.name)
-        while self.async:
+        print_with_stamp('Starting plant loop',self.name)
+        while self.running.is_set():
             exec_time = time()
             self.step(self.dt)
             #print_with_stamp('%f, %s'%(self.t,self.x),self.name)
@@ -56,18 +56,18 @@ class Plant(object):
         
         self.plant_thread = Thread(target=self.run)
         self.plant_thread.daemon = True
-        self.async = True
+        self.running.set()
         self.plant_thread.start()
     
     def stop(self):
-        self.async = False
+        self.running.clear()
         if self.plant_thread is not None and self.plant_thread.is_alive():
             # wait until thread stops
             self.plant_thread.join(10)
             # create new thread object, since python threads can only be started once
             self.plant_thread = Thread(target=self.run)
             self.plant_thread.daemon = True
-        print_with_stamp('Stopped simulation loop',self.name)
+        print_with_stamp('Stopped plant loop',self.name)
 
     def step(self):
         raise NotImplementedError("You need to implement the step method in your Plant subclass.")
@@ -211,7 +211,7 @@ class PlantDraw(object):
 
         self.center_x = 0
         self.center_y = 0
-        self.running = False
+        self.running = Event()
 
         self.polling_pipe,self.drawing_pipe = Pipe()
 
@@ -233,7 +233,7 @@ class PlantDraw(object):
         # start the matplotlib plotting
         self.init_ui()
 
-        while self.running:
+        while self.running.is_set():
             exec_time = time()
             
             # get any data from the polling loop
@@ -241,7 +241,7 @@ class PlantDraw(object):
             while drawing_pipe.poll():
                 data_from_plant= drawing_pipe.recv()
                 if data_from_plant is None:
-                    self.running = False
+                    self.running.clear()
                     break
                 
                 # get the visuzlization updates from the latest state
@@ -262,11 +262,11 @@ class PlantDraw(object):
 
         # close the matplotlib windows, clean up
         plt.ioff()
-        plt.close('all')
+        plt.close(self.fig)
 
     def polling_loop(self,polling_pipe):
         current_t = -1
-        while self.running:
+        while self.running.is_set():
             exec_time = time()
             state, t = self.plant.get_state()
             if t != current_t:
@@ -283,12 +283,12 @@ class PlantDraw(object):
         self.polling_thread = Thread(target=self.polling_loop,args=(self.polling_pipe,))
         self.polling_thread.daemon = True
         #self.drawing_thread = Process(target=self.run)
-        self.running = True
+        self.running.set()
         self.polling_thread.start()
         self.drawing_thread.start()
     
     def stop(self):
-        self.running = False
+        self.running.clear()
 
         if self.drawing_thread is not None and self.drawing_thread.is_alive():
             # wait until thread stops
@@ -301,7 +301,10 @@ class PlantDraw(object):
         print_with_stamp('Stopped drawing loop',self.name)
     
     def update(self):
-        print "You need to implement the self.update(qp) function in your PlantDraw class."
+        raise NotImplementedError("You need to implement the self.update() method in your PlantDraw class.")
+    
+    def init_artists(self):
+        raise NotImplementedError("You need to implement the self.init_artists() method in your PlantDraw class.")
 
 # an example that plots lines
 class LivePlot(PlantDraw):
@@ -313,14 +316,14 @@ class LivePlot(PlantDraw):
         state, t = plant.get_state()
         self.data = np.array([state])
         self.t_labels = np.array([t])
-        # initialize the patches to draw the cartpole
-        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in xrange(self.data.shape[1]) ]
+        
         # keep track of latest time stamp and state
         self.current_t = t
         self.previous_update_time = time()
         self.update_period = refresh_period
 
     def init_artists(self):
+        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in xrange(self.data.shape[1]) ]
         self.ax.set_aspect('auto','datalim')
         for line in self.lines:
             self.ax.add_line(line)
