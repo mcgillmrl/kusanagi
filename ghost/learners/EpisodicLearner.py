@@ -46,7 +46,7 @@ class ExperienceDataset(object):
         self.state_changed = True
 
     def load(self):
-        with open(self.filename+'.zip','rb') as f:
+        with open(utils.get_run_output_dir()+self.filename+'.zip','rb') as f:
             utils.print_with_stamp('Loading experience dataset from %s.zip'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
@@ -55,7 +55,7 @@ class ExperienceDataset(object):
     def save(self):
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            with open(self.filename+'.zip','wb') as f:
+            with open(utils.get_run_output_dir()+self.filename+'.zip','wb') as f:
                 utils.print_with_stamp('Saving experience dataset to %s.zip'%(self.filename),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
@@ -72,10 +72,14 @@ class ExperienceDataset(object):
         return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
 
 class EpisodicLearner(object):
-    def __init__(self, plant, policy, cost=None, angle_idims=None, discount=1, experience = None, async_plant=True, name='EpisodicLearner', filename=None):
+    def __init__(self, plant, policy, cost=None, angle_idims=None, viz=None, discount=1, experience = None, async_plant=True, name='EpisodicLearner', filename=None):
         self.name = name
-        self.plant = plant
+        self.plant = plant    # TODO allow for passing a class instead of an instace
         self.policy = policy
+        # initialize vizualization class
+        if viz is not None:
+            self.viz = viz(plant,0.033)
+            
         if filename is None:
             self.filename = self.name+'_'+self.plant.name+'_'+self.policy.name
         else:
@@ -105,7 +109,7 @@ class EpisodicLearner(object):
         self.experience.load()
         
         # load learner state
-        with open(self.filename+'.zip','rb') as f:
+        with open(utils.get_run_output_dir()+self.filename+'.zip','rb') as f:
             utils.print_with_stamp('Loading learner state from %s.zip'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
@@ -119,10 +123,16 @@ class EpisodicLearner(object):
         # save learner state
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            with open(self.filename+'.zip','wb') as f:
+            with open(utils.get_run_output_dir()+self.filename+'.zip','wb') as f:
                 utils.print_with_stamp('Saving learner state to %s.zip'%(self.filename),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
+
+    def stop(self):
+        ''' Stops the plant, the visualization (if available) and saves the state of the learner'''
+        self.plant.stop()
+        self.viz.stop()
+        self.save()
 
     def set_state(self,state):
         i = utils.integer_generator()
@@ -163,6 +173,9 @@ class EpisodicLearner(object):
         # start robot
         if self.async_plant:
             self.plant.start()
+        if self.viz is not None:
+            self.viz.start()
+
         exec_time = time.time()
         x_t, t0 = self.plant.get_state()
         Sx_t = np.zeros((x_t.shape[0],x_t.shape[0]))
@@ -224,6 +237,8 @@ class EpisodicLearner(object):
         utils.print_with_stamp('Done. Stopping robot. Value of run [%f]'%(run_value.sum()),self.name)
 
         self.plant.stop()
+        if self.viz is not None:
+            self.viz.stop()
         self.n_episodes += 1
         return self.experience
 

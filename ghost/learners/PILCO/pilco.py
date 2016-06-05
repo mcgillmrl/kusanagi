@@ -10,7 +10,7 @@ from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
 
 class PILCO(EpisodicLearner):
-    def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
+    def __init__(self, plant, policy, cost, angle_idims=None, viz=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
         self.rollout=None
@@ -28,7 +28,7 @@ class PILCO(EpisodicLearner):
 
         # initialise parent class
         filename = name+'_'+plant.name+'_'+policy.name+'_'+self.dynamics_model.name
-        super(PILCO, self).__init__(plant, policy, cost, angle_idims, discount, experience, async_plant, name, filename)
+        super(PILCO, self).__init__(plant, policy, cost, angle_idims, viz,  discount, experience, async_plant, name, filename)
     
     def save(self):
         super(PILCO,self).save()
@@ -56,7 +56,7 @@ class PILCO(EpisodicLearner):
 
     def save_rollout(self):
         sys.setrecursionlimit(100000)
-        with open(self.filename+'_rollout.zip','wb') as f:
+        with open(utils.get_output_dir()+self.filename+'_rollout.zip','wb') as f:
             utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
             # this saves the shared variables used by the rollout and policy gradients. This means that the zip file
             # will store the state of those variables from when this function is called
@@ -65,7 +65,7 @@ class PILCO(EpisodicLearner):
 
     def load_rollout(self):
         ''' Loads the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
-        with open(self.filename+'_rollout.zip','rb') as f:
+        with open(utils.get_output_dir()+self.filename+'_rollout.zip','rb') as f:
             utils.print_with_stamp('Loading compiled rollout from %s_rollout.zip'%(self.filename),self.name)
             t_vars = t_load(f)
             # here we are loading state variables that are probably outdated, but that are tied to the compiled rollout and policy_gradient functions
@@ -116,25 +116,17 @@ class PILCO(EpisodicLearner):
             
             # compute state control joint distribution
             n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
-            idimsa = Da + U
             mxu = theano.tensor.concatenate([mxa,mu])
-            Sxu = theano.tensor.zeros((idimsa,idimsa))
-            Sxu = theano.tensor.set_subtensor(Sxu[:Da,:Da], Sxa)
-            Sxu = theano.tensor.set_subtensor(Sxu[Da:,Da:], Su)
             q = Sxa.dot(Cu)
-            Sxu = theano.tensor.set_subtensor(Sxu[:Da,Da:], q )
-            Sxu = theano.tensor.set_subtensor(Sxu[Da:,:Da], q.T )
+            Sxu_up = theano.tensor.concatenate([Sxa,q],axis=1)
+            Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
+            Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0)
 
             # state control covariance without angle dimensions
 	    if Ca is not None:
 	        na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
-                Dna = len(na_dims)
-                Sx_xa = theano.tensor.zeros((D,Da))
-                Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,:Dna], Sx[:,na_dims])
-                Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,Dna:], Sx.dot(Ca))
-                Sxu_ = theano.tensor.zeros((D,Da+U))
-                Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,:Da], Sx_xa)
-                Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,Da:], Sx_xa.dot(Cu))
+                Sx_xa = theano.tensor.concatenate([Sx[:,na_dims],Sx.dot(Ca)],axis=1)
+                Sxu_ =  theano.tensor.concatenate([Sx_xa,Sx_xa.dot(Cu)],axis=1)
 	    else:
                 Sxu_ = Sxu
 
@@ -200,7 +192,7 @@ class PILCO(EpisodicLearner):
             utils.print_with_stamp('Compiling belief state propagation',self.name)
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
         utils.print_with_stamp('Done compiling.',self.name)
-        self.save_rollout()
+        #self.save_rollout()
 
     def train_dynamics(self):
         utils.print_with_stamp('Training dynamics model',self.name)
