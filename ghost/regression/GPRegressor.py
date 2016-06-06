@@ -329,7 +329,8 @@ class GP(object):
         self.trained = True
 
     def load(self):
-        with open(utils.get_run_output_dir()+self.filename+'.zip','rb') as f:
+        path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+        with open(path,'rb') as f:
             utils.print_with_stamp('Loading compiled GP with %d inputs and %d outputs'%(self.D,self.E),self.name)
             state = t_load(f)
             self.set_state(state)
@@ -338,7 +339,8 @@ class GP(object):
     def save(self):
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            with open(utils.get_run_output_dir()+self.filename+'.zip','wb') as f:
+            path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+            with open(path,'wb') as f:
                 utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs'%(self.D,self.E),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
@@ -522,7 +524,7 @@ class SPGP(GP):
                 N = self.X.shape[0].astype(theano.config.floatX)
                 M = X_sp_i.shape[0].astype(theano.config.floatX)
 
-                Kmm = psd(self.kernel_func[i](X_sp_i)) + ridge*T.eye(self.X_sp.shape[0])
+                Kmm = psd(self.kernel_func[i](X_sp_i) + ridge*T.eye(self.X_sp.shape[0]))
                 Kmn = self.kernel_func[i](X_sp_i, self.X)
                 Lmm = cholesky(Kmm)
                 Lmn = solve_lower_triangular(Lmm,Kmn)
@@ -1006,7 +1008,7 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=1):
+    def predict_symbolic(self,mx,Sx, method=2):
         if method == 1:
             # fast compilation
             return self.predict_symbolic_1(mx,Sx)

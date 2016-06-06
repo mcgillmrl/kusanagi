@@ -1,5 +1,6 @@
 from matplotlib import pyplot as plt
 import numpy as np
+import os
 import sys
 import theano
 import utils
@@ -10,7 +11,7 @@ from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
 
 class PILCO(EpisodicLearner):
-    def __init__(self, plant, policy, cost, angle_idims=None, viz=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
+    def __init__(self, plant, policy, cost, angle_idims=None, viz=None, discount=1, experience = None, async_plant = False, name='PILCO', wrap_angles=False):
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
         self.rollout=None
@@ -56,7 +57,8 @@ class PILCO(EpisodicLearner):
 
     def save_rollout(self):
         sys.setrecursionlimit(100000)
-        with open(utils.get_output_dir()+self.filename+'_rollout.zip','wb') as f:
+        path = os.path.join(utils.get_output_dir(),self.filename+'_rollout.zip')
+        with open(path,'wb') as f:
             utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
             # this saves the shared variables used by the rollout and policy gradients. This means that the zip file
             # will store the state of those variables from when this function is called
@@ -65,7 +67,8 @@ class PILCO(EpisodicLearner):
 
     def load_rollout(self):
         ''' Loads the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
-        with open(utils.get_output_dir()+self.filename+'_rollout.zip','rb') as f:
+        path = os.path.join(utils.get_output_dir(),self.filename+'_rollout.zip')
+        with open(path,'rb') as f:
             utils.print_with_stamp('Loading compiled rollout from %s_rollout.zip'%(self.filename),self.name)
             t_vars = t_load(f)
             # here we are loading state variables that are probably outdated, but that are tied to the compiled rollout and policy_gradient functions

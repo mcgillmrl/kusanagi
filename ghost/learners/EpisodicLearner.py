@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import sys
 import theano
 import time
@@ -46,7 +47,8 @@ class ExperienceDataset(object):
         self.state_changed = True
 
     def load(self):
-        with open(utils.get_run_output_dir()+self.filename+'.zip','rb') as f:
+        path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+        with open(path,'rb') as f:
             utils.print_with_stamp('Loading experience dataset from %s.zip'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
@@ -55,7 +57,8 @@ class ExperienceDataset(object):
     def save(self):
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            with open(utils.get_run_output_dir()+self.filename+'.zip','wb') as f:
+            path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+            with open(path,'wb') as f:
                 utils.print_with_stamp('Saving experience dataset to %s.zip'%(self.filename),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
@@ -72,13 +75,15 @@ class ExperienceDataset(object):
         return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
 
 class EpisodicLearner(object):
-    def __init__(self, plant, policy, cost=None, angle_idims=None, viz=None, discount=1, experience = None, async_plant=True, name='EpisodicLearner', filename=None):
+    def __init__(self, plant, policy, cost=None, angle_idims=None, viz=None, discount=1, experience = None, async_plant=False, name='EpisodicLearner', filename=None):
         self.name = name
         self.plant = plant    # TODO allow for passing a class instead of an instace
         self.policy = policy
         # initialize vizualization class
         if viz is not None:
             self.viz = viz(plant,0.033)
+        else:
+            self.viz=None
             
         if filename is None:
             self.filename = self.name+'_'+self.plant.name+'_'+self.policy.name
@@ -109,7 +114,8 @@ class EpisodicLearner(object):
         self.experience.load()
         
         # load learner state
-        with open(utils.get_run_output_dir()+self.filename+'.zip','rb') as f:
+        path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+        with open(path,'rb') as f:
             utils.print_with_stamp('Loading learner state from %s.zip'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
@@ -123,7 +129,8 @@ class EpisodicLearner(object):
         # save learner state
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            with open(utils.get_run_output_dir()+self.filename+'.zip','wb') as f:
+            path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+            with open(path,'wb') as f:
                 utils.print_with_stamp('Saving learner state to %s.zip'%(self.filename),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
@@ -200,7 +207,7 @@ class EpisodicLearner(object):
                 c_t = self.cost(x_t, Sx_t)
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
-                #print t,x_t,u_t,c_t[0]
+                print t,x_t,u_t,c_t[0]
             else:
                 # append to experience dataset
                 self.experience.append(t,x_t,u_t,0)
@@ -229,6 +236,7 @@ class EpisodicLearner(object):
         if self.cost is not None:
             c_t = self.cost(x_t, Sx_t)
             self.experience.add_sample(t,x_t,u_t,c_t)
+            print t,x_t,u_t,c_t[0]
         else:
             self.experience.append(t,x_t,u_t,0)
 

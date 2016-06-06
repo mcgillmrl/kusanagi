@@ -43,7 +43,7 @@ if __name__ == '__main__':
     H_steps = np.ceil(H/dt)
     J = 4                                                            # number of random initial trials
     N = 100                                                           # learning iterations
-    learner = PILCO(plant, policy, cost, angle_dims, viz=CartpoleDraw)
+    learner = PILCO(plant, policy, cost, angle_dims)
     atexit.register(learner.stop)
 
     if learner.dynamics_model.X_ is None: #if we have no prior data

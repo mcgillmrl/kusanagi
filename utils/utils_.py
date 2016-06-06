@@ -141,14 +141,14 @@ def gTrig2(m, v, angi, D, derivs=False):
     # construct the corresponding covariance matrices ( just the blocks for the non angle dimensions and the angle dimensions separately)
     V = T.zeros((Dna+Da,Dna+Da))
     Vna = v[non_angle_dims,:][:,non_angle_dims]
-    #V = T.set_subtensor(V[:Dna,:Dna], Vna)
-    #V = T.set_subtensor(V[Dna:,Dna:], Va)
+    V = T.set_subtensor(V[:Dna,:Dna], Vna)
+    V = T.set_subtensor(V[Dna:,Dna:], Va)
 
     # fill in the cross covariances
     q = v.dot(Ca)[non_angle_dims,:]
-    #V = T.set_subtensor(V[:Dna,Dna:], q )
-    #V = T.set_subtensor(V[Dna:,:Dna], q.T )
-    V = T.concatenate([T.concatenate([Vna,q],axis=1),T.concatenate([q.T,Va],axis=1)], axis=0)
+    V = T.set_subtensor(V[:Dna,Dna:], q )
+    V = T.set_subtensor(V[Dna:,:Dna], q.T )
+    #V = T.concatenate([T.concatenate([Vna,q],axis=1),T.concatenate([q.T,Va],axis=1)], axis=0)
 
     retvars = [M,V,Ca]
 
