@@ -141,13 +141,14 @@ def gTrig2(m, v, angi, D, derivs=False):
     # construct the corresponding covariance matrices ( just the blocks for the non angle dimensions and the angle dimensions separately)
     V = T.zeros((Dna+Da,Dna+Da))
     Vna = v[non_angle_dims,:][:,non_angle_dims]
-    V = T.set_subtensor(V[:Dna,:Dna], Vna)
-    V = T.set_subtensor(V[Dna:,Dna:], Va)
+    #V = T.set_subtensor(V[:Dna,:Dna], Vna)
+    #V = T.set_subtensor(V[Dna:,Dna:], Va)
 
     # fill in the cross covariances
     q = v.dot(Ca)[non_angle_dims,:]
-    V = T.set_subtensor(V[:Dna,Dna:], q )
-    V = T.set_subtensor(V[Dna:,:Dna], q.T )
+    #V = T.set_subtensor(V[:Dna,Dna:], q )
+    #V = T.set_subtensor(V[Dna:,:Dna], q.T )
+    V = T.concatenate([T.concatenate([Vna,q],axis=1),T.concatenate([q.T,Va],axis=1)], axis=0)
 
     retvars = [M,V,Ca]
 
@@ -339,3 +340,29 @@ def plot_results(learner,H=None):
 
     plt.show(False)
     plt.pause(0.05)
+
+def get_run_output_dir():
+    ''' Returns the current output folder for the last run results. This can be set via the $KUSANAGI_RUN_OUTPUT environment 
+    variable. If not set, it will default to $HOME/.kusanagi/output/last_run. The directory will be created 
+    by this method, if it does not exist.'''
+    if not 'KUSANAGI_RUN_OUTPUT' in os.environ:
+        os.environ['KUSANAGI_RUN_OUTPUT'] = os.path.join(get_output_dir(),"last_run")
+    try: 
+        os.makedirs(os.environ['KUSANAGI_RUN_OUTPUT'])
+    except OSError:
+        if not os.path.isdir(os.environ['KUSANAGI_RUN_OUTPUT']):
+            raise
+    return os.environ['KUSANAGI_RUN_OUTPUT']
+
+def get_output_dir():
+    ''' Returns the current output folder. This can be set via the $KUSANAGI_OUTPUT environment 
+    variable. If not set, it will default to $HOME/.kusanagi/output. The directory will be created 
+    by this method, if it does not exist.'''
+    if not 'KUSANAGI_OUTPUT' in os.environ:
+        os.environ['KUSANAGI_OUTPUT'] = os.path.join(os.path.join(os.environ['HOME'],".kusanagi"),"output")
+    try: 
+        os.makedirs(os.environ['KUSANAGI_OUTPUT'])
+    except OSError:
+        if not os.path.isdir(os.environ['KUSANAGI_OUTPUT']):
+            raise
+    return os.environ['KUSANAGI_OUTPUT']
