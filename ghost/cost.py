@@ -15,7 +15,7 @@ def linear_loss(mx,Sx,params,absolute=True):
 
     return m_cost, s_cost
 
-def quadratic_loss(mx,Sx,u=None,params):
+def quadratic_loss(mx,Sx,params,u=None):
     # Quadratic penalty function
     Q = T.constant(params['Q'],dtype=mx.dtype)
     target = T.constant(params['target'],dtype=mx.dtype)
