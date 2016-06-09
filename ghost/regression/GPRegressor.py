@@ -184,7 +184,7 @@ class GP(object):
             self.kernel_func[i] = partial(cov.Sum, loghyps, covs)
 
             # We initialise the kernel matrices (one for each output dimension)
-            self.K[i] = psd(self.kernel_func[i](self.X))
+            self.K[i] = self.kernel_func[i](self.X)
             self.K[i].name = '%s>K[%d]'%(self.name,i)
             
             self.L[i] = cholesky(self.K[i])
@@ -383,7 +383,7 @@ class GP_UI(GP):
         sf2 = T.exp(2*self.loghyp[:,idims])
         eyeE = T.tile(T.eye(idims),(odims,1,1))
         lscales = T.exp(self.loghyp[:,:idims])
-        iL = eyeE/lscales[:,:,None]
+        iL = eyeE/lscales.dimshuffle(0,1,'x')
 
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
@@ -401,8 +401,10 @@ class GP_UI(GP):
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
+        logk_r = logk.dimshuffle(0,'x',1)
+        logk_c = logk.dimshuffle(0,1,'x')
         Lambda = iL**2
-        R = T.dot((Lambda[:,None,:,:] + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
+        R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         M2 = [[]]*(odims**2) # second moment
         N = self.X.shape[0]
@@ -410,7 +412,7 @@ class GP_UI(GP):
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 Rij = R[i,j]
-                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+                n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
                 Q = T.exp( n2 )/T.sqrt(det(Rij))
                 # Eq 2.55
                 m2 = matrix_dot(self.beta[i], Q, self.beta[j])
@@ -524,7 +526,7 @@ class SPGP(GP):
                 N = self.X.shape[0].astype(theano.config.floatX)
                 M = X_sp_i.shape[0].astype(theano.config.floatX)
 
-                Kmm = psd(self.kernel_func[i](X_sp_i) + ridge*T.eye(self.X_sp.shape[0]))
+                Kmm = self.kernel_func[i](X_sp_i) + ridge*T.eye(self.X_sp.shape[0])
                 Kmn = self.kernel_func[i](X_sp_i, self.X)
                 Lmm = cholesky(Kmm)
                 Lmn = solve_lower_triangular(Lmm,Kmn)
@@ -648,7 +650,7 @@ class SPGP_UI(SPGP,GP_UI):
         sf2 = T.exp(2*self.loghyp[:,idims])
         eyeE = T.tile(T.eye(idims),(odims,1,1))
         lscales = T.exp(self.loghyp[:,:idims])
-        iL = eyeE/lscales[:,:,None]
+        iL = eyeE/lscales.dimshuffle(0,1,'x')
 
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
@@ -666,8 +668,10 @@ class SPGP_UI(SPGP,GP_UI):
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
+        logk_r = logk.dimshuffle(0,'x',1)
+        logk_c = logk.dimshuffle(0,1,'x')
         Lambda = iL**2
-        R = T.dot((Lambda[:,None,:,:] + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
+        R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         M2 = [[]]*(odims**2) # second moment
         N = self.X.shape[0]
@@ -675,7 +679,7 @@ class SPGP_UI(SPGP,GP_UI):
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 Rij = R[i,j]
-                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+                n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
                 Q = T.exp( n2 )/T.sqrt(det(Rij))
                 # Eq 2.55
                 m2 = matrix_dot(self.beta_sp[i], Q, self.beta_sp[j])
@@ -741,7 +745,7 @@ class RBFGP(GP_UI):
         sf2 = T.exp(2*self.loghyp[:,idims])
         eyeE = T.tile(T.eye(idims),(odims,1,1))
         lscales = T.exp(self.loghyp[:,:idims])
-        iL = eyeE/lscales[:,:,None]
+        iL = eyeE/lscales.dimshuffle(0,1,'x')
 
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
@@ -759,8 +763,10 @@ class RBFGP(GP_UI):
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
+        logk_r = logk.dimshuffle(0,'x',1)
+        logk_c = logk.dimshuffle(0,1,'x')
         Lambda = iL**2
-        R = T.dot((Lambda[:,None,:,:] + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
+        R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         M2 = [[]]*(odims**2) # second moment
         N = self.X.shape[0]
@@ -768,7 +774,7 @@ class RBFGP(GP_UI):
             for j in xrange(i+1):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 Rij = R[i,j]
-                n2 = logk[i][:,None] + logk[j][None,:] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+                n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
                 Q = T.exp( n2 )/T.sqrt(det(Rij))
                 # Eq 2.55
                 m2 = matrix_dot(self.beta[i],Q,self.beta[j].T)
@@ -855,7 +861,7 @@ class SSGP(GP):
         
         # TODO vectorize these ops
         for i in xrange(odims):
-            self.A[i] = psd(sf2M[i]*phi_f[i].dot(phi_f[i].T) + sn2[i]*T.eye(2*self.sr.shape[1]))
+            self.A[i] = sf2M[i]*phi_f[i].dot(phi_f[i].T) + sn2[i]*T.eye(2*self.sr.shape[1])
             self.A[i].name = '%s>A[%d]'%(self.name,i)
 
             self.Lmm[i] = cholesky(self.A[i])
@@ -1008,7 +1014,7 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=1):
+    def predict_symbolic(self,mx,Sx, method=2):
         if method == 1:
             # fast compilation
             return self.predict_symbolic_1(mx,Sx)
@@ -1045,18 +1051,25 @@ class SSGP_UI(SSGP, GP_UI):
         M = T.sum( mphi*self.beta_ss, 1)
 
         # inv(s) times input output covariance
-        c = T.concatenate([ mx[:,None]*sin_srdotx_e[:,None,:] + srdotSx.transpose(0,2,1)*cos_srdotx_e[:,None,:], mx[:,None]*cos_srdotx_e[:,None,:] - srdotSx.transpose(0,2,1)*sin_srdotx_e[:,None,:] ], axis=2) # E x D x 2*Ms
-        v = T.sum( c*(self.beta_ss[:,None,:]), 2 ).T - T.outer(mx,M)
+        mx_c = mx.dimshuffle(0,'x'); mx_r = mx.dimshuffle('x',0)
+        sin_srdotx_e_r = sin_srdotx_e.dimshuffle(0,'x',1); cos_srdotx_e_r = cos_srdotx_e.dimshuffle(0,'x',1)
+        c = T.concatenate([ mx_c*sin_srdotx_e_r + srdotSx.transpose(0,2,1)*cos_srdotx_e_r, mx_c*cos_srdotx_e_r - srdotSx.transpose(0,2,1)*sin_srdotx_e_r ], axis=2) # E x D x 2*Ms
+        beta_ss_r = self.beta_ss.dimshuffle(0,'x',1)
+        v = T.sum( c*beta_ss_r, 2 ).T - T.outer(mx,M)
         V = matrix_inverse(Sx).dot(v)
         
         # compute the second moment matrix
-        sijSxsij = -0.5*(srdotSxdotsr[:,None,:,None] + srdotSxdotsr[None,:,None,:]) 
+        sijSxsij = -0.5*(srdotSxdotsr.dimshuffle(0,'x',1,'x') + srdotSxdotsr.dimshuffle('x',0,'x',1)) 
         em =  T.exp(sijSxsij+siSxsj)      # MsxMs
         ep =  T.exp(sijSxsij-siSxsj)     # MsxMs
-        ss = sin_srdotx[:,None,:,None]*sin_srdotx[None,:,None,:]
-        sc = sin_srdotx[:,None,:,None]*cos_srdotx[None,:,None,:]
-        cs = cos_srdotx[:,None,:,None]*sin_srdotx[None,:,None,:]
-        cc = cos_srdotx[:,None,:,None]*cos_srdotx[None,:,None,:]
+        sin_srdotx_c = sin_srdotx.dimshuffle(0,'x',1,'x')
+        sin_srdotx_r = sin_srdotx.dimshuffle('x',0,'x',1)
+        cos_srdotx_c = cos_srdotx.dimshuffle(0,'x',1,'x')
+        cos_srdotx_r = cos_srdotx.dimshuffle('x',0,'x',1)
+        ss = sin_srdotx_c*sin_srdotx_r
+        sc = sin_srdotx_c*cos_srdotx_r
+        cs = cos_srdotx_c*sin_srdotx_r
+        cc = cos_srdotx_c*cos_srdotx_r
         sm = (sc-cs)*em
         sp = (sc+cs)*ep
         cm = (ss+cc)*em
@@ -1064,12 +1077,12 @@ class SSGP_UI(SSGP, GP_UI):
         Qu = T.concatenate([cm-cp,sm+sp],axis=3)
         Ql = T.concatenate([sp-sm,cm+cp],axis=3)
         Q = T.concatenate([Qu,Ql],axis=2)
-        M2 = 0.5*T.sum(self.beta_ss[:,None,:]*T.sum(Q*self.beta_ss[:,None,:],-1),-1)
+        M2 = 0.5*T.sum(beta_ss_r*T.sum(Q*beta_ss_r,-1),-1)
 
         # compute the additional diagonal term for the second moment matrix
         iA = T.stack([ solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms))) for i in xrange(odims) ] )
         sf2Ms = (sf2/Ms.astype(theano.config.floatX))
-        diagm2 = T.diag(sn2*(1 + sf2Ms*T.sum(iA*Q[oidx,oidx],[1,2])))
+        diagm2 = T.diag( sn2*(1 + sf2Ms*T.sum(iA*Q[oidx,oidx],[1,2])) + 1e-9)
         M2 = M2 + diagm2
 
         # compute the predictive covariance
@@ -1103,28 +1116,32 @@ class SSGP_UI(SSGP, GP_UI):
         M = T.sum( mphi*self.beta_ss, 1)
 
         # inv(s) times input output covariance
-        c = T.concatenate([ mx[:,None]*sin_srdotx_e[:,None,:] + srdotSx.transpose(0,2,1)*cos_srdotx_e[:,None,:], mx[:,None]*cos_srdotx_e[:,None,:] - srdotSx.transpose(0,2,1)*sin_srdotx_e[:,None,:] ], axis=2) # E x D x 2*Ms
-        v = T.sum( c*(self.beta_ss[:,None,:]), 2 ).T - T.outer(mx,M)
+        mx_c = mx.dimshuffle(0,'x'); mx_r = mx.dimshuffle('x',0)
+        sin_srdotx_e_r = sin_srdotx_e.dimshuffle(0,'x',1); cos_srdotx_e_r = cos_srdotx_e.dimshuffle(0,'x',1)
+        c = T.concatenate([ mx_c*sin_srdotx_e_r + srdotSx.transpose(0,2,1)*cos_srdotx_e_r, mx_c*cos_srdotx_e_r - srdotSx.transpose(0,2,1)*sin_srdotx_e_r ], axis=2) # E x D x 2*Ms
+        v = T.sum( c*(self.beta_ss.dimshuffle(0,'x',1)), 2 ).T - T.outer(mx,M)
         V = matrix_inverse(Sx).dot(v)
         
         # TODO vectorize this operation
+        srdotSxdotsr_c = srdotSxdotsr.dimshuffle(0,1,'x')
+        srdotSxdotsr_r = srdotSxdotsr.dimshuffle(0,'x',1)
         M2 = [[]]*(odims**2) # second moment
         for i in xrange(odims):
             # predictive covariance
             for j in xrange(i+1):
                 # compute the second moments of the spectral feature vectors
                 siSxsj = srdotSx[i].dot(self.sr[j].T) #Ms x Ms
-                sijSxsij = -0.5*(srdotSxdotsr[i,:,None] + srdotSxdotsr[j,None,:]) 
+                sijSxsij = -0.5*(srdotSxdotsr_c[i] + srdotSxdotsr_r[j]) 
                 em =  T.exp(sijSxsij+siSxsj)      # MsxMs
                 ep =  T.exp(sijSxsij-siSxsj)     # MsxMs
                 si = sin_srdotx[i]       # Msx1
                 ci = cos_srdotx[i]       # Msx1   
                 sj = sin_srdotx[j]       # Msx1
                 cj = cos_srdotx[j]       # Msx1
-                sicj = si[:,None].dot(cj[None,:])    # MsxMs
-                cisj = ci[:,None].dot(sj[None,:])    # MsxMs
-                sisj = si[:,None].dot(sj[None,:])    # MsxMs
-                cicj = ci[:,None].dot(cj[None,:])    # MsxMs
+                sicj = T.outer(si,cj)    # MsxMs
+                cisj = T.outer(ci,sj)    # MsxMs
+                sisj = T.outer(si,sj)    # MsxMs
+                cicj = T.outer(ci,cj)    # MsxMs
                 sm = (sicj-cisj)*em
                 sp = (sicj+cisj)*ep
                 cm = (sisj+cicj)*em
@@ -1141,7 +1158,7 @@ class SSGP_UI(SSGP, GP_UI):
                 if i == j:
                     # if i==j we need to add the trace term
                     iAi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms)))
-                    m2 =  m2 + sn2[i]*(1 + (sf2[i]/Ms)*T.sum(iAi*Qij))
+                    m2 =  m2 + sn2[i]*(1 + (sf2[i]/Ms)*T.sum(iAi*Qij + 1e-9))
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2

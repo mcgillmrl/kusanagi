@@ -138,8 +138,9 @@ class EpisodicLearner(object):
     def stop(self):
         ''' Stops the plant, the visualization (if available) and saves the state of the learner'''
         self.plant.stop()
-        self.viz.stop()
-        self.save()
+        if self.viz is not None:
+            self.viz.stop()
+        #self.save()
 
     def set_state(self,state):
         i = utils.integer_generator()
@@ -265,8 +266,11 @@ class EpisodicLearner(object):
             opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=1e-12, options={'maxiter': 125})
         except ValueError:
             print '' 
-            utils.print_with_stamp('%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
-            opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-12, options={'maxiter': 125})
+            print self.policy.get_params(symbolic=False)
+            print self.policy.K[0].eval()
+            raise
+            #utils.print_with_stamp('%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
+            #opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-12, options={'maxiter': 125})
 
         self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
         print '' 

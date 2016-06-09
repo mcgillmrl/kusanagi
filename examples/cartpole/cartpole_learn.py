@@ -24,6 +24,9 @@ if __name__ == '__main__':
     maxU = [10]
     measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
     plant = Cartpole(model_parameters,x0,S0,dt,measurement_noise)
+    #draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
+    #draw_cp.start()
+    #atexit.register(draw_cp.stop)
 
     # initialize policy
     angle_dims = [3]
@@ -43,7 +46,7 @@ if __name__ == '__main__':
     H_steps = np.ceil(H/dt)
     J = 4                                                            # number of random initial trials
     N = 100                                                           # learning iterations
-    learner = PILCO(plant, policy, cost, angle_dims)
+    learner = PILCO(plant, policy, cost, angle_dims)#,viz=CartpoleDraw)
     atexit.register(learner.stop)
 
     if learner.dynamics_model.X_ is None: #if we have no prior data

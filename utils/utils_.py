@@ -19,13 +19,13 @@ def maha(X1,X2=None,M=None, all_pairs=True):
         if M is None:
             #D, updts = theano.scan(fn=lambda xi,X: T.sum((xi-X)**2,1), sequences=[X1], non_sequences=[X2])
             #D = ((X1-X2[:,None,:])**2).sum(2)
-            D = T.sum(X1**2,1)[:,None] + T.sum(X2**2,1) - 2*X1.dot(X2.T);
+            D = T.sum(X1**2,1).dimshuffle(0,'x') + T.sum(X2**2,1) - 2*X1.dot(X2.T);
         else:
             #D, updts = theano.scan(fn=lambda xi,X,V: T.sum(((xi-X).dot(V))*(xi-X),1), sequences=[X1], non_sequences=[X2,M])
             #delta = (X1-X2[:,None,:])
             #D = ((delta.dot(M))*delta).sum(2)
             X1M = X1.dot(M);
-            D = T.sum(X1M*X1,1)[:,None] + T.sum(X2.dot(M)*X2,1) - 2*X1M.dot(X2.T)
+            D = T.sum(X1M*X1,1).dimshuffle(0,'x') + T.sum(X2.dot(M)*X2,1) - 2*X1M.dot(X2.T)
     else:
         # computes the distance  x1i - x2i for each row i
         if X1 is X2:
@@ -110,13 +110,13 @@ def gTrig2(m, v, angi, D, derivs=False):
     Ma = T.set_subtensor(Ma[1::2], exp_vii_h*T.cos(mi))
     
     # compute the entries in the augmented covariance matrix
-    vii_c = vii[:,None]
-    vii_r = vii[None,:]
+    vii_c = vii.dimshuffle(0,'x')
+    vii_r = vii.dimshuffle('x',0)
     lq = -0.5*(vii_c+vii_r); q = T.exp(lq)
     exp_lq_p_vi = T.exp(lq+vi)
     exp_lq_m_vi = T.exp(lq-vi)
-    mi_c = mi[:,None]
-    mi_r = mi[None,:]
+    mi_c = mi.dimshuffle(0,'x')
+    mi_r = mi.dimshuffle('x',0)
     U1 = (exp_lq_p_vi - q)*(T.sin(mi_c-mi_r))
     U2 = (exp_lq_m_vi - q)*(T.sin(mi_c+mi_r))
     U3 = (exp_lq_p_vi - q)*(T.cos(mi_c-mi_r))
@@ -339,7 +339,7 @@ def plot_results(learner,H=None):
         plt.plot(T_range,states[:,d])
 
     plt.show(False)
-    plt.pause(0.05)
+    plt.waitforbuttonpress(0.05)
 
 def get_run_output_dir():
     ''' Returns the current output folder for the last run results. This can be set via the $KUSANAGI_RUN_OUTPUT environment 

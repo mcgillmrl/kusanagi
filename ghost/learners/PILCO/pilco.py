@@ -6,7 +6,7 @@ import theano
 import utils
 
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
-
+from theano.compile.nanguardmode import NanGuardMode
 from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
 
@@ -32,14 +32,17 @@ class PILCO(EpisodicLearner):
         super(PILCO, self).__init__(plant, policy, cost, angle_idims, viz,  discount, experience, async_plant, name, filename)
     
     def save(self):
+        ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
         super(PILCO,self).save()
         self.dynamics_model.save()
 
     def load(self):
+        ''' Loads the state of the learner, including the parameters of the policy and the dynamics model'''
         super(PILCO,self).load()
         self.dynamics_model.load()
     
     def set_state(self,state):
+        ''' In addition to the EpisodicLearner state variables, saves the values of self.wrap_angles, self.next_episode, self.mx0 and self.Sx0'''
         i = utils.integer_generator(-4)
         self.wrap_angles = state[i.next()]
         self.next_episode = state[i.next()]
@@ -48,6 +51,7 @@ class PILCO(EpisodicLearner):
         super(PILCO,self).set_state(state[:-4])
 
     def get_state(self):
+        ''' In addition to the EpisodicLearner state variables, loads the values of self.wrap_angles, self.next_episode, self.mx0 and self.Sx0'''
         state = super(PILCO,self).get_state()
         state.append(self.wrap_angles)
         state.append(self.next_episode)
@@ -56,6 +60,7 @@ class PILCO(EpisodicLearner):
         return state
 
     def save_rollout(self):
+        ''' Saves the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
         sys.setrecursionlimit(100000)
         path = os.path.join(utils.get_output_dir(),self.filename+'_rollout.zip')
         with open(path,'wb') as f:
@@ -173,10 +178,10 @@ class PILCO(EpisodicLearner):
                                                       n_steps=H, 
                                                       strict=True,
                                                       allow_gc=False)
-        mV_ = theano.tensor.concatenate([mv0[None], mV_])
-        SV_ = theano.tensor.concatenate([Sv0[None], SV_])
-        mx_ = theano.tensor.concatenate([mx[None,:], mx_])
-        Sx_ = theano.tensor.concatenate([Sx[None,:,:], Sx_])
+        mV_ = theano.tensor.concatenate([mv0.dimshuffle('x'), mV_])
+        SV_ = theano.tensor.concatenate([Sv0.dimshuffle('x'), SV_])
+        mx_ = theano.tensor.concatenate([mx.dimshuffle('x',0), mx_])
+        Sx_ = theano.tensor.concatenate([Sx.dimshuffle('x',0,1), Sx_])
 
         if derivs :
             utils.print_with_stamp('Computing symbolic expression for policy gradients',self.name)
@@ -191,6 +196,8 @@ class PILCO(EpisodicLearner):
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)
             utils.print_with_stamp('Compiling policy gradients',self.name)
             self.policy_gradient = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)#,mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=False))
+            #sys.setrecursionlimit(100000)
+            #theano.function_dump('policy_gradients.p',[mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts)#,mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=False))
         else:
             utils.print_with_stamp('Compiling belief state propagation',self.name)
             self.rollout = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts)

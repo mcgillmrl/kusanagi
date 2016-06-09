@@ -23,13 +23,11 @@ def gSin(m,v,i=None,e=None,derivs=False):
     M = exp_vii_h*T.sin(mi)
 
     # output covariance
-    vii_c = vii[:,None]
-    vii_r = vii[None,:]
+    vii_c = vii.dimshuffle(0,'x'); vii_r = vii.dimshuffle('x',0)
     lq = -0.5*(vii_c+vii_r); q = T.exp(lq)
     exp_lq_p_vi = T.exp(lq+vi)
     exp_lq_m_vi = T.exp(lq-vi)
-    mi_c = mi[:,None]
-    mi_r = mi[None,:]
+    mi_c = mi.dimshuffle(0,'x'); mi_r = mi.dimshuffle('x',0)
     U1 = (exp_lq_p_vi - q)*(T.cos(mi_c-mi_r))
     U2 = (exp_lq_m_vi - q)*(T.cos(mi_c+mi_r))
 
@@ -39,7 +37,7 @@ def gSin(m,v,i=None,e=None,derivs=False):
     C = T.diag(exp_vii_h*T.cos(mi))
     
     # account for the effect of scaling the output
-    M = e*M; V = e[:,None].dot(e[None,:])*V; C = e*C
+    M = e*M; V = T.outer(e,e)*V; C = e*C
 
     retvars = [M,V,C]
 

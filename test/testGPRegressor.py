@@ -10,7 +10,7 @@ def test_random(gp_type='GP',angi=[0,1]):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-500*(np.sum(0.0001*(X**2),1)))*np.sin(X.sum(1))
 
-    n_samples = 100
+    n_samples = 250
     n_test = 100
     idims = 7
     odims = 6
