@@ -200,7 +200,7 @@ class SerialPlant(Plant):
         self.serial.close()
 
 class PlantDraw(object):
-    def __init__(self, plant, refresh_period=(1.0/20), name='PlantDraw'):
+    def __init__(self, plant, refresh_period=(1.0/24), name='PlantDraw'):
         super(PlantDraw,self).__init__()
         self.name = name
         self.plant = plant

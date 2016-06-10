@@ -65,7 +65,7 @@ class Cartpole(ODEPlant):
         return dz
 
 class CartpoleDraw(PlantDraw):
-    def __init__(self, cartpole_plant, refresh_period=0.1, name='CartpoleDraw'):
+    def __init__(self, cartpole_plant, refresh_period=(1.0/24), name='CartpoleDraw'):
         super(CartpoleDraw, self).__init__(cartpole_plant, refresh_period,name)
         if self.plant.params is not None:
             l = self.plant.params['l']

@@ -48,7 +48,7 @@ if __name__ == '__main__':
     learner_params['cost'] = cost_params
 
     # initialize learner
-    learner = PDDP(learner_params, Cartpole, LocalLinearPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#,viz=CartpoleDraw)
+    learner = PDDP(learner_params, Cartpole, LocalLinearPolicy, cartpole_loss, dynmodel_class=SSGP_UI, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data
@@ -62,7 +62,7 @@ if __name__ == '__main__':
         
         # plot results
         learner.init_rollout(derivs=False)
-        plot_results(learner)
+        #plot_results(learner) # TODO this does not work with PDDP
 
     # learning loop
     for i in xrange(N):
@@ -77,7 +77,7 @@ if __name__ == '__main__':
         experience_data = learner.apply_controller()
 
         # plot results
-        plot_results(learner)
+        #plot_results(learner) # TODO this does not work with PDDP
 
         # save latest state of the learner
         learner.save()

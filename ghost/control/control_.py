@@ -141,10 +141,6 @@ class LocalLinearPolicy(object):
 
         self.b_ = np.ones( (H_steps, len(self.maxU)) )
         self.A_ = np.zeros( (H_steps, len(self.maxU), z0.size) )
-        print self.u_nominal_.shape
-        print self.z_nominal_.shape
-        print self.A_.shape
-        print self.b_.shape
 
         self.A = theano.shared(self.A_,borrow=True)
         self.b = theano.shared(self.b_,borrow=True)
@@ -156,7 +152,7 @@ class LocalLinearPolicy(object):
 
         if t is not None:
             self.t = t
-
+        t = self.t
         if symbolic:
             u_t = self.u_nominal[t]
             z_t = self.z_nominal[t]
@@ -174,18 +170,7 @@ class LocalLinearPolicy(object):
                 s = np.zeros((D,D))
             z = np.concatenate([m,s.flatten()])
         self.t+=1
-        print '==='
-        print self.u_nominal_.shape
-        print self.z_nominal_.shape
-        print self.A_.shape
-        print self.b_.shape
-        print '---'
-        print u_t.shape
-        print b_t.shape
-        print A_t.shape
-        print z_t.shape
-        print z.shape
-        print u_t + b_t + A_t.dot(z - z_t)
+
         return u_t + b_t + A_t.dot(z - z_t)
 
     def get_params(self, symbolic=False):
