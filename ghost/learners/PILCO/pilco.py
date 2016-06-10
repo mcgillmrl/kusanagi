@@ -11,25 +11,32 @@ from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
 
 class PILCO(EpisodicLearner):
-    def __init__(self, plant, policy, cost, angle_idims=None, viz=None, discount=1, experience = None, async_plant = False, name='PILCO', wrap_angles=False):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', wrap_angles=False, filename_prefix=None):
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
         self.rollout=None
         self.policy_gradient=None
+        self.mx0 = np.array(params['x0']).squeeze()
+        self.Sx0 = np.array(params['S0']).squeeze()
+        self.angle_idims = params['angle_dims']
+        self.maxU = params['policy']['maxU']
 
         # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
-        dyn_idims = len(plant.x0) + len(angle_idims) + len(policy.maxU)
+        dyn_idims = len(self.mx0) + len(self.angle_idims) + len(self.maxU)
         # output dimensions are state dims
-        dyn_odims = len(plant.x0)
+        dyn_odims = len(self.mx0)
         # initialize dynamics model (TODO pass this as argument to constructor)
-        self.dynamics_model = SSGP_UI(idims=dyn_idims,odims=dyn_odims,n_basis=100)
+        if 'dynmodel' not in params:
+            params['dynmodel'] = {}
+        params['dynmodel']['idims'] = dyn_idims
+        params['dynmodel']['odims'] = dyn_odims
+
+        self.dynamics_model = dynmodel_class(**params['dynmodel'])
         self.next_episode = 0
-        self.mx0 = np.array(plant.x0).squeeze()
-        self.Sx0 = np.array(plant.S0).squeeze()
 
         # initialise parent class
-        filename = name+'_'+plant.name+'_'+policy.name+'_'+self.dynamics_model.name
-        super(PILCO, self).__init__(plant, policy, cost, angle_idims, viz,  discount, experience, async_plant, name, filename)
+        filename_prefix = name+'_'+self.dynamics_model.name if filename_prefix is None else filename_prefix
+        super(PILCO, self).__init__(params, plant_class, policy_class, cost_func,viz_class, experience, async_plant, name, filename_prefix)
     
     def save(self):
         ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''

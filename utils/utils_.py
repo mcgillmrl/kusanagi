@@ -366,3 +366,11 @@ def get_output_dir():
         if not os.path.isdir(os.environ['KUSANAGI_OUTPUT']):
             raise
     return os.environ['KUSANAGI_OUTPUT']
+
+def set_run_output_dir(new_path):
+    ''' Sets the output directory for the files related to the current run. Assumes that new_path is well formed'''
+    os.environ['KUSANAGI_RUN_OUTPUT'] = new_path
+
+def set_output_dir(new_path):
+    ''' Sets the output directory temporary files. Assumes that new_path is well formed'''
+    os.environ['KUSANAGI_OUTPUT'] = new_path

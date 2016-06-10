@@ -43,20 +43,19 @@ class BaseControl(object):
         # load params from disk and pass them to set_params
         pass
         
-
 # GP based controller
 class RBFPolicy(RBFGP):
-    def __init__(self, m0, S0, maxU=[10], n_basis_functions=10, angle_idims=[], name='RBFGP'):
+    def __init__(self, m0, S0, maxU=[10], n_basis=10, angle_dims=[], name='RBFGP'):
         self.m0 = np.array(m0)
         self.S0 = np.array(S0)
         self.maxU = np.array(maxU)
-        self.n_basis_functions = n_basis_functions
-        self.angle_idims = angle_idims
+        self.n_basis = n_basis
+        self.angle_dims = angle_dims
         self.name = name
         # set the model to be a RBF with saturated outputs
         sat_func = partial(gSat, e=maxU)
 
-        policy_idims = len(self.m0) + len(self.angle_idims)
+        policy_idims = len(self.m0) + len(self.angle_dims)
         policy_odims = len(self.maxU)
         super(RBFPolicy, self).__init__(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name)
         
@@ -71,21 +70,21 @@ class RBFPolicy(RBFGP):
         # init policy inputs near the given initial state
         m0 = self.m0
         S0 = self.S0
-        if len(self.angle_idims)>0:
-            m0, S0 = gTrig2_np(np.array(m0)[None,:], np.array(S0)[None,:,:], self.angle_idims, len(m0))
+        if len(self.angle_dims)>0:
+            m0, S0 = gTrig2_np(np.array(m0)[None,:], np.array(S0)[None,:,:], self.angle_dims, len(m0))
             m0 = m0.squeeze(); S0 = S0.squeeze();
 
-        #self.inputs = np.random.multivariate_normal(m0,S0,n_basis_functions)
+        #self.inputs = np.random.multivariate_normal(m0,S0,n_basis)
         L_noise = np.linalg.cholesky(S0)
-        inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(self.n_basis_functions)]);
+        inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(self.n_basis)]);
         # init policy targets close to zero
-        targets = 0.1*np.random.randn(self.n_basis_functions,self.maxU.size)
+        targets = 0.1*np.random.randn(self.n_basis,self.maxU.size)
 
         # set the initial inputs and targets
         self.set_dataset(inputs,targets)
 
         # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
-        l0 = np.hstack([np.ones(self.m0.size-len(self.angle_idims)),0.7*np.ones(2*len(self.angle_idims)),1,0.01])
+        l0 = np.hstack([np.ones(self.m0.size-len(self.angle_dims)),0.7*np.ones(2*len(self.angle_dims)),1,0.01])
         self.set_loghyp(np.log(np.tile(l0,(self.maxU.size,1))))
         self.init_log_likelihood()
         self.init_predict()
@@ -119,9 +118,9 @@ class RandPolicy:
 
 # linear time varying policy
 class LocalLinearPolicy:
-    def __init__(self, z_nominal, u_nominal, maxU=[10], angle_idims=[]):
+    def __init__(self, z_nominal, u_nominal, maxU=[10], angle_dims=[]):
         self.maxU = np.array(maxU)
-        self.angle_idims = angle_idims
+        self.angle_dims = angle_dims
         self.H = len(u_nominal)
 
         self.u_nominal_ = np.array(u_nominal).squeeze()

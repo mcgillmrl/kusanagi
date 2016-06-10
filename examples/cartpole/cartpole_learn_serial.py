@@ -1,80 +1,88 @@
 import atexit
 import signal,sys
+#sys.path.append('/home/adaptation/achatr/Desktop/Summer2016/PILCO_clone/kusanagi')
 import numpy as np
-from matplotlib import pyplot as plt
 from functools import partial
+from ghost.regression.GPRegressor import SSGP_UI
 from ghost.learners.PILCO import PILCO
-from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from shell.plant import SerialPlant
+from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import RBFPolicy
 from utils import plot_results
+#np.random.seed(31337)
+np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
-    #np.random.seed(31337)
-    np.set_printoptions(linewidth=500)
-    # initliaze plant
-    dt = 0.1                                                         # simulation time step
-    model_parameters ={}                                             # simulation parameters
-    model_parameters['l'] = 0.5
-    model_parameters['m'] = 0.5
-    model_parameters['M'] = 0.5
-    model_parameters['b'] = 0.1
-    model_parameters['g'] = 9.82
-    x0 = [0,0,0,0]                                                   # initial state mean
-    S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
+    # setup learner parameters
+    # general parameters
+    J = 4                                                                   # number of random initial trials
+    N = 100                                                                 # learning iterations
     maxU = [10]
-    measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
-    plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU,baud_rate=4000000,port='/dev/ttyACM0')
-    draw_cp = CartpoleDraw(plant,0.033)                              # initializes visualization
-    draw_cp.start()
+    learner_params = {}
+    learner_params['x0'] = [0,0,0,0]                                        # initial state mean
+    learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
+    learner_params['angle_dims'] = [3]                                      # angle dimensions
+    learner_params['H'] = 4.0                                               # control horizon
+    learner_params['discount'] = 1.0                                        # discoutn factor
+    # plant
+    plant_params = {}
+    plant_params['dt'] = 0.1
+    plant_params['params'] = {'l': 0.5, 'm': 0.5, 'M': 0.5, 'b': 0.1, 'g': 9.82}
+    plant_params['noise'] = np.diag(np.ones(len(learner_params['x0']))*0.01**2)   # model measurement noise (randomizes the output of the plant)
+    plant_params['maxU'] = maxU
+    plant_params['state_indices'] = [0,2,3,1]
+    plant_params['baud_rate'] = 4000000
+    plant_params['port'] = '/dev/ttyACM0'
+    # policy
+    policy_params = {}
+    policy_params['m0'] = learner_params['x0']
+    policy_params['S0'] = learner_params['S0']
+    policy_params['n_basis'] = 10
+    policy_params['maxU'] = maxU
+    # dynamics model
+    dynmodel_params = {}
+    dynmodel_params['n_basis'] = 100
+    # cost function
+    cost_params = {}
+    cost_params['target'] = [0,0,0,np.pi]
+    cost_params['width'] = 0.25
+    cost_params['expl'] = 0.0
+    cost_params['pendulum_length'] = plant_params['params']['l']
 
-    atexit.register(plant.stop)
-    atexit.register(draw_cp.stop)
-
-    # initialize policy
-    angle_dims = [3]
-    policy = RBFPolicy(x0,S0,maxU,20, angle_dims)
-
-    # initialize cost function
-    cost_parameters = {}
-    cost_parameters['angle_dims'] = angle_dims
-    cost_parameters['target'] = [0,0,0,np.pi]
-    cost_parameters['width'] = 0.25
-    cost_parameters['expl'] = 0.0
-    cost_parameters['pendulum_length'] = model_parameters['l']
-    cost = partial(cartpole_loss, params=cost_parameters)
+    learner_params['plant'] = plant_params
+    learner_params['policy'] = policy_params
+    learner_params['dynmodel'] = dynmodel_params
+    learner_params['cost'] = cost_params
 
     # initialize learner
-    H = 4.0                                                          # controller horizon
-    H_steps = np.ceil(H/dt)
-    J = 4                                                            # number of random initial trials
-    N = 100                                                          # learning iterations
-    learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
+    learner = PILCO(learner_params, SerialPlant, RBFPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#,viz=CartpoleDraw)
+    atexit.register(learner.stop)
 
-    if learner.dynamics_model.X_ is None: #if we have no prior data
+    if learner.experience.n_samples() == 0: #if we have no prior data
         # gather data with random trials
         for i in xrange(J):
-            plant.reset_state()
-            learner.apply_controller(H=H,random_controls=True)
+            learner.plant.reset_state()
+            learner.apply_controller(random_controls=True)
     else:
-        plant.reset_state()
-        learner.apply_controller(H=H)
+        learner.plant.reset_state()
+        experience_data = learner.apply_controller()
         
         # plot results
         learner.init_rollout(derivs=False)
         plot_results(learner)
-        
+
+    # learning loop
     for i in xrange(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()
 
         # train policy
-        learner.train_policy(H=H)
+        learner.train_policy()
 
         # execute it on the robot
-        plant.reset_state()
-        learner.apply_controller(H=H)
-        
+        learner.plant.reset_state()
+        experience_data = learner.apply_controller()
+
         # plot results
         plot_results(learner)
 
