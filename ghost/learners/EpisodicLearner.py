@@ -37,9 +37,10 @@ class EpisodicLearner(object):
         # initialize learner state variables
         self.min_method = "L-BFGS-B"
         self.n_episodes = 0
-        self.angle_idims = params['angle_dims']
-        self.H = params['H']
-        self.discount = params['discount']
+        self.angle_idims = params['angle_dims'] if 'angle_dims' in params else []
+        self.H = params['H'] if 'H' in params else 10.0
+        self.discount = params['discount'] if 'discout' in params else 1
+        self.max_evals = params['max_evals'] if 'max_evals' in params else 150
         self.async_plant = async_plant
         self.learning_iteration = 0;
         self.n_evals = 0
@@ -208,7 +209,7 @@ class EpisodicLearner(object):
         parameter_shapes = [p.shape for p in p0]
         m_loss = utils.MemoizeJac(self.loss)
         try:
-            opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=1e-12, options={'maxiter': 125})
+            opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=1e-12, options={'maxiter': self.max_evals})
         except ValueError:
             print '' 
             print self.policy.get_params(symbolic=False)
