@@ -136,9 +136,15 @@ class LocalLinearPolicy(object):
         self.u_nominal_ = self.maxU*np.random.random((H_steps,len(self.maxU)))
         m0, S0 = utils.gTrig2_np(np.array(self.m0)[None,:], np.array(self.S0)[None,:,:], self.angle_dims, len(self.m0))
         self.filename = self.name+'_'+str(len(self.m0))+'_'+str(len(self.maxU))
-        self.z_nominal_ = np.tile(m0,(H_steps,1))
+        z0 = np.concatenate([m0.flatten(),S0.flatten()])
+        self.z_nominal_ = np.tile(z0,(H_steps,1))
+
         self.b_ = np.ones( (H_steps, len(self.maxU)) )
-        self.A_ = np.zeros( (H_steps, len(self.maxU), len(m0)) )
+        self.A_ = np.zeros( (H_steps, len(self.maxU), z0.size) )
+        print self.u_nominal_.shape
+        print self.z_nominal_.shape
+        print self.A_.shape
+        print self.b_.shape
 
         self.A = theano.shared(self.A_,borrow=True)
         self.b = theano.shared(self.b_,borrow=True)
@@ -157,18 +163,29 @@ class LocalLinearPolicy(object):
             A_t = self.A[t]
             b_t = self.b[t]
             if s is None:
-                s = np.zeros((D,D))
-            z = np.concatenate([m,s.flatten()])
-        else:
-            u_t = self.u_nominal_[t]
-            z_t = self.z_nominal_[t]
-            A_t = self.A_[t]
-            b_t = self.b_[t]
-            if s is None:
                 s = theano.tensor.zeros((D,D))
             z = theano.tensor.concatenate([m,s.flatten()])
+        else:
+            u_t = self.u_nominal.get_value()[t]
+            z_t = self.z_nominal.get_value()[t]
+            A_t = self.A.get_value()[t]
+            b_t = self.b.get_value()[t]
+            if s is None:
+                s = np.zeros((D,D))
+            z = np.concatenate([m,s.flatten()])
         self.t+=1
-
+        print '==='
+        print self.u_nominal_.shape
+        print self.z_nominal_.shape
+        print self.A_.shape
+        print self.b_.shape
+        print '---'
+        print u_t.shape
+        print b_t.shape
+        print A_t.shape
+        print z_t.shape
+        print z.shape
+        print u_t + b_t + A_t.dot(z - z_t)
         return u_t + b_t + A_t.dot(z - z_t)
 
     def get_params(self, symbolic=False):
