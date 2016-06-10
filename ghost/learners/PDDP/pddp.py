@@ -2,20 +2,41 @@ import numpy as np
 from utils import print_with_stamp, gTrig_np, gTrig2
 from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI
+from ghost.control import LocalLinearPolicy
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
 class PDDP(EpisodicLearner):
-    def __init__(self, plant, policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='PILCO', wrap_angles=False):
-        super(PDDP, self).__init__(plant, policy, cost, angle_idims, discount, experience, async_plant, name)
+    def __init__(self, params, plant_class, policy_class=LocalLinearPolicy, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PDDP', wrap_angles=False, filename_prefix=None):
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
         self.rollout=None
-        self.policy_gradients=None
+        self.policy_gradient=None
+        self.mx0 = np.array(params['x0']).squeeze()
+        self.Sx0 = np.array(params['S0']).squeeze()
+        self.angle_idims = params['angle_dims']
+        self.maxU = params['policy']['maxU']        
+
+        # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
+        dyn_idims = len(self.mx0) + len(self.angle_idims) + len(self.maxU)
+        # output dimensions are state dims
+        dyn_odims = len(self.mx0)
+        # initialize dynamics model (TODO pass this as argument to constructor)
+        if 'dynmodel' not in params:
+            params['dynmodel'] = {}
+        params['dynmodel']['idims'] = dyn_idims
+        params['dynmodel']['odims'] = dyn_odims
+
+        self.dynamics_model = dynmodel_class(**params['dynmodel'])
+        self.next_episode = 0
+
+        # initialise parent class
+        filename_prefix = name+'_'+self.dynamics_model.name if filename_prefix is None else filename_prefix
+        super(PDDP, self).__init__(params, plant_class, policy_class, cost_func,viz_class, experience, async_plant, name, filename_prefix)
 
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
-            of the system using the learn GP dynamics model '''
+            of the system using the learned GP dynamics model '''
         
         # define the function for a single propagation step
         def rollout_single_step(mx,Sx):
@@ -32,7 +53,7 @@ class PDDP(EpisodicLearner):
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
             mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
-            u_prev, ~, ~ = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
+            u_prev, _, _ = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
             
             # compute state control joint distribution
             n = Sxa.shape[0]; Da = Sxa.shape[1]; U = u.size
@@ -71,7 +92,6 @@ class PDDP(EpisodicLearner):
         H = theano.tensor.iscalar('H')
         gamma = theano.tensor.scalar('gamma')
         
-
         # For this, you'll need to read how theano.scan and theano.tensor.grad work ( look at pilco.py for an example )
         def forward_dynamics(mx, Sx):
             ''' This computes the Jacobian matrices Fu and Fx which satisfy the first order expansion of the dynamics.
@@ -137,9 +157,23 @@ class PDDP(EpisodicLearner):
             u_new = u_bar + delta_u
             return u_new
 
+        # TODO compile the previous functions in theano
 
-        def run_DDP():
 
+    def train_policy(self):
+        ''' Runs the trajectory optimization loop: 1. forward pass 2. backward propagation 3. update policy 4. repeat '''
+        
+        while self.n_evals < self.max_evals:
+            # forward pass
+
+            # backwards pass
+
+            # update policy
+
+            self.n_evals += 1
+        
+        self.n_evals=0
+        pass
 
     def train_dynamics(self):
         print_with_stamp('Training dynamics model',self.name)
