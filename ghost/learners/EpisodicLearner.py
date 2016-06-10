@@ -9,103 +9,48 @@ from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
 from scipy.optimize import minimize, basinhopping
 from matplotlib import pyplot as plt
+from functools import partial
 
+from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
 
-class ExperienceDataset(object):
-    def __init__(self, name='Experience', filename=None):
-        self.name = name
-        if filename is None:
-            self.filename = self.name+'_dataset'
-        else:
-            self.filename = filename+'_dataset'
-        try:
-            self.load()   
-        except IOError:
-            utils.print_with_stamp('Initialising new experience dataset [ Could not open %s.zip ]'%(self.filename),self.name)
-            self.time_stamps = []
-            self.states = []
-            self.actions = []
-            self.immediate_cost = []
-            self.curr_episode = -1
-            self.state_changed = False
-
-    def add_sample(self,t,x_t=None,u_t=None,c_t=None):
-        curr_episode = self.curr_episode
-        self.time_stamps[curr_episode].append(t)
-        self.states[curr_episode].append(x_t)
-        self.actions[curr_episode].append(u_t)
-        self.immediate_cost[curr_episode].append(c_t)
-        self.state_changed = True
-
-    def new_episode(self):
-        self.time_stamps.append([])
-        self.states.append([])
-        self.actions.append([])
-        self.immediate_cost.append([])
-        self.curr_episode += 1
-        self.state_changed = True
-
-    def load(self):
-        path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
-        with open(path,'rb') as f:
-            utils.print_with_stamp('Loading experience dataset from %s.zip'%(self.filename),self.name)
-            state = t_load(f)
-            self.set_state(state)
-        self.state_changed = False
-    
-    def save(self):
-        sys.setrecursionlimit(100000)
-        if self.state_changed:
-            path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
-            with open(path,'wb') as f:
-                utils.print_with_stamp('Saving experience dataset to %s.zip'%(self.filename),self.name)
-                t_dump(self.get_state(),f,2)
-            self.state_changed = False
-
-    def set_state(self,state):
-        i = utils.integer_generator()
-        self.time_stamps = state[i.next()]
-        self.states = state[i.next()]
-        self.actions = state[i.next()]
-        self.immediate_cost = state[i.next()]
-        self.curr_episode = state[i.next()]
-
-    def get_state(self):
-        return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
-
 class EpisodicLearner(object):
-    def __init__(self, plant, policy, cost=None, angle_idims=None, viz=None, discount=1, experience = None, async_plant=False, name='EpisodicLearner', filename=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
         self.name = name
-        self.plant = plant    # TODO allow for passing a class instead of an instace
-        self.policy = policy
-        # initialize vizualization class
-        if viz is not None:
-            self.viz = viz(plant,0.033)
-        else:
-            self.viz=None
-            
-        if filename is None:
-            self.filename = self.name+'_'+self.plant.name+'_'+self.policy.name
-        else:
-            self.filename = filename
+        # initialize plant
+        params['plant']['x0'] = params['x0']
+        params['plant']['S0'] = params['S0']
+        self.plant = plant_class(**params['plant'])
+        # initialize policy
+        params['policy']['angle_dims'] = params['angle_dims']
+        self.policy = policy_class(**params['policy'])
+        # set filename    
+        self.filename = self.name+'_'+self.plant.name+'_'+self.policy.name if filename_prefix is None else filename_prefix+'_'+self.plant.name+'_'+self.policy.name
+        # initialize cost
+        params['cost']['angle_dims'] = params['angle_dims']
+        self.cost = partial(cost_func, params=params['cost']) if cost_func is not None else None
+        # initialize vizualization
+        self.viz = viz_class(self.plant) if viz_class is not None else None
+        # initialize experience dataset
+        self.experience = ExperienceDataset(filename_prefix=self.filename) if experience is None else experience
+        
+        # initialize learner state variables
         self.min_method = "L-BFGS-B"
         self.n_episodes = 0
-        self.angle_idims = angle_idims
+        self.angle_idims = params['angle_dims']
+        self.H = params['H']
+        self.discount = params['discount']
         self.async_plant = async_plant
-        self.cost=None
-        self.experience = ExperienceDataset(filename=self.filename) if experience is None else experience
-        self.H = 10
-        self.discount = 1
         self.learning_iteration = 0;
         self.n_evals = 0
+
         # try loading from file, initialize from scratch otherwise
         try:
             self.load()   
         except IOError:
             utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
-            if cost is not None:
-                self.init_cost(cost)
+            if self.cost is not None:
+                self.init_cost(self.cost)
         self.state_changed = False
 
     def load(self):
@@ -164,11 +109,11 @@ class EpisodicLearner(object):
         Sx = theano.tensor.matrix('Sx')
         self.cost = theano.function((mx,Sx),self.cost_symbolic(mx,Sx), allow_input_downcast=True)
 
-    def apply_controller(self,H=float('inf'),random_controls=False):
+    def apply_controller(self,H=None,random_controls=False):
         utils.print_with_stamp('Starting data collection run',self.name)
-        if H < float('inf'):
-            utils.print_with_stamp('Running for %f seconds'%(H),self.name)
-            self.H = H
+        if H is  None:
+            H = self.H
+        utils.print_with_stamp('Running for %f seconds'%(H),self.name)
 
         if random_controls:
             policy = RandPolicy(self.policy.maxU)

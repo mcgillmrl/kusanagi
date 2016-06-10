@@ -58,7 +58,6 @@ if __name__ == '__main__':
 
     # TODO Load source experience (or use the plant to directly sample trajectories?
 
-    '''
     # sample source trajectories (or load experience data)
     tm.sample_trajectory_source(10)
 
