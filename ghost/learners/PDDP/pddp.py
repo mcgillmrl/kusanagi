@@ -61,8 +61,8 @@ class PDDP(EpisodicLearner):
             # compute state control joint distribution
             n = Sxa.shape[0]; Da = Sxa.shape[1]; U = u_prev.size
             idimsa = Da + U
-            mxu = theano.tensor.concatenate([mxa,u])
-            Sxu = theano.tensor.zeros((idimsa,idimsa))[1]
+            mxu = theano.tensor.concatenate([mxa,u_prev])
+            Sxu = theano.tensor.zeros((idimsa,idimsa))
             Sxu = theano.tensor.set_subtensor(Sxu[:Da,:Da], Sxa)
 
             # state control covariance without angle dimensions
