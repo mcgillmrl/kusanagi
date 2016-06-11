@@ -80,7 +80,7 @@ if __name__ == '__main__':
         #plot_results(learner) # TODO this does not work with PDDP
 
         # save latest state of the learner
-        learner.save()
+        #learner.save()     # TODO implement the policy.save method for LocalLinearPolicy
     
     sys.exit(0)
 

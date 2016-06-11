@@ -170,8 +170,9 @@ class LocalLinearPolicy(object):
                 s = np.zeros((D,D))
             z = np.concatenate([m,s.flatten()])
         self.t+=1
-
-        return u_t + b_t + A_t.dot(z - z_t)
+        
+        U = u_t.shape[0]
+        return u_t + b_t + A_t.dot(z - z_t), theano.tensor.zeros((U,U)), theano.tensor.zeros((D,U))
 
     def get_params(self, symbolic=False):
         if symbolic:

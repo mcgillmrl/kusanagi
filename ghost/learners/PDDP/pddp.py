@@ -59,7 +59,7 @@ class PDDP(EpisodicLearner):
             u_prev, _, _ = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
             
             # compute state control joint distribution
-            n = Sxa.shape[0]; Da = Sxa.shape[1]; U = u.size
+            n = Sxa.shape[0]; Da = Sxa.shape[1]; U = u_prev.size
             idimsa = Da + U
             mxu = theano.tensor.concatenate([mxa,u])
             Sxu = theano.tensor.zeros((idimsa,idimsa))[1]
