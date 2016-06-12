@@ -19,7 +19,7 @@ if __name__ == '__main__':
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
     learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
     learner_params['angle_dims'] = [3]                                      # angle dimensions
-    learner_params['H'] = 4.0                                               # control horizon
+    learner_params['H'] = 0.2                                              # control horizon
     learner_params['discount'] = 1.0                                        # discoutn factor
     # plant
     plant_params = {}
@@ -67,7 +67,7 @@ if __name__ == '__main__':
     # learning loop
     for i in xrange(N):
         # train the dynamics models given the collected data
-        learner.train_dynamics()
+        #learner.train_dynamics()
 
         # train policy
         learner.train_policy()
