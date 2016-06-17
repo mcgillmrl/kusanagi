@@ -58,7 +58,7 @@ if __name__ == '__main__':
             learner.apply_controller(random_controls=True)
     else:
         learner.plant.reset_state()
-        experience_data = learner.apply_controller()
+        learner.apply_controller()
         
         # plot results
         learner.init_rollout(derivs=False)
@@ -74,7 +74,7 @@ if __name__ == '__main__':
 
         # execute it on the robot
         learner.plant.reset_state()
-        experience_data = learner.apply_controller()
+        learner.apply_controller()
 
         # plot results
         plot_results(learner)

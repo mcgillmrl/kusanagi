@@ -1,15 +1,11 @@
+from ghost.regression.GPRegressor import GP_UI
 from ghost.learners.EpisodicLearner import EpisodicLearner
-from ghost.control import AdjustedPolicy
 
 class TrajectoryMatching(EpisodicLearner):
-    def __init__(self, target_plant, source_plant, source_policy, cost, angle_idims=None, discount=1, experience = None, async_plant=True, name='TrajectoryMatching'):
-        super(TrajectoryMatching, self).__init__(target_plant, source_policy, cost, angle_idims, discount, experience, async_plant, name)
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='TrajectoryMatching', wrap_angles=False, filename_prefix=None):
         # initialize source policy
-        self.source_plant = source_plant
-        self.source_policy = source_policy
-
-        # initialize adjusted policy
-        self.adjusted_policy = AdjustedPolicy(source_policy)
+        params['policy']['source_policy'] = params['source_policy']
+        super(TrajectoryMatching, self).__init__(params, plant_class, policy_class, cost_func,viz_class, experience, async_plant, name, filename_prefix)
     
     def set_source_domain(self):
         # TODO Set the source dynamics

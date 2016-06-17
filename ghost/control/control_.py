@@ -4,7 +4,7 @@ import os, sys
 import utils
 
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
-from ghost.regression.GPRegressor import RBFGP
+from ghost.regression.GPRegressor import RBFGP, SSGP_UI
 from ghost.control.saturation import gSat
 from functools import partial
 
@@ -45,26 +45,33 @@ class BaseControl(object):
         
 # GP based controller
 class RBFPolicy(RBFGP):
-    def __init__(self, m0, S0, maxU=[10], n_basis=10, angle_dims=[], name='RBFGP'):
-        self.m0 = np.array(m0)
-        self.S0 = np.array(S0)
-        self.maxU = np.array(maxU)
-        self.n_basis = n_basis
-        self.angle_dims = angle_dims
-        self.name = name
-        # set the model to be a RBF with saturated outputs
-        sat_func = partial(gSat, e=maxU)
+    def __init__(self, m0=None, S0=None, maxU=[10], n_basis=10, angle_dims=[], name='RBFGP', filename=None):
+        if filename is not None:
+            # try loading from file
+            self.name = name
+            self.X_ = None; self.Y_ = None; self.loghyp_=None
+            self.filename = filename
+            self.load()
+        else:
+            self.m0 = np.array(m0)
+            self.S0 = np.array(S0)
+            self.maxU = np.array(maxU)
+            self.n_basis = n_basis
+            self.angle_dims = angle_dims
+            self.name = name
+            # set the model to be a RBF with saturated outputs
+            sat_func = partial(gSat, e=maxU)
 
-        policy_idims = len(self.m0) + len(self.angle_dims)
-        policy_odims = len(self.maxU)
-        super(RBFPolicy, self).__init__(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name)
-        
-        # check if we need to initialize
-        params = self.get_params()
-        for p in params:
-            if p is None or p.size == 0:
-                self.set_default_parameters()
-                break
+            policy_idims = len(self.m0) + len(self.angle_dims)
+            policy_odims = len(self.maxU)
+            super(RBFPolicy, self).__init__(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name)
+            
+            # check if we need to initialize
+            params = self.get_params()
+            for p in params:
+                if p is None or p.size == 0:
+                    self.set_default_parameters()
+                    break
 
     def set_default_parameters(self):
         # init policy inputs near the given initial state
@@ -78,7 +85,7 @@ class RBFPolicy(RBFGP):
         L_noise = np.linalg.cholesky(S0)
         inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(self.n_basis)]);
         # init policy targets close to zero
-        teps,argets = 0.1*np.random.randn(self.n_basis,self.maxU.size)
+        targets = 0.1*np.random.randn(self.n_basis,self.maxU.size)
 
         # set the initial inputs and targets
         self.set_dataset(inputs,targets)
@@ -217,9 +224,11 @@ class LocalLinearPolicy(object):
             self.state_changed = False
 
 class AdjustedPolicy:
-    def __init__(self, source_policy):
-        # TODO initialize adjustment model
+    def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI):
         self.source_policy = source_policy
+        self.angle_dims = angle_dims
+        self.name = name
+        self.adjustment_model = adjustment_model_class(idims=self.source_policy.D, odims=self.source_policy.E) #TODO we may add a saturatinig function here
 
     def evaluate(self, m, S=None, derivs=False, symbolic=False):
         T = theano.tensor if symbolic else np
@@ -245,6 +254,9 @@ class AdjustedPolicy:
 
     def set_params(self,params):
         return self.adjustment_model.set_params(symbolic)
+
+    def load(self):
+        self.adjustment_model.load()
 
     def save(self):
         self.adjustment_model.save()

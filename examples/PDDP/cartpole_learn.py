@@ -56,12 +56,12 @@ if __name__ == '__main__':
         for i in xrange(J):
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
-    else:
-        learner.plant.reset_state()
-        experience_data = learner.apply_controller()
+    #else:
+    #    learner.plant.reset_state()
+    #    experience_data = learner.apply_controller()
         
         # plot results
-        learner.init_rollout(derivs=False)
+    #    learner.init_rollout(derivs=False)
         #plot_results(learner) # TODO this does not work with PDDP
 
     # learning loop

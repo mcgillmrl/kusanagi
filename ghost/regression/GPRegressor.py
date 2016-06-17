@@ -331,7 +331,7 @@ class GP(object):
     def load(self):
         path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
         with open(path,'rb') as f:
-            utils.print_with_stamp('Loading compiled GP with %d inputs and %d outputs'%(self.D,self.E),self.name)
+            utils.print_with_stamp('Loading compiled GP from %s'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
         self.state_changed = False

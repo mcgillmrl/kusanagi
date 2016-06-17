@@ -1,70 +1,77 @@
-import sys
+import os, sys
 import numpy as np
 from functools import partial
 
+from ghost.regression.GPRegressor import SSGP_UI
+from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.transfer.trajectory_matching import TrajectoryMatching
 from ghost.control import RBFPolicy
+from ghost.control import AdjustedPolicy
 
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from shell.plant import SerialPlant
 
-from utils import print_with_stamp
+import utils
+#np.random.seed(31337)
+np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
-    # SOURCE DOMAIN PARAMETERS
-    # initialize plant
-    source_dt = 0.1 
-    source_parameters ={}
-    source_parameters['l'] = 0.5
-    source_parameters['m'] = 0.5
-    source_parameters['M'z] = 0.5
-    source_parameters['b'] = 0.1
-    source_parameters['g'] = 9.82
-    source_x0 = [0,0,0,0]                                                   # initial state mean
-    source_S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
-    source_maxU = [10]
-    source_measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
-    source_plant = Cartpole(source_parameters,source_x0,source_S0,source_dt,source_measurement_noise)
-
-    # load learned source policy
-    angle_dims = [3]
-    source_policy = RBFPolicy(x0,S0,maxU,10, angle_dims, name='cartpole_source') #TODO remove unnecessary parameters from the input arguments
-    if not source_policy.model.trained:
-        print_with_stamp('Need a trained policy to start transfer','main')
-        sys.exit(0)
+    N = 10
+    # SOURCE DOMAIN 
+    # load source experience
+    utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
+    source_experience = ExperienceDataset(filename='PILCO_Cartpole_RBFGP_sat_SSGP_UI_dataset')
     
-    # initialize cost function
-    cost_parameters = {}
-    cost_parameters['angle_dims'] = angle_dims
-    cost_parameters['target'] = [0,0,0,np.pi]
-    cost_parameters['width'] = 0.25
-    cost_parameters['expl'] = 0.0
-    cost_parameters['pendulum_length'] = 0.5
-    cost = partial(cartpole_loss, params=cost_parameters)
+    #load source policy
+    source_policy = RBFPolicy(filename='RBFGP_sat_5_1_cpu_float64')
+    
+    # TARGET DOMAIN
+    utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'target_cartpole'))
+    target_params = {}
+    target_params['x0'] = [0,0,0,0]                                        # initial state mean
+    target_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
+    target_params['angle_dims'] = [3]                                      # angle dimensions
+    target_params['H'] = 4.0                                               # control horizon
+    target_params['discount'] = 1.0                                        # discoutn factor
+    # policy
+    policy_params = {}
+    policy_params['maxU'] = [10]
+    # initialize target plant
+    plant_params = {}
+    plant_params['dt'] = 0.1
+    plant_params['params'] = {'l': 0.5, 'm': 0.5, 'M': 0.5, 'b': 0.1, 'g': 9.82}
+    plant_params['noise'] = np.diag(np.ones(len(target_params['x0']))*0.01**2)   # model measurement noise (randomizes the output of the plant)
+    plant_params['maxU'] = policy_params['maxU']
+    plant_params['state_indices'] = [0,2,3,1]
+    plant_params['baud_rate'] = 4000000
+    plant_params['port'] = '/dev/ttyACM0'
+    # dynamics model
+    dynmodel_params = {}
+    dynmodel_params['n_basis'] = 100
+    # cost function
+    cost_params = {}
+    cost_params['target'] = [0,0,0,np.pi]
+    cost_params['width'] = 0.25
+    cost_params['expl'] = 0.0
+    cost_params['pendulum_length'] = plant_params['params']['l']
 
-    # TARGET DOMAIN PARAMETERS
-    dt = 0.1                                                         # simulation time step
-    model_parameters ={}                                             # simulation parameters
-    model_parameters['l'] = 0.5
-    model_parameters['m'] = 0.5
-    model_parameters['M'] = 0.5
-    model_parameters['b'] = 0.1
-    model_parameters['g'] = 9.82
-    measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
-    target_plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU,baud_rate=4000000,port='/dev/ttyACM0')
-   
+    target_params['source_policy'] = source_policy
+    target_params['source_experience'] = source_experience
+    target_params['plant'] = plant_params
+    target_params['policy'] = policy_params
+    target_params['dynmodel'] = dynmodel_params
+    target_params['cost'] = cost_params
+
     # initialize trajectory matcher
-    tm = TrajectoryMatching(target_plant=target_plant,source_policy=source_policy, cost=cost) # TODO give the option of using other adjusttment models
-
-    # TODO Load source experience (or use the plant to directly sample trajectories?
+    #TODO let the trajectory matcher receive a plant as input instead of the source experrience
+    tm = TrajectoryMatching(target_params, SerialPlant, AdjustedPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#,viz=CartpoleDraw)
 
     # sample source trajectories (or load experience data)
-    tm.sample_trajectory_source(10)
+    #tm.sample_trajectory_source(10)
 
     for i in xrange(N):
         # sample target trajecotry
-        tm.sample_trajectory_target(1)
-
+        tm.apply_controller()
+        tm.reset_state()
 
     sys.exit(0)
-    '''

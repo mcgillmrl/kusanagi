@@ -3,20 +3,25 @@ import utils
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 class ExperienceDataset(object):
     ''' Class used to store data from runs with a learning agent'''
-    def __init__(self, name='Experience', filename_prefix=None):
-        self.name = name
-        self.filename = self.name+'_dataset' if filename_prefix is None else filename_prefix+'_dataset'
+    def __init__(self, name='Experience', filename_prefix=None, filename=None):
+        if filename is not None:
+            self.name = name
+            self.filename=filename
+            self.load()
+        else:
+            self.name = name
+            self.filename = self.name+'_dataset' if filename_prefix is None else filename_prefix+'_dataset'
 
-        try:
-            self.load()   
-        except IOError:
-            utils.print_with_stamp('Initialising new experience dataset [ Could not open %s.zip ]'%(self.filename),self.name)
-            self.time_stamps = []
-            self.states = []
-            self.actions = []
-            self.immediate_cost = []
-            self.curr_episode = -1
-            self.state_changed = False
+            try:
+                self.load()   
+            except IOError:
+                utils.print_with_stamp('Initialising new experience dataset [ Could not open %s.zip ]'%(self.filename),self.name)
+                self.time_stamps = []
+                self.states = []
+                self.actions = []
+                self.immediate_cost = []
+                self.curr_episode = -1
+                self.state_changed = False
 
     def add_sample(self,t,x_t=None,u_t=None,c_t=None):
         curr_episode = self.curr_episode
