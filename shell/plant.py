@@ -21,7 +21,7 @@ class Plant(object):
         self.params = params
         self.x0 = x0
         self.S0= S0
-        self.x = np.array(x0,dtype=np.float64)
+        self.x = np.array(x0,dtype=np.float64).flatten()
         self.u = None
         self.t = 0
         self.dt = dt
@@ -84,8 +84,8 @@ class ODEPlant(Plant):
     def set_state(self, x):
         if (self.x is None or np.linalg.norm(x-self.x) > 1e-12):
             self.x = np.array(x,dtype=np.float64).flatten()
-            self.solver = self.solver.set_initial_value(x)
-            self.t = self.solver.t
+        self.solver = self.solver.set_initial_value(self.x)
+        self.t = self.solver.t
     
     def reset_state(self):
         print_with_stamp('Reset to inital state',self.name)

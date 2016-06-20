@@ -21,7 +21,7 @@ if __name__ == '__main__':
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
     learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
     learner_params['angle_dims'] = [3]                                      # angle dimensions
-    learner_params['H'] = 4.0                                               # control horizon
+    learner_params['H'] = 1000.0                                               # control horizon
     learner_params['discount'] = 1.0                                        # discoutn factor
     # plant
     plant_params = {}
@@ -60,6 +60,6 @@ if __name__ == '__main__':
     # gather data with random trials
     for i in xrange(J):
         learner.plant.reset_state()
-        learner.apply_controller(random_controls=True)
+        learner.apply_controller(learner_params['H'])
     
     sys.exit(0)

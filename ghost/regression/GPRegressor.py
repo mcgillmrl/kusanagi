@@ -87,10 +87,10 @@ class GP(object):
             assert self.X_.shape[1] == X_dataset.shape[1]
         if self.Y_ is not None:
             assert self.Y_.shape[1] == Y_dataset.shape[1]
-
+        
         # first, assign the numpy arrays to class members
-        self.X_ = X_dataset.astype(theano.config.floatX )
-        self.Y_ = Y_dataset.astype(theano.config.floatX)
+        self.X_ = X_dataset.astype( theano.config.floatX )
+        self.Y_ = Y_dataset.astype( theano.config.floatX )
         # dims = non_angle_dims + 2*angle_dims
         self.N = self.X_.shape[0]
         self.D = X_dataset.shape[1]

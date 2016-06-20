@@ -48,6 +48,7 @@ class RBFPolicy(RBFGP):
     def __init__(self, m0=None, S0=None, maxU=[10], n_basis=10, angle_dims=[], name='RBFGP', filename=None):
         if filename is not None:
             # try loading from file
+            self.uncertain_inputs = True
             self.name = name
             self.X_ = None; self.Y_ = None; self.loghyp_=None
             self.filename = filename
@@ -224,16 +225,17 @@ class LocalLinearPolicy(object):
             self.state_changed = False
 
 class AdjustedPolicy:
-    def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI):
+    def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI, use_control_input=True):
+        self.use_control_input = use_control_input
         self.source_policy = source_policy
         self.angle_dims = angle_dims
         self.name = name
         self.adjustment_model = adjustment_model_class(idims=self.source_policy.D, odims=self.source_policy.E) #TODO we may add a saturatinig function here
 
-    def evaluate(self, m, S=None, derivs=False, symbolic=False):
+    def evaluate(self, m, S=None, t=None, derivs=False, symbolic=False):
         T = theano.tensor if symbolic else np
         # get the output of the source policy
-        ret = self.source_policy.evaluate(t,m,derivs,symbolic)
+        ret = self.source_policy.evaluate(m,S,t,derivs,symbolic)
         
         # initialize the inputs to the policy adjustment function
         adj_input_m = m
@@ -242,9 +244,14 @@ class AdjustedPolicy:
         adj_D = adj_input_m.size
         adj_input_S = T.zeros((adj_D,adj_D))
         # TODO fill the covariance matrix appropriately if S is not None
-        adj_ret = self.adjustment_model.evaluate(t,m,S,derivs,symbolic)
-        # TODO fill the output covariance correctly
-        ret[0] += adj_ret[0]
+        if self.adjustment_model.trained == True:
+            if symbolic:
+                adj_ret = self.adjustment_model.predict_symbolic(adj_input_m,adj_input_S) #TODO change predict symbolic to evaluate
+            else:
+                adj_ret = self.adjustment_model.predict(adj_input_m,adj_input_S) #TODO change predict symbolic to evaluate
+            #adj_ret = self.adjustment_model.evaluate(t,m,S,derivs,symbolic)
+            # TODO fill the output covariance correctly
+            ret[0] += adj_ret[0]
         return ret
 
     def get_params(self, symbolic=False):
