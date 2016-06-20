@@ -1,8 +1,9 @@
 import numpy as np
-from utils import print_with_stamp, gTrig_np, gTrig2
+from utils import print_with_stamp, gTrig_np, gTrig2, gTrig2_np
 from ghost.learners.EpisodicLearner import *
 from ghost.regression.GPRegressor import GP_UI
 from ghost.control import LocalLinearPolicy
+from theano.tensor.nlinalg import matrix_inverse
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
@@ -42,7 +43,7 @@ class PDDP(EpisodicLearner):
             of the system using the learned GP dynamics model '''
         
         # define the function for a single propagation step
-        def rollout_single_step(mx,Sx):
+        def rollout_single_step(mx,Sx, u = None):
             ''' This function takes as an input the mean and covariance of the state at time t, and returns the 
             state and covariance of the next state (at time t+1) and the action at time t (same t as the input)
             '''
@@ -56,7 +57,10 @@ class PDDP(EpisodicLearner):
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
             mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
-            u_prev, _, _ = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
+            if u is None:
+                u_prev, _, _ = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
+            else:
+                u_prev = u
             
             # compute state control joint distribution
             n = Sxa.shape[0]; Da = Sxa.shape[1]; U = u_prev.size
@@ -89,7 +93,7 @@ class PDDP(EpisodicLearner):
             return [mx_next,Sx_next,u_prev]
 
         # define input variables
-        print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
+        print_with_stamp('Compiling forward dynamics/backprop/local_optimal_policy functions',self.name)
         mx = theano.tensor.vector('mx')
         Sx = theano.tensor.matrix('Sx')
         H = theano.tensor.iscalar('H')
@@ -103,36 +107,35 @@ class PDDP(EpisodicLearner):
             # this should return the list of all matrices (F_k)^u and (F_k)^x
             # ( Eq. (11) )
             [mx_next,Sx_next,u_prev] = rollout_single_step(mx, Sx)
-            mx_next_shape = theano.tensor.shape(mx_next)
-            Sx_next_shape = theano.tensor.shape(Sx_next)
-            deriv1 = theano.tensor.jacobian(theano.tensor.flatten(mx_next), mx)
-            deriv2 = theano.tensor.jacobian(theano.tensor.flatten(Sx_next), mx)
-            deriv3 = theano.tensor.jacobian(theano.tensor.flatten(mx_next), Sx)
-            deriv4 = theano.tensor.jacobian(theano.tensor.flatten(Sx_next), Sx)
-            deriv5 = theano.tensor.jacobian(theano.tensor.flatten(mx_next), u_prev)
-            deriv6 = theano.tensor.jacobian(theano.tensor.flatten(Sx_next), u_prev)
+            D = mx_next.shape[0]
+            U_size = u_prev.shape[0]
+            deriv1 = theano.tensor.jacobian(mx_next.flatten(), mx)
+            deriv2 = theano.tensor.jacobian(Sx_next.flatten(), mx)
+            deriv3 = theano.tensor.jacobian(mx_next.flatten(), Sx)
+            deriv4 = theano.tensor.jacobian(Sx_next.flatten(), Sx)
+            deriv5 = theano.tensor.jacobian(mx_next.flatten(), u_prev)
+            deriv6 = theano.tensor.jacobian(Sx_next.flatten(), u_prev)
 
-            # deriv1 = theano.tensor.reshape(deriv1, mx_next_shape)
-            # deriv3 = theano.tensor.reshape(deriv3, Sx_next_shape)
-            # deriv5 = theano.tensor.reshape(deriv5, mx_next_shape)
-            # deriv2 = theano.tensor.reshape(deriv2, mx_next_shape)
-            # deriv4 = theano.tensor.reshape(deriv4, Sx_next_shape)
-            # deriv6 = theano.tensor.reshape(deriv6, Sx_next_shape)
+            deriv1 = theano.tensor.reshape(deriv1, (D, D))
+            deriv2 = theano.tensor.reshape(deriv2, (D*D, D))
+            deriv3 = theano.tensor.reshape(deriv3, (D, D*D))
+            deriv4 = theano.tensor.reshape(deriv4, (D*D, D*D))
+            deriv5 = theano.tensor.reshape(deriv5, (D, U_size))
+            deriv6 = theano.tensor.reshape(deriv1, (D*D, U_size))
+
 
             Fx = theano.tensor.matrix('Fx')
             Fu = theano.tensor.matrix('Fu')
 
-            deriv1_rows = deriv1.shape[0]; deriv2_rows = deriv2.shape[0]
-            Fx_dims = deriv1_rows + deriv2_rows
-            Fx = theano.tensor.zeros((Fx_dims,Fx_dims))
-            Fx = theano.tensor.set_subtensor(Fx[:deriv1_rows,:deriv1_rows], deriv1)
-            Fx = theano.tensor.set_subtensor(Fx[deriv1_rows:,:deriv1_rows], deriv2)
-            Fx = theano.tensor.set_subtensor(Fx[:deriv1_rows,deriv1_rows:], deriv3)
-            Fx = theano.tensor.set_subtensor(Fx[deriv1_rows:,deriv1_rows:], deriv4)
+            Fx = theano.tensor.zeros((D*D + D, D*D + D))
+            Fx = theano.tensor.set_subtensor(Fx[:D,:D], deriv1)
+            Fx = theano.tensor.set_subtensor(Fx[D:,:D], deriv2)
+            Fx = theano.tensor.set_subtensor(Fx[:D,D:], deriv3)
+            Fx = theano.tensor.set_subtensor(Fx[D:,D:], deriv4)
             
-            Fu = theano.tensor.zeros((Fx_dims,deriv6.shape[1]))
-            Fu = theano.tensor.set_subtensor(Fu[:deriv1_rows,:],deriv5)
-            Fu = theano.tensor.set_subtensor(Fu[deriv1_rows:,:],deriv6)
+            Fu = theano.tensor.zeros((D+D*D, U_size))
+            Fu = theano.tensor.set_subtensor(Fu[:D,:],deriv5)
+            Fu = theano.tensor.set_subtensor(Fu[D:,:],deriv6)
 
             #z_next = theano.tensor.transpose(theano.tensor.concatenate(mx_next,theano.tensor.flatten(Sx_next)))
 
@@ -145,56 +148,74 @@ class PDDP(EpisodicLearner):
             # might need to create a new cost function that takes u as an optional input, so we can call self.cost_symbolic(mx,Sx,u)
             # you only need to use the mean of the cost to compute the derivatives ( See the paragraph after Eq 13 )
             # Here C is used in place of script L
-            C, _ = self.cost_symbolic(mx,Sx)
-            Cx = theano.tensor.jacobian(C, mx)
-            Cxx = theano.tensor.jacobian(Cx, mx)
-            Cu = theano.tensor.jacobian(C,u)
-            Cux = theano.tensor.jacobian(Cu,mx)
-            Cuu = theano.tensor.jacobian(Cu,u)
-            Qx = Cx + Vx*Fx
-            Qu = Cu + Vx*Fu
-            Qxx = Cxx + theano.tensor.transpose(Fx)*Vxx*Fx
-            Qux = Cux + theano.tensor.transpose(Fu)*Vxx*Fx
-            Quu = Cuu + theano.tensor.transpose(Fu)*Vxx*Fu
+            n = mx.shape[0]
+            n = n*n + n
+            m = u.shape[0]
+            z = theano.tensor.concatenate((mx, Sx.flatten()))
+            C, _ = self.cost_symbolic(z[:mx.shape[0]],z[mx.shape[0]:].reshape(Sx.shape),u = u)
+            Cx = theano.tensor.jacobian(C.flatten(), z)
+            Cxx = theano.tensor.jacobian(Cx.flatten(), z)
+            Cu = theano.tensor.jacobian(C.flatten(),u,disconnected_inputs='ignore')
+            Cux = theano.tensor.jacobian(Cu.flatten(),z,disconnected_inputs='ignore')
+            Cuu = theano.tensor.jacobian(Cu.flatten(),u,disconnected_inputs='ignore')
 
-            I = -theano.tensor.nlinalg.MatrixPinv(Quu)*Qu
-            L = -theano.tensor.nlinalg.MatrixPinv(Quu)*Qux
+            Cx = theano.tensor.reshape(Cx, (n,))
+            Cxx = theano.tensor.reshape(Cxx, (n,n))
+            Cu = theano.tensor.reshape(Cu, (m,))
+            Cux = theano.tensor.reshape(Cux, (m,n))
+            Cuu = theano.tensor.reshape(Cuu, (m,m))
 
-            V_prev = V + Qu*I
-            Vx_prev = Qx + Qu*L
-            Vxx_prev = Qxx + Qxu*L
+            Qx = Cx + Vx.dot(Fx)
+            Qu = Cu + Vx.dot(Fu)
+            Qxx = Cxx + theano.tensor.transpose(Fx).dot(Vxx.dot(Fx))
+            Qux = Cux + theano.tensor.transpose(Fu).dot(Vxx.dot(Fx))
+            Quu = Cuu + theano.tensor.transpose(Fu).dot(Vxx.dot(Fu))
+
+            I = -matrix_inverse(Quu).dot(Qu)
+            L = -matrix_inverse(Quu).dot(Qux)
+
+            V_prev = V + Qu.dot(I)
+            Vx_prev = Qx + Qu.dot(L)
+            Vxx_prev = Qxx + Qux.T.dot(L)
 
             return [V_prev, Vx_prev, Vxx_prev, I, L]
 
-        def locally_optimal_control(I, L, u_bar, z_bar, z):
-            #Here we represent the calulcation of deltau (Eq. 16) and its usage to compute u = u_bar + delta_u
-            delta_z = z - z_bar
-            delta_u = I + L*(delta_z)
-            u_new = u_bar + delta_u
-            return u_new
+        def locally_optimal_control(mx, Sx, I, L, u):
+            #Here we represent forward propagating the dynamics in order to get the new trajectory
+            z_bar = theano.tensor.concatenate((mx, Sx.flatten()))
+            mx_next, Sx_next, _ = rollout_single_step(mx, Sx, u)
+            z_new = theano.tensor.concatenate((mx_next, Sx_next.flatten()))
+            #Here we represent the calulcation of delta_u (Eq. 16) and its usage to compute u = u_bar + delta_u
+            delta_z = z_new - z_bar
+            delta_u = I + L.dot(delta_z)
+            u_new = u + delta_u
+            return mx_next, Sx_next, u_new
 
-        # TODO compile the previous functions in theano
+        #compile the previous functions in theano
         mx = theano.tensor.vector('mx')
         Sx = theano.tensor.matrix('Sx')
+        self.rollout_single_step_function = theano.function([mx, Sx], rollout_single_step(mx,Sx))
         self.forward_dynamics_function = theano.function([mx, Sx], forward_dynamics(mx,Sx))
+        print_with_stamp("Forward dynamics compiled",self.name)
         u = theano.tensor.vector('u')
-        V = theano.tensor.matrix('V')
+        V = theano.tensor.scalar('V')
         Vx = theano.tensor.vector('Vx')
         Vxx = theano.tensor.matrix('Vxx')
         Fx = theano.tensor.matrix('Fx')
         Fu = theano.tensor.matrix('Fu')
-        #self.backward_propagation_function = theano.function([mx,Sx,u,V,Vx,Vxx,Fx,Fu], backward_propagation(mx,Sx,u,V,Vx,Vxx,Fx,Fu))
+        self.backward_propagation_function = theano.function([mx,Sx,u,V,Vx,Vxx,Fx,Fu], backward_propagation(mx,Sx,u,V,Vx,Vxx,Fx,Fu))
+        print_with_stamp("Backprop compiled",self.name)
+        I = theano.tensor.vector('I')
+        L = theano.tensor.matrix('L')
+        self.locally_optimal_control_function = theano.function([mx, Sx, I, L, u], locally_optimal_control(mx, Sx, I, L, u))
+
 
     def train_policy(self):
         ''' Runs the trajectory optimization loop: 1. forward pass 2. backward propagation 3. update policy 4. repeat '''
         	#STEP 1: Use forward dynamics to generate Fx and Fu for each timestep. Requires the state from 0 to T
 
         	#STEP 2: Use backward propagation to create I and L for each timestep which is used to improve the control. For this we require state and action
-        	# 		 at each timestep, Fx and Fu at each timestep, and V, Vx, Vxx from the timestep following the current one. We initialize the first V, Vx, Vxx at time T
-        	# 		 to:
-            # V = Qu*I = Cu*(-Quu^-1 * Qu) = -Cu*Cu * Cuu^-1
-            # Vx = Qx + Qu*L = Cx + Cu*(-Quu^-1 * Qux) = Cx + -Cu*(Cuu^-1 * Cux)
-            # Vxx = Qxx + Qux*L = Cxx + -Cux*(Cuu^-1 * Cux))
+        	# 		 at each timestep, Fx and Fu at each timestep, and V, Vx, Vxx from the timestep following the current one.
 
         	#STEP 3: Forward propagate to get new optimal trajectory using new I and L. Our first action's delta_u is initialized as the matrix I and we calculate the
         	#		 t+1th step using the change between the nominal state z_bar and the new state z, and I and L to get delta_u for this state's action. For this we will
@@ -204,13 +225,13 @@ class PDDP(EpisodicLearner):
 
         #SETUP FOR STEP 1 
         H_steps = int(np.ceil(self.H/self.plant.dt))
-        print H_steps
 
-        Fx_list = [None for a0 in xrange(H_steps-1)] #for Fx_list and Fu_list, the ith index corresponds to the F which describes the dynamics between the i and i+1th step
-        Fu_list = [None for a0 in xrange(H_steps-1)]
+        Fx_list = [None for a0 in xrange(H_steps)] #for Fx_list and Fu_list, the ith index corresponds to the F which describes the dynamics between the i and i+1th step
+        Fu_list = [None for a0 in xrange(H_steps)]
         mx_list = [None for a0 in xrange(H_steps)]
         Sx_list = [None for a0 in xrange(H_steps)]
-        u_list = [None for a0 in xrange(H_steps-1)]
+        u_list = [None for a0 in xrange(H_steps)]
+        z_nominal = [None for a0 in xrange(H_steps)]
 
         #SETUP FOR STEP 2
         V_list = [None for a0 in xrange(H_steps)]
@@ -220,44 +241,48 @@ class PDDP(EpisodicLearner):
         L_list = [None for a0 in xrange(H_steps)]
 
         #SETUP FOR STEP 3
-        #locally_optimal_control_function = theano.function([u_new])
 
         #MAIN LOOP
         while self.n_evals < self.max_evals:
             
             #STEP 1
+            print_with_stamp('Starting forward dynamics',self.name)
             mx_list[0] = np.array(self.plant.x0)
             Sx_list[0] = np.array(self.plant.S0)
-            print len(Fx_list)
-            print "FIRST ONE"
             for i in xrange(0,H_steps-1):
                 Fx_list[i], Fu_list[i], mx_list[i+1], Sx_list[i+1], u_list[i] = self.forward_dynamics_function(mx_list[i],Sx_list[i])
-            print len(Fx_list)
-            print "THAT WAS len(Fx_list)"
-            print [mx_list[-1]]
-            print "THAT WAS mx_list[-1]"
+            Fx_list[H_steps-1], Fu_list[H_steps-1], _, _, u_list[H_steps-1] = self.forward_dynamics_function(mx_list[H_steps-1],Sx_list[H_steps-1])
+
+            for i in xrange(0,H_steps):
+                [temp_mean, temp_var] = gTrig2_np(np.array(mx_list[i])[None,:], np.array(Sx_list[i])[None,:,:], self.angle_idims, len(mx_list[i]))
+                mx_list[i] = temp_mean.flatten()
+                Sx_list[i] = temp_var.reshape((len(mx_list[i]),len(mx_list[i])))
+                z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
+                #z_nominal[i] = np.concatenate([temp_mean.flatten(),temp_var.flatten()])
+            zin = np.array(z_nominal)
+            self.policy.set_params(zin = zin)
 
             #STEP 2
-
-            C_last, _ = self.cost
-            Cx_last = theano.tensor.jacobian(C_last, mx_list[-1])
-            Cxx_last = theano.tensor.jacobian(Cx_last, mx_list[-1])
-            Cu_last = theano.tensor.jacobian(C_last,u_list[-1])
-            Cux_last = theano.tensor.jacobian(Cu_last,mx_list[-1])
-            Cuu_last = theano.tensor.jacobian(Cu_last,u_list[-1])
-            # WE NEED A u_list SOMEHOW!!!!
-
-            V_list[H_steps-1] = -Cu_last*Cu_last*theano.tensor.nlinalg.MatrixPinv(Cuu_last)
-            Vx_list[H_steps-1] = Cx_last + -(Cu_last)*(theano.tensor.nlinalg.MatrixPinv(Cuu_last)*Cux_last)
-            Vxx_list[H_steps-1] = Cxx_last + -(Cux_last)*(theano.tensor.nlinalg.MatrixPinv(Cuu_last) * Cux_last)
+            print_with_stamp('Starting backpropagation',self.name)
+            n = len(self.plant.x0)
+            n = n*n + n
+            V_list[-1] = 0
+            Vx_list[-1] = np.zeros((n,))
+            Vxx_list[-1] = np.zeros((n,n))
 
             for i in reversed(xrange(1,H_steps)):
-                V_list[i-1], Vx_list[i-1], Vxx_list[i-1], I_list[i], L_list[i] = self.backward_propagation_function(mx_list[i],Sx_list[i],V[i],Vx[i],Vxx[i],Fx[i],Fu[i])
+                V_list[i-1], Vx_list[i-1], Vxx_list[i-1], I_list[i], L_list[i] = self.backward_propagation_function(mx_list[i],Sx_list[i],u_list[i],V_list[i],Vx_list[i],Vxx_list[i],Fx_list[i],Fu_list[i])
+            _, _, _, I_list[0], L_list[0] = self.backward_propagation_function(mx_list[0],Sx_list[0],u_list[0],V_list[0],Vx_list[0],Vxx_list[0],Fx_list[0],Fu_list[0])
 
-            # # update policy
-            # u_list[0] = I_list 
-            # for i in xrange(1,H_steps):
+            self.policy.set_params(Bin = np.array(I_list)) #this is I
+            self.policy.set_params(Ain = np.array(L_list)) #this is L
 
+            #STEP 3
+            print_with_stamp('Starting policy update',self.name)
+            for i in xrange(0,H_steps):
+                _, _, u_list[i] = self.rollout_single_step_function(mx_list[i], Sx_list[i])
+            uin = np.array(u_list)
+            self.policy.set_params(uin = uin)
 
             self.n_evals += 1
         

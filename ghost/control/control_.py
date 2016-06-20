@@ -176,9 +176,8 @@ class LocalLinearPolicy(object):
             b_t = self.b.get_value()[t]
             if s is None:
                 s = np.zeros((D,D))
-            z = np.concatenate([m,s.flatten()])
+            z = np.concatenate([m.flatten(),s.flatten()])
         self.t+=1
-        
         U = u_t.shape[0]
         return u_t + b_t + A_t.dot(z - z_t), theano.tensor.zeros((U,U)), theano.tensor.zeros((D,U))
 
@@ -188,18 +187,22 @@ class LocalLinearPolicy(object):
         else:
             return (self.u_nominal.get_value(),self.z_nominal.get_value(),self.A.get_value(),self.b.get_value())
 
-    def set_params(self,Ain,Bin,uin,zin):
-        self.A_= Ain.astype(theano.config.floatX)
-        self.A.set_value(self.A_,borrow=True)
+    def set_params(self,Ain = None,Bin = None ,uin = None,zin = None):
+        if Ain is not None:
+            self.A_= Ain.astype(theano.config.floatX)
+            self.A.set_value(self.A_,borrow=True)
 
-        self.B_= Ain.astype(theano.config.floatX)
-        self.B.set_value(self.B_,borrow=True)
+        if Bin is not None:
+            self.B_= Bin.astype(theano.config.floatX)
+            self.b.set_value(self.B_,borrow=True)
 
-        self.u_= uin.astype(theano.config.floatX)
-        self.u.set_value(self.u_,borrow=True)
+        if uin is not None:
+            self.u_= uin.astype(theano.config.floatX)
+            self.u_nominal.set_value(self.u_,borrow=True)
 
-        self.z_= zin.astype(theano.config.floatX)
-        self.z.set_value(self.z_,borrow=True)
+        if zin is not None:
+            self.z_= zin.astype(theano.config.floatX)
+            self.z_nominal.set_value(self.z_,borrow=True)
 
     def load(self):
         # load the parameters of the policy

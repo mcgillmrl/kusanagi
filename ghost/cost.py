@@ -1,8 +1,9 @@
 import theano
+import numpy as np
 import theano.tensor as T
 from theano.tensor.nlinalg import matrix_inverse
 from theano.tensor.nlinalg import det
-from utils import print_with_stamp,gTrig2
+from utils import print_with_stamp,gTrig2, gTrig_np
 
 def linear_loss(mx,Sx,params,absolute=True):
     # Quadratic penalty function
@@ -17,18 +18,28 @@ def linear_loss(mx,Sx,params,absolute=True):
 
 def quadratic_loss(mx,Sx,params,u=None):
     # Quadratic penalty function
-    Q = T.constant(params['Q'],dtype=mx.dtype)
-    target = T.constant(params['target'],dtype=mx.dtype)
+    if not 'Q' in params:
+        Q = T.eye(Sx.shape[0])
+    else:
+         Q = T.constant(params['Q'],dtype=mx.dtype)
+    if len(params['angles']) > 0:
+        target = gTrig_np(params['target'],params['angles']).flatten()   
+        target = T.constant(target,dtype=mx.dtype)
+    else:
+        target = T.constant(params['target'],dtype=mx.dtype)
     delta = mx-target
     deltaQ = delta.T.dot(Q)
     SxQ = Sx.dot(Q)  
     if u is None:
         m_cost = T.sum(Sx*Q) + deltaQ.dot(delta)
     else:
+        if not 'R' in params:
+            R = T.eye(u.shape[0])
+        else:
+            R = T.constant(params['R'],dtype=mx.dtype)
         m_cost = T.sum(Sx*Q) + deltaQ.dot(delta)
-        R = T.constant(params['R'],dtype=mx.dtype)
         m_cost = m_cost + T.transpose(u)*R*u
-    s_cost = 2*T.sum(SxQ.dot(SxQ)) + 4*deltaQ.dot(Sx).dot(deltaiQ.T)
+    s_cost = 2*T.sum(SxQ.dot(SxQ)) + 4*deltaQ.dot(Sx).dot(deltaQ.T)
 
     return m_cost, s_cost
 

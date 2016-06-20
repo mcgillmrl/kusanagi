@@ -4,6 +4,7 @@ import numpy as np
 from functools import partial
 from ghost.regression.GPRegressor import SSGP_UI
 from ghost.learners.PDDP import PDDP
+from ghost.cost import quadratic_loss
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import LocalLinearPolicy
 from utils import plot_results
@@ -38,6 +39,7 @@ if __name__ == '__main__':
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
+    cost_params['angles'] = learner_params['angle_dims']
     cost_params['width'] = 0.25
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
@@ -48,7 +50,7 @@ if __name__ == '__main__':
     learner_params['cost'] = cost_params
 
     # initialize learner
-    learner = PDDP(learner_params, Cartpole, LocalLinearPolicy, cartpole_loss, dynmodel_class=SSGP_UI, viz_class=CartpoleDraw)
+    learner = PDDP(learner_params, Cartpole, LocalLinearPolicy, quadratic_loss, dynmodel_class=SSGP_UI, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data
