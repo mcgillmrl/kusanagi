@@ -3,7 +3,7 @@ import numpy as np
 import theano.tensor as T
 from theano.tensor.nlinalg import matrix_inverse
 from theano.tensor.nlinalg import det
-from utils import print_with_stamp,gTrig2, gTrig_np
+from utils import print_with_stamp,gTrig2, gTrig_np, gTrig
 
 def linear_loss(mx,Sx,params,absolute=True):
     # Quadratic penalty function
@@ -22,11 +22,7 @@ def quadratic_loss(mx,Sx,params,u=None):
         Q = T.eye(Sx.shape[0])
     else:
          Q = T.constant(params['Q'],dtype=mx.dtype)
-    if len(params['angles']) > 0:
-        target = gTrig_np(params['target'],params['angles']).flatten()   
-        target = T.constant(target,dtype=mx.dtype)
-    else:
-        target = T.constant(params['target'],dtype=mx.dtype)
+    target = T.constant(params['target'],dtype=mx.dtype)  
     delta = mx-target
     deltaQ = delta.T.dot(Q)
     SxQ = Sx.dot(Q)  

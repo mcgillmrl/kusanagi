@@ -14,13 +14,13 @@ np.set_printoptions(linewidth=500)
 if __name__ == '__main__':
     # setup learner parameters
     # general parameters
-    J = 1                                                                   # number of random initial trials
-    N = 100                                                                 # learning iterations
+    J = 4                                                                   # number of random initial trials
+    N = 50                                                                 # learning iterations
     learner_params = {}
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
     learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
-    learner_params['angle_dims'] = [3]                                      # angle dimensions
-    learner_params['H'] = 0.2                                              # control horizon
+    learner_params['angle_dims'] = []                                      # angle dimensions
+    learner_params['H'] = 4.0                                              # control horizon
     learner_params['discount'] = 1.0                                        # discoutn factor
     # plant
     plant_params = {}
@@ -39,7 +39,7 @@ if __name__ == '__main__':
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
-    cost_params['angles'] = learner_params['angle_dims']
+    #cost_params['angles'] = learner_params['angle_dims']
     cost_params['width'] = 0.25
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     # learning loop
     for i in xrange(N):
         # train the dynamics models given the collected data
-        #learner.train_dynamics()
+        learner.train_dynamics()
 
         # train policy
         learner.train_policy()

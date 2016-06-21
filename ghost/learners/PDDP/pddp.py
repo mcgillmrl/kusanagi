@@ -41,45 +41,21 @@ class PDDP(EpisodicLearner):
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
             of the system using the learned GP dynamics model '''
-        
-        # define the function for a single propagation step
-        def rollout_single_step(mx,Sx, u = None):
-            ''' This function takes as an input the mean and covariance of the state at time t, and returns the 
-            state and covariance of the next state (at time t+1) and the action at time t (same t as the input)
-            '''
+                # define the function for a single propagation step
+        def rollout_single_step(mx,Sx):
             D=mx.shape[0]
 
-            # convert angles from input distribution to its complex representation
-            mxa,Sxa,Ca = gTrig2(mx,Sx,self.angle_idims,self.mx0.size)
-
-            # compute the control signal for the next step( This is different from PILCO: the control 
-            # is a linear function  of the Gaussian belief vector, so its output is deterministic)
+            # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
-            mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
-            if u is None:
-                u_prev, _, _ = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
-            else:
-                u_prev = u
+            u_prev, Su, Cu = self.policy.evaluate(mx, Sx_,symbolic=True)
             
             # compute state control joint distribution
-            n = Sxa.shape[0]; Da = Sxa.shape[1]; U = u_prev.size
-            idimsa = Da + U
-            mxu = theano.tensor.concatenate([mxa,u_prev])
-            Sxu = theano.tensor.zeros((idimsa,idimsa))
-            Sxu = theano.tensor.set_subtensor(Sxu[:Da,:Da], Sxa)
-
-            # state control covariance without angle dimensions
-	    if Ca is not None:
-	        na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
-                Dna = len(na_dims)
-                Sx_xa = theano.tensor.zeros((D,Da))
-                Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,:Dna], Sx[:,na_dims])
-                Sx_xa = theano.tensor.set_subtensor(Sx_xa[:D,Dna:], Sx.dot(Ca))
-                Sxu_ = theano.tensor.zeros((D,Da+U))
-                Sxu_ = theano.tensor.set_subtensor(Sxu_[:D,:Da], Sx_xa)
-	    else:
-                Sxu_ = Sxu
+            mxu = theano.tensor.concatenate([mx,u_prev])
+            q = Sx.dot(Cu)
+            Sxu_up = theano.tensor.concatenate([Sx,q],axis=1)
+            Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
+            Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0)
 
             #  predict the change in state given current state-action
             # C_deltax = inv (Sxu) dot Sxu_deltax
@@ -87,8 +63,11 @@ class PDDP(EpisodicLearner):
 
             # compute the successor state distribution
             mx_next = mx + m_deltax
-            Sx_deltax = Sxu_.dot(C_deltax)
+            Sx_deltax = Sxu[:D,:].dot(C_deltax)
             Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
+
+            #  get cost:
+            mcost, Scost = self.cost_symbolic(mx_next,Sx_next)
 
             return [mx_next,Sx_next,u_prev]
 
@@ -183,7 +162,7 @@ class PDDP(EpisodicLearner):
         def locally_optimal_control(mx, Sx, I, L, u):
             #Here we represent forward propagating the dynamics in order to get the new trajectory
             z_bar = theano.tensor.concatenate((mx, Sx.flatten()))
-            mx_next, Sx_next, _ = rollout_single_step(mx, Sx, u)
+            mx_next, Sx_next, _ = rollout_single_step(mx, Sx)
             z_new = theano.tensor.concatenate((mx_next, Sx_next.flatten()))
             #Here we represent the calulcation of delta_u (Eq. 16) and its usage to compute u = u_bar + delta_u
             delta_z = z_new - z_bar
@@ -207,7 +186,7 @@ class PDDP(EpisodicLearner):
         print_with_stamp("Backprop compiled",self.name)
         I = theano.tensor.vector('I')
         L = theano.tensor.matrix('L')
-        self.locally_optimal_control_function = theano.function([mx, Sx, I, L, u], locally_optimal_control(mx, Sx, I, L, u))
+        #self.locally_optimal_control_function = theano.function([mx, Sx, I, L, u], locally_optimal_control(mx, Sx, I, L, u))
 
 
     def train_policy(self):
@@ -246,24 +225,22 @@ class PDDP(EpisodicLearner):
         while self.n_evals < self.max_evals:
             
             #STEP 1
-            print_with_stamp('Starting forward dynamics',self.name)
+            #print_with_stamp('Starting forward dynamics',self.name)
             mx_list[0] = np.array(self.plant.x0)
             Sx_list[0] = np.array(self.plant.S0)
             for i in xrange(0,H_steps-1):
+                print mx_list[i]
+                print Sx_list[i]
                 Fx_list[i], Fu_list[i], mx_list[i+1], Sx_list[i+1], u_list[i] = self.forward_dynamics_function(mx_list[i],Sx_list[i])
             Fx_list[H_steps-1], Fu_list[H_steps-1], _, _, u_list[H_steps-1] = self.forward_dynamics_function(mx_list[H_steps-1],Sx_list[H_steps-1])
 
             for i in xrange(0,H_steps):
-                [temp_mean, temp_var] = gTrig2_np(np.array(mx_list[i])[None,:], np.array(Sx_list[i])[None,:,:], self.angle_idims, len(mx_list[i]))
-                mx_list[i] = temp_mean.flatten()
-                Sx_list[i] = temp_var.reshape((len(mx_list[i]),len(mx_list[i])))
                 z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
-                #z_nominal[i] = np.concatenate([temp_mean.flatten(),temp_var.flatten()])
             zin = np.array(z_nominal)
             self.policy.set_params(zin = zin)
 
             #STEP 2
-            print_with_stamp('Starting backpropagation',self.name)
+            #print_with_stamp('Starting backpropagation',self.name)
             n = len(self.plant.x0)
             n = n*n + n
             V_list[-1] = 0
@@ -278,7 +255,7 @@ class PDDP(EpisodicLearner):
             self.policy.set_params(Ain = np.array(L_list)) #this is L
 
             #STEP 3
-            print_with_stamp('Starting policy update',self.name)
+            #print_with_stamp('Starting policy update',self.name)
             for i in xrange(0,H_steps):
                 _, _, u_list[i] = self.rollout_single_step_function(mx_list[i], Sx_list[i])
             uin = np.array(u_list)
