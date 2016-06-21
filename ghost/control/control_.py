@@ -140,8 +140,9 @@ class LocalLinearPolicy(object):
 
     def set_default_parameters(self):
         H_steps = int(np.ceil(self.H/self.dt))
+        self.state_changed = False
         # set random (uniform distribution) controls
-        self.u_nominal_ = self.maxU*np.random.random((H_steps,len(self.maxU)))
+        self.u_nominal_ = self.maxU*(2*np.random.random((H_steps,len(self.maxU))) - 1)
         m0, S0 = utils.gTrig2_np(np.array(self.m0)[None,:], np.array(self.S0)[None,:,:], self.angle_dims, len(self.m0))
         self.filename = self.name+'_'+str(len(self.m0))+'_'+str(len(self.maxU))
         z0 = np.concatenate([m0.flatten(),S0.flatten()])
@@ -179,7 +180,7 @@ class LocalLinearPolicy(object):
             z = np.concatenate([m.flatten(),s.flatten()])
         self.t+=1
         U = u_t.shape[0]
-        return u_t + b_t + A_t.dot(z - z_t), theano.tensor.zeros((U,U)), theano.tensor.zeros((D,U))
+        return u_t + b_t + A_t.dot(z - z_t), 0.01*theano.tensor.eye(U), theano.tensor.zeros((D,U))
 
     def get_params(self, symbolic=False):
         if symbolic:
@@ -214,8 +215,8 @@ class LocalLinearPolicy(object):
     
     def save(self):
         # save policy and experience separately
-        self.policy.save()
-        self.experience.save()
+        # self.policy.save()
+        # self.experience.save()
 
         # save learner state
         sys.setrecursionlimit(100000)

@@ -22,6 +22,7 @@ if __name__ == '__main__':
     learner_params['angle_dims'] = []                                      # angle dimensions
     learner_params['H'] = 4.0                                              # control horizon
     learner_params['discount'] = 1.0                                        # discoutn factor
+    learner_params['max_evals'] = 10
     # plant
     plant_params = {}
     plant_params['dt'] = 0.1
@@ -65,10 +66,13 @@ if __name__ == '__main__':
         # plot results
     #    learner.init_rollout(derivs=False)
         #plot_results(learner) # TODO this does not work with PDDP
+    learner.plant.reset_state()
+    learner.apply_controller()
 
     # learning loop
     for i in xrange(N):
         # train the dynamics models given the collected data
+
         learner.train_dynamics()
 
         # train policy
@@ -76,13 +80,22 @@ if __name__ == '__main__':
 
         # execute it on the robot
         learner.plant.reset_state()
+
+        learner.policy.t = 0
+        u,z,a,b = learner.policy.get_params()
+        print u
+        print z
+        print a
+        print b
+        raw_input()
+
         experience_data = learner.apply_controller()
 
         # plot results
         #plot_results(learner) # TODO this does not work with PDDP
 
         # save latest state of the learner
-        #learner.save()     # TODO implement the policy.save method for LocalLinearPolicy
+        learner.save()
     
     sys.exit(0)
 

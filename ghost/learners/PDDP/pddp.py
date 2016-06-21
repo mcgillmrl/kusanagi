@@ -38,6 +38,16 @@ class PDDP(EpisodicLearner):
         filename_prefix = name+'_'+self.dynamics_model.name if filename_prefix is None else filename_prefix
         super(PDDP, self).__init__(params, plant_class, policy_class, cost_func,viz_class, experience, async_plant, name, filename_prefix)
 
+    def save(self):
+        ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
+        super(PDDP,self).save()
+        self.dynamics_model.save()
+
+    def load(self):
+        ''' Loads the state of the learner, including the parameters of the policy and the dynamics model'''
+        super(PDDP,self).load()
+        self.dynamics_model.load()
+
     def init_rollout(self, derivs=False):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
             of the system using the learned GP dynamics model '''
@@ -167,7 +177,7 @@ class PDDP(EpisodicLearner):
             #Here we represent the calulcation of delta_u (Eq. 16) and its usage to compute u = u_bar + delta_u
             delta_z = z_new - z_bar
             delta_u = I + L.dot(delta_z)
-            u_new = u + delta_u
+            u_new = u + 0.1*delta_u
             return mx_next, Sx_next, u_new
 
         #compile the previous functions in theano
@@ -200,11 +210,14 @@ class PDDP(EpisodicLearner):
         	#		 t+1th step using the change between the nominal state z_bar and the new state z, and I and L to get delta_u for this state's action. For this we will
         	#		 need to use rollout_single_step without the policy.evaluate step, and instead use the new optimal action. This should return the sequence of states and
         	#		 actions that correspond to the new optimal trajectory. 
-        self.init_rollout()
 
-        #SETUP FOR STEP 1 
+        
+        self.policy.t = 0
+        if self.init_rollout is None or self.forward_dynamics_function is None or self.backward_propagation_function is None or self.rollout_single_step_function is None or self.locally_optimal_control_function is None:
+            self.init_rollout()
+
+        #SETUP FOR STEP 1
         H_steps = int(np.ceil(self.H/self.plant.dt))
-
         Fx_list = [None for a0 in xrange(H_steps)] #for Fx_list and Fu_list, the ith index corresponds to the F which describes the dynamics between the i and i+1th step
         Fu_list = [None for a0 in xrange(H_steps)]
         mx_list = [None for a0 in xrange(H_steps)]
@@ -219,18 +232,20 @@ class PDDP(EpisodicLearner):
         I_list = [None for a0 in xrange(H_steps)]
         L_list = [None for a0 in xrange(H_steps)]
 
-        #SETUP FOR STEP 3
 
         #MAIN LOOP
+        print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)
+        self.learning_iteration += 1
         while self.n_evals < self.max_evals:
-            
+            print_with_stamp('Current policy iteration number: [%d]'%(self.n_evals), self.name, same_line=True)
+            self.policy.t = 0
+
+
             #STEP 1
             #print_with_stamp('Starting forward dynamics',self.name)
             mx_list[0] = np.array(self.plant.x0)
             Sx_list[0] = np.array(self.plant.S0)
             for i in xrange(0,H_steps-1):
-                print mx_list[i]
-                print Sx_list[i]
                 Fx_list[i], Fu_list[i], mx_list[i+1], Sx_list[i+1], u_list[i] = self.forward_dynamics_function(mx_list[i],Sx_list[i])
             Fx_list[H_steps-1], Fu_list[H_steps-1], _, _, u_list[H_steps-1] = self.forward_dynamics_function(mx_list[H_steps-1],Sx_list[H_steps-1])
 
@@ -238,6 +253,11 @@ class PDDP(EpisodicLearner):
                 z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
             zin = np.array(z_nominal)
             self.policy.set_params(zin = zin)
+            self.policy.t = 0
+
+            _, temp, _, _ = self.policy.get_params()
+            print [ zi[:4] for zi in temp]
+            raw_input()
 
             #STEP 2
             #print_with_stamp('Starting backpropagation',self.name)
@@ -250,9 +270,11 @@ class PDDP(EpisodicLearner):
             for i in reversed(xrange(1,H_steps)):
                 V_list[i-1], Vx_list[i-1], Vxx_list[i-1], I_list[i], L_list[i] = self.backward_propagation_function(mx_list[i],Sx_list[i],u_list[i],V_list[i],Vx_list[i],Vxx_list[i],Fx_list[i],Fu_list[i])
             _, _, _, I_list[0], L_list[0] = self.backward_propagation_function(mx_list[0],Sx_list[0],u_list[0],V_list[0],Vx_list[0],Vxx_list[0],Fx_list[0],Fu_list[0])
-
+            self.policy.t = 0
             self.policy.set_params(Bin = np.array(I_list)) #this is I
             self.policy.set_params(Ain = np.array(L_list)) #this is L
+
+
 
             #STEP 3
             #print_with_stamp('Starting policy update',self.name)
@@ -260,11 +282,14 @@ class PDDP(EpisodicLearner):
                 _, _, u_list[i] = self.rollout_single_step_function(mx_list[i], Sx_list[i])
             uin = np.array(u_list)
             self.policy.set_params(uin = uin)
+            self.policy.t = 0
+
+
 
             self.n_evals += 1
-        
+            self.policy.state_changed = True
+        print "\n"
         self.n_evals=0
-
     def train_dynamics(self):
         print_with_stamp('Training dynamics model',self.name)
         
