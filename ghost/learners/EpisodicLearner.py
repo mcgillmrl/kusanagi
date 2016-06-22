@@ -154,7 +154,7 @@ class EpisodicLearner(object):
                 c_t = self.cost(x_t, Sx_t)
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
-                print t,x_t,u_t,c_t[0]
+                #print t,x_t,u_t,c_t[0]
             else:
                 # append to experience dataset
                 self.experience.append(t,x_t,u_t,0)

@@ -71,8 +71,9 @@ if __name__ == '__main__':
 
     # learning loop
     for i in xrange(N):
-        # train the dynamics models given the collected data
-
+        #train the dynamics models given the collected data
+        print str(i) + " iterations done. Paused program, press ENTER to continue."
+        raw_input()
         learner.train_dynamics()
 
         # train policy
@@ -82,12 +83,14 @@ if __name__ == '__main__':
         learner.plant.reset_state()
 
         learner.policy.t = 0
-        u,z,a,b = learner.policy.get_params()
-        print u
-        print z
-        print a
-        print b
-        raw_input()
+        
+        #DEBUGGING
+        # u,z,a,b = learner.policy.get_params()
+        # print u
+        # print z
+        # print a
+        # print b
+        #raw_input()
 
         experience_data = learner.apply_controller()
 
