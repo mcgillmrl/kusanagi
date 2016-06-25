@@ -270,6 +270,9 @@ class GP(object):
 
         # reshape output variables
         M = T.stack(mean).T.flatten()
+        #S = T.stack(mean).T.flatten()
+        #M = mx
+        #S = Sx
         S = T.diag(T.stack(variance).T.flatten())
 
         return M,S
@@ -707,11 +710,13 @@ class RBFGP(GP_UI):
         super(RBFGP, self).__init__(X_dataset,Y_dataset,idims=idims,odims=odims,name=name,profile=profile,hyperparameter_gradients=True)
 
     def set_state(self,state):
+        self.sat_func = state[-2]
         self.loghyp_full = state[-1]
-        super(RBFGP,self).set_state(state[:-1])
+        super(RBFGP,self).set_state(state[:-2])
 
     def get_state(self):
         state = super(RBFGP,self).get_state()
+        state.append(self.sat_func)
         state.append(self.loghyp_full)
         return state
     

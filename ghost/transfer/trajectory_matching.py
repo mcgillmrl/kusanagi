@@ -22,8 +22,8 @@ class TrajectoryMatching(EpisodicLearner):
         # initialize dynamics model (TODO pass this as argument to constructor)
         if 'dynmodel' not in params:
             params['dynmodel'] = {}
-        params['dynmodel']['idims'] = dyn_idims
-        params['dynmodel']['odims'] = dyn_odims
+        params['dynmodel']['idims'] = 2*dyn_odims
+        params['dynmodel']['odims'] = len(self.maxU)#dyn_odims
 
         self.inverse_dynamics_model = dynmodel_class(**params['dynmodel'])
         self.next_episode = 0
@@ -82,8 +82,6 @@ class TrajectoryMatching(EpisodicLearner):
         if self.inverse_dynamics_model.should_recompile:
             # reinitialize log likelihood
             self.inverse_dynamics_model.init_log_likelihood()
-            # reinitialize rollot and policy gradients
-            self.init_rollout(derivs=True)
  
         self.inverse_dynamics_model.train()
         utils.print_with_stamp('Done training inverse dynamics model',self.name)
@@ -95,19 +93,23 @@ class TrajectoryMatching(EpisodicLearner):
         Y = []
         
         for i in xrange(max(0,total_trajectories-n_trajectories),total_trajectories):
+            # for every state transition in the source experience, use the target inverse dynamics
+            # to find an action that would produce the desired transition
             x = np.array(self.source_experience.states[i])
-            x_ = utils.gTrig_np(x, self.angle_idims)
-            Xi = np.hstack((x_[:-1],x_[1:])) 
-            ui = np.array(self.source_experience.actions[i])
-
-            u = np.stack([ self.inverse_dynamics_model.predict(xi)[0] for xi in Xi ])
+            x_s = utils.gTrig_np(x, self.angle_idims)
+            # source transitions
+            t_s = np.hstack((x_s[:-1],x_s[1:])) 
+            # source actions
+            u_s = np.array(self.source_experience.actions[i])
+            # target actions
+            u_t = np.stack([ self.inverse_dynamics_model.predict(t_s_i)[0] for t_s_i in t_s ])
             
             if self.policy.use_control_input:
-                X.append( np.hstack( [x_[:-1] , ui[:-1]] ))
+                X.append( np.hstack( [x_s[:-1] , u_s[:-1]] ))
             else:
-                X.append( x_[:-1] )
+                X.append( x_s[:-1] )
 
-            Y.append( u )
+            Y.append( u_t )
 
         X = np.vstack(X)
         Y = np.vstack(Y)

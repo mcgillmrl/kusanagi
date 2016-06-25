@@ -1,7 +1,8 @@
 import atexit
-import signal,sys
+import signal,sys,os
 #sys.path.append('/home/adaptation/achatr/Desktop/Summer2016/PILCO_clone/kusanagi')
 import numpy as np
+import utils
 from functools import partial
 from ghost.regression.GPRegressor import SSGP_UI
 from ghost.learners.PILCO import PILCO
@@ -12,6 +13,8 @@ from utils import plot_results
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
+    # setup output directory
+    #utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
     # setup learner parameters
     # general parameters
     J = 100                                                                 # number of random initial trials
@@ -48,12 +51,15 @@ if __name__ == '__main__':
     learner_params['cost'] = cost_params
 
     # initialize learner
-    learner = PILCO(learner_params, Cartpole, RBFPolicy, cartpole_loss, dynmodel_class=SSGP_UI, viz_class=CartpoleDraw)
+    learner = PILCO(learner_params, Cartpole, RBFPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
+    draw_cp = CartpoleDraw(learner.plant)
+    draw_cp.start()
+    atexit.register(draw_cp.stop)
 
     # gather data with random trials
     for i in xrange(J):
         learner.plant.reset_state()
-        learner.apply_controller(random_controls=True)
+        learner.apply_controller()
     
     sys.exit(0)

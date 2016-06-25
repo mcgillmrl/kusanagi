@@ -111,6 +111,13 @@ class EpisodicLearner(object):
         self.cost = theano.function((mx,Sx),self.cost_symbolic(mx,Sx), allow_input_downcast=True)
 
     def apply_controller(self,H=None,random_controls=False):
+        '''
+        Starts the plant and applies the current policy to the plant for a duration specified by H (in seconds). If  H is not set, it will run for self.H seconds. If the random_controls paramter is set to True, the current policy is ignored and random controls between [-self.policy.maxU, self.policy.maxU ] will be sent 
+        to the plant
+
+        @param H Horizon for applying controller (in seconds)
+        @param random_controls Boolean flag that specifies whether to use the current policy or apply random controls
+        '''
         utils.print_with_stamp('Starting data collection run',self.name)
         if H is  None:
             H = self.H

@@ -301,4 +301,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('SSGP_UI')
+    test_random('GP')

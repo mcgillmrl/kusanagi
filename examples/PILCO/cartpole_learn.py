@@ -1,6 +1,7 @@
 import atexit
-import signal,sys
+import signal,sys,os
 import numpy as np
+import utils
 from functools import partial
 from ghost.regression.GPRegressor import SSGP_UI
 from ghost.learners.PILCO import PILCO
@@ -11,6 +12,8 @@ from utils import plot_results
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
+    # setup output directory
+    #utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
     # setup learner parameters
     # general parameters
     J = 4                                                                   # number of random initial trials
@@ -48,7 +51,7 @@ if __name__ == '__main__':
     learner_params['cost'] = cost_params
 
     # initialize learner
-    learner = PILCO(learner_params, Cartpole, RBFPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#,viz=CartpoleDraw)
+    learner = PILCO(learner_params, Cartpole, RBFPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data

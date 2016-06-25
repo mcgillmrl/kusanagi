@@ -135,15 +135,15 @@ class PILCO(EpisodicLearner):
             q = Sxa.dot(Cu)
             Sxu_up = theano.tensor.concatenate([Sxa,q],axis=1)
             Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
-            Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0)
+            Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
 
             # state control covariance without angle dimensions
-    	    if Ca is not None:
-    	        na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
-                Sx_xa = theano.tensor.concatenate([Sx[:,na_dims],Sx.dot(Ca)],axis=1)
-                Sxu_ =  theano.tensor.concatenate([Sx_xa,Sx_xa.dot(Cu)],axis=1)
-    	    else:
-                Sxu_ = Sxu
+	    if Ca is not None:
+	        na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
+	        Sx_xa = theano.tensor.concatenate([Sx[:,na_dims],Sx.dot(Ca)],axis=1)  # [D] x [Da] 
+	        Sxu_ =  theano.tensor.concatenate([Sx_xa,Sx_xa.dot(Cu)],axis=1) # [D] x [Da+U]
+	    else:
+                Sxu_ = Sxu[:D,:] # [D] x [D+U]
 
             #  predict the change in state given current state-action
             # C_deltax = inv (Sxu) dot Sxu_deltax

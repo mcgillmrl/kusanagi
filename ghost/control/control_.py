@@ -46,22 +46,23 @@ class BaseControl(object):
 # GP based controller
 class RBFPolicy(RBFGP):
     def __init__(self, m0=None, S0=None, maxU=[10], n_basis=10, angle_dims=[], name='RBFGP', filename=None):
+        self.maxU = np.array(maxU)
+        self.n_basis = n_basis
+        self.angle_dims = angle_dims
+        self.name = name
+        # set the model to be a RBF with saturated outputs
+        sat_func = partial(gSat, e=maxU)
+
         if filename is not None:
             # try loading from file
             self.uncertain_inputs = True
-            self.name = name
             self.X_ = None; self.Y_ = None; self.loghyp_=None
             self.filename = filename
+            self.sat_func = sat_func
             self.load()
         else:
             self.m0 = np.array(m0)
             self.S0 = np.array(S0)
-            self.maxU = np.array(maxU)
-            self.n_basis = n_basis
-            self.angle_dims = angle_dims
-            self.name = name
-            # set the model to be a RBF with saturated outputs
-            sat_func = partial(gSat, e=maxU)
 
             policy_idims = len(self.m0) + len(self.angle_dims)
             policy_odims = len(self.maxU)
@@ -234,6 +235,7 @@ class AdjustedPolicy:
         self.source_policy = source_policy
         self.angle_dims = angle_dims
         self.name = name
+        self.maxU=maxU
         self.adjustment_model = adjustment_model_class(idims=self.source_policy.D, odims=self.source_policy.E) #TODO we may add a saturatinig function here
 
     def evaluate(self, m, S=None, t=None, derivs=False, symbolic=False):

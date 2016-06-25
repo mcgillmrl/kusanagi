@@ -2,7 +2,7 @@ import os, sys
 import numpy as np
 from functools import partial
 
-from ghost.regression.GPRegressor import SSGP_UI,SSGP
+from ghost.regression.GPRegressor import SSGP_UI,SSGP,GP,GP_UI
 from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.transfer.trajectory_matching import TrajectoryMatching
 from ghost.control import RBFPolicy
@@ -17,10 +17,11 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     N = 100
+    J = 2
     # SOURCE DOMAIN 
     # load source experience
-    utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'cartpole_serial'))
-    source_experience = ExperienceDataset(filename='PILCO_SSGP_UI_SerialPlant_RBFGP_sat_dataset')
+    utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'source_cartpole'))
+    source_experience = ExperienceDataset(filename='PILCO_SSGP_UI_Cartpole_RBFGP_sat_dataset')
     
     #load source policy
     source_policy = RBFPolicy(filename='RBFGP_sat_5_1_cpu_float64')
@@ -36,11 +37,11 @@ if __name__ == '__main__':
     # policy
     policy_params = {}
     policy_params['maxU'] = [10]
-    policy_params['adjustment_model_class'] = SSGP
+    policy_params['adjustment_model_class'] = GP
     # initialize target plant
     plant_params = {}
     plant_params['dt'] = 0.1
-    plant_params['params'] = {'l': 0.5, 'm': 0.5, 'M': 0.5, 'b': 0.1, 'g': 9.82}
+    plant_params['params'] = {'l': 0.5, 'm': 1.0, 'M': 0.5, 'b': 0.1, 'g': 9.82}
     plant_params['noise'] = np.diag(np.ones(len(target_params['x0']))*0.01**2)   # model measurement noise (randomizes the output of the plant)
     #plant_params['maxU'] = policy_params['maxU']
     #plant_params['state_indices'] = [0,2,3,1]
@@ -48,7 +49,7 @@ if __name__ == '__main__':
     #plant_params['port'] = '/dev/ttyACM0'
     # dynamics model
     dynmodel_params = {}
-    dynmodel_params['n_basis'] = 100
+    #dynmodel_params['n_basis'] = 100
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
@@ -61,17 +62,16 @@ if __name__ == '__main__':
     target_params['plant'] = plant_params
     target_params['policy'] = policy_params
     target_params['dynmodel'] = dynmodel_params
+    target_params['inv_dynmodel'] = dynmodel_params
     target_params['cost'] = cost_params
 
     # initialize trajectory matcher
     #TODO let the trajectory matcher receive a plant as input instead of the source experrience
-    tm = TrajectoryMatching(target_params, Cartpole, AdjustedPolicy, cartpole_loss, dynmodel_class=SSGP, viz_class=CartpoleDraw)
-
-    # sample source trajectories (or load experience data)
-    #tm.sample_trajectory_source(10)
+    tm = TrajectoryMatching(target_params, Cartpole, AdjustedPolicy, cartpole_loss, dynmodel_class=GP, viz_class=CartpoleDraw)
 
     for i in xrange(N):
         # sample target trajecotry
+        tm.plant.reset_state()
         tm.apply_controller()
 
         tm.train_inverse_dynamics()
