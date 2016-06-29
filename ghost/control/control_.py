@@ -157,9 +157,8 @@ class LocalLinearPolicy(object):
         self.u_nominal = theano.shared(self.u_nominal_,borrow=True)
         self.z_nominal = theano.shared(self.z_nominal_,borrow=True)
 
-    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False):
+    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False, alpha = 1, u = None):
         D = m.shape[0]
-
         if t is not None:
             self.t = t
         t = self.t
@@ -180,8 +179,17 @@ class LocalLinearPolicy(object):
                 s = np.zeros((D,D))
             z = np.concatenate([m.flatten(),s.flatten()])
         self.t+=1
+        if u is not None:
+            u_t = u
         U = u_t.shape[0]
-        return u_t + b_t + A_t.dot(z - z_t), 0.01*theano.tensor.eye(U), theano.tensor.zeros((D,U))
+        new_action  = u_t + alpha*(b_t + A_t.dot(z - z_t))
+        if symbolic:
+            new_action = theano.tensor.maximum(new_action, -self.maxU)
+            new_action = theano.tensor.minimum(new_action, self.maxU)
+        else:
+            new_action[new_action>self.maxU] = self.maxU[new_action>self.maxU]
+            new_action[new_action<-self.maxU] = self.maxU[new_action<-self.maxU]
+        return new_action, 0.01*theano.tensor.eye(U), theano.tensor.zeros((D,U))
 
     def get_params(self, symbolic=False):
         if symbolic:

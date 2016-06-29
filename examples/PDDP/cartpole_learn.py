@@ -22,7 +22,7 @@ if __name__ == '__main__':
     learner_params['angle_dims'] = []                                      # angle dimensions
     learner_params['H'] = 4.0                                              # control horizon
     learner_params['discount'] = 1.0                                        # discoutn factor
-    learner_params['max_evals'] = 10
+    learner_params['max_evals'] = 200
     # plant
     plant_params = {}
     plant_params['dt'] = 0.1
@@ -40,7 +40,11 @@ if __name__ == '__main__':
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
-    #cost_params['angles'] = learner_params['angle_dims']
+    cost_params['angi'] = [3]
+    cost_params['D'] = 4
+    Q = np.zeros((5,5))
+    Q[0,0] = 1; Q[0,-2] = plant_params['params']['l']; Q[-2,0] = plant_params['params']['l']; Q[-2,-2] = plant_params['params']['l']**2; Q[-1,-1]=plant_params['params']['l']**2
+    cost_params['Q'] = Q
     cost_params['width'] = 0.25
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
@@ -56,6 +60,7 @@ if __name__ == '__main__':
 
     if learner.experience.n_samples() == 0: #if we have no prior data
         # gather data with random trials
+        print "RUNNING RANDOM TRIALS"
         for i in xrange(J):
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
@@ -71,9 +76,11 @@ if __name__ == '__main__':
 
     # learning loop
     for i in xrange(N):
-        #train the dynamics models given the collected data
+        
         print str(i) + " iterations done. Paused program, press ENTER to continue."
-        raw_input()
+        #raw_input()
+
+        #train the dynamics models given the collected data
         learner.train_dynamics()
 
         # train policy
@@ -83,7 +90,7 @@ if __name__ == '__main__':
         learner.plant.reset_state()
 
         learner.policy.t = 0
-        
+        learner.save()        
         #DEBUGGING
         # u,z,a,b = learner.policy.get_params()
         # print u
