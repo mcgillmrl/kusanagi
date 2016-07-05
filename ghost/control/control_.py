@@ -7,6 +7,7 @@ from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from ghost.regression.GPRegressor import RBFGP, SSGP_UI
 from ghost.control.saturation import gSat
 from functools import partial
+from utils import gTrig2, gTrig2_np
 
 class BaseControl(object):
     '''
@@ -149,7 +150,7 @@ class LocalLinearPolicy(object):
         z0 = np.concatenate([m0.flatten(),S0.flatten()])
         self.z_nominal_ = np.tile(z0,(H_steps,1))
 
-        self.b_ = np.ones( (H_steps, len(self.maxU)) )
+        self.b_ = np.zeros( (H_steps, len(self.maxU)) )
         self.A_ = np.zeros( (H_steps, len(self.maxU), z0.size) )
 
         self.A = theano.shared(self.A_,borrow=True)
@@ -157,7 +158,7 @@ class LocalLinearPolicy(object):
         self.u_nominal = theano.shared(self.u_nominal_,borrow=True)
         self.z_nominal = theano.shared(self.z_nominal_,borrow=True)
 
-    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False, alpha = 1, u = None):
+    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False, alpha = 1, u = None, use_gTrig = False):
         D = m.shape[0]
         if t is not None:
             self.t = t
@@ -169,7 +170,10 @@ class LocalLinearPolicy(object):
             b_t = self.b[t]
             if s is None:
                 s = theano.tensor.zeros((D,D))
-            z = theano.tensor.concatenate([m,s.flatten()])
+            z = theano.tensor.concatenate([m.flatten(),s.flatten()])
+            if theano.tensor.neq(z.shape[0],z_t.shape[0]):
+                m,s,_ =  gTrig2(m, s, self.angle_dims, len(self.m0))
+                z = theano.tensor.concatenate([m.flatten(),s.flatten()])
         else:
             u_t = self.u_nominal.get_value()[t]
             z_t = self.z_nominal.get_value()[t]
@@ -177,6 +181,8 @@ class LocalLinearPolicy(object):
             b_t = self.b.get_value()[t]
             if s is None:
                 s = np.zeros((D,D))
+            if use_gTrig:
+                m,s,_ = gTrig2_np(m, s, self.angle_dims, D)
             z = np.concatenate([m.flatten(),s.flatten()])
         self.t+=1
         if u is not None:

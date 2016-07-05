@@ -16,14 +16,14 @@ def linear_loss(mx,Sx,params,absolute=True):
 
     return m_cost, s_cost
 
-def quadratic_loss(mx,Sx,params,u=None, with_angles = True):
+def quadratic_loss(mx,Sx,params,u=None, use_gTrig = True):
     # Quadratic penalty function
     if not 'Q' in params:
         Q = T.eye(Sx.shape[0])
     else:
          Q = T.constant(params['Q'],dtype=mx.dtype)
     target = T.constant(params['target'],dtype=mx.dtype)
-    if 'angi' in params and with_angles:
+    if 'angi' in params and use_gTrig:
         target, _, _= gTrig2(target, Sx, params['angi'], params['D'])
         mx, Sx, _ = gTrig2(mx, Sx, params['angi'], params['D'])
     delta = mx-target
@@ -33,7 +33,8 @@ def quadratic_loss(mx,Sx,params,u=None, with_angles = True):
         m_cost = T.sum(Sx*Q) + deltaQ.dot(delta)
     else:
         if not 'R' in params:
-            R = T.zeros(u.shape[0])
+            R = T.zeros((u.shape[0],u.shape[0]))
+            #R = T.eye(u.shape[0])
         else:
             R = T.constant(params['R'],dtype=mx.dtype)
         m_cost = T.sum(Sx*Q) + deltaQ.dot(delta)

@@ -34,6 +34,7 @@ if __name__ == '__main__':
     policy_params['m0'] = learner_params['x0']
     policy_params['H'] = learner_params['H']
     policy_params['dt'] = plant_params['dt']
+    policy_params['angle_dims'] = learner_params['angle_dims']
     # dynamics model
     dynmodel_params = {}
     dynmodel_params['n_basis'] = 100
@@ -41,7 +42,7 @@ if __name__ == '__main__':
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
     cost_params['angi'] = [3]
-    cost_params['D'] = 4
+    cost_params['D'] = len(cost_params['target'])
     Q = np.zeros((5,5))
     Q[0,0] = 1; Q[0,-2] = plant_params['params']['l']; Q[-2,0] = plant_params['params']['l']; Q[-2,-2] = plant_params['params']['l']**2; Q[-1,-1]=plant_params['params']['l']**2
     cost_params['Q'] = Q
@@ -89,7 +90,6 @@ if __name__ == '__main__':
         # execute it on the robot
         learner.plant.reset_state()
 
-        learner.policy.t = 0
         learner.save()        
         #DEBUGGING
         # u,z,a,b = learner.policy.get_params()
@@ -98,8 +98,9 @@ if __name__ == '__main__':
         # print a
         # print b
         #raw_input()
-
-        experience_data = learner.apply_controller()
+        for i in xrange(J):
+            learner.policy.t = 0
+            experience_data = learner.apply_controller()
 
         # plot results
         #plot_results(learner) # TODO this does not work with PDDP
@@ -108,4 +109,3 @@ if __name__ == '__main__':
         learner.save()
     
     sys.exit(0)
-

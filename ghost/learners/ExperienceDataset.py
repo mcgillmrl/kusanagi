@@ -71,3 +71,11 @@ class ExperienceDataset(object):
     def get_state(self):
         return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
 
+    def reset(self):
+        utils.print_with_stamp('Resetting experience dataset',self.name)
+        self.time_stamps = []
+        self.states = []
+        self.actions = []
+        self.immediate_cost = []
+        self.curr_episode = -1
+        self.state_changed = False

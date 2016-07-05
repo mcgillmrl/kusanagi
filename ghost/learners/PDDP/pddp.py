@@ -54,15 +54,15 @@ class PDDP(EpisodicLearner):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
             of the system using the learned GP dynamics model '''
                 # define the function for a single propagation step
-        def rollout_single_step(mx,Sx, alpha = 1, eval_t = None, u=None, with_angles = True):
+        def rollout_single_step(mx,Sx, alpha = 1, eval_t = None, u=None, use_gTrig = False):
             D=mx.shape[0]
-
+                
             # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
-            u_prev, Su, Cu = self.policy.evaluate(mx, Sx_,symbolic=True, alpha = alpha, t = eval_t, u=u)
-            
+            u_prev, Su, Cu = self.policy.evaluate(mx, Sx_,symbolic=True, alpha = alpha, t = eval_t, u=u, use_gTrig = use_gTrig)
             # compute state control joint distribution
+            #mx, Sx, _ = gTrig2(mx, Sx, self.angle_idims, len(self.mx0))
             mxu = theano.tensor.concatenate([mx,u_prev])
             q = Sx.dot(Cu)
             Sxu_up = theano.tensor.concatenate([Sx,q],axis=1)
@@ -79,7 +79,7 @@ class PDDP(EpisodicLearner):
             Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
             #  get cost:
-            mcost, Scost = self.cost_symbolic(mx_next,Sx_next, with_angles = with_angles)
+            #mcost, Scost = self.cost_symbolic(mx_next,Sx_next)
 
             return [mx_next,Sx_next,u_prev]
 
@@ -97,9 +97,7 @@ class PDDP(EpisodicLearner):
             # TODO use the rollout single step file to do the forward dynamics
             # this should return the list of all matrices (F_k)^u and (F_k)^x
             # ( Eq. (11) )
-            mx, Sx, _ = gTrig2(mx, Sx, self.angle_idims, mx.shape[0])
-            [mx_next,Sx_next,u_prev] = rollout_single_step(mx, Sx, with_angles = False)
-            mx_next, Sx_next, _ = gTrig2(mx_next, Sx_next, self.angle_idims, mx.shape[0])
+            [mx_next,Sx_next,u_prev] = rollout_single_step(mx, Sx)
             z = theano.tensor.concatenate((mx.flatten(),Sx.flatten()))
             z_next = theano.tensor.concatenate((mx_next.flatten(),Sx_next.flatten()))
             z_next_shape = z_next.shape[0]
@@ -121,7 +119,7 @@ class PDDP(EpisodicLearner):
             n = n*n + n
             m = u.shape[0]
             z = theano.tensor.concatenate((mx, Sx.flatten()))
-            C, _ = self.cost_symbolic(z[:mx.shape[0]],z[mx.shape[0]:].reshape(Sx.shape),u = u, with_angles = False)
+            C, _ = self.cost_symbolic(z[:mx.shape[0]],z[mx.shape[0]:].reshape(Sx.shape),u = u)
             Cx = theano.tensor.jacobian(C.flatten(), z)
             Cxx = theano.tensor.jacobian(Cx.flatten(), z)
             Cu = theano.tensor.jacobian(C.flatten(),u,disconnected_inputs='ignore')
@@ -281,12 +279,11 @@ class PDDP(EpisodicLearner):
                 z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
             zin = np.array(z_nominal)
             self.policy.set_params(zin = zin)
-            uin = np.array(u_list)
-            self.policy.set_params(uin = uin)
+
 
             #STEP 2
             print_with_stamp('Current policy iteration number: [%d] ... Running Backpropagation'%(self.n_evals), self.name, same_line=False)
-            n = len(self.plant.x0)
+            n = len(self.plant.x0) + len(self.angle_idims)
             n = n*n + n
             V_list[-1] = 0
             Vx_list[-1] = np.zeros((n,))
@@ -309,11 +306,10 @@ class PDDP(EpisodicLearner):
             self.policy.t = 0
             line_search_iters = 0
             while trajectory_cost > self.min_cost:
-                alpha = alpha*0.8
+                alpha = alpha*0.7
                 mx_list, Sx_list, _, u_list, trajectory_cost = self.policy_update(self.plant.x0, self.plant.S0, alpha, 0)
                 self.policy.t = 0
                 line_search_iters += 1
-
                 if line_search_iters == 100:
                     abort = True
                     break
@@ -339,6 +335,7 @@ class PDDP(EpisodicLearner):
                 print "Could not find a better policy in this iteration. (Current best cost: " + str(self.min_cost) + ")"
                 self.n_evals = self.max_evals
         print "\n"
+        self.experience.reset()
         self.n_evals=0
 
 
