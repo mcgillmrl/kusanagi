@@ -3,10 +3,11 @@ import signal,sys,os
 import numpy as np
 import utils
 from functools import partial
-from ghost.regression.GPRegressor import SSGP_UI
+from ghost.regression.GP import SSGP_UI
+from ghost.regression.NN import NN
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
-from ghost.control import RBFPolicy
+from ghost.control import RBFPolicy, NNPolicy
 from utils import plot_results
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
@@ -34,10 +35,12 @@ if __name__ == '__main__':
     policy_params['m0'] = learner_params['x0']
     policy_params['S0'] = learner_params['S0']
     policy_params['n_basis'] = 10
+    #policy_params['hidden_dims'] = [50,50,50,50]
     policy_params['maxU'] = [10]
     # dynamics model
     dynmodel_params = {}
     dynmodel_params['n_basis'] = 100
+    #dynmodel_params['hidden_dims'] = [50,50,50,50]
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]

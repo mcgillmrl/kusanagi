@@ -2,7 +2,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 from utils import print_with_stamp,gTrig_np,gTrig2, update_errorbar
 from ghost.learners.EpisodicLearner import *
-from ghost.regression.GPRegressor import GP_UI, SPGP_UI, SSGP_UI
+from ghost.regression.GP import GP_UI, SPGP_UI, SSGP_UI
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.compile.nanguardmode import NanGuardMode
@@ -172,7 +172,7 @@ class PILCO(EpisodicLearner):
         print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X_.shape,self.dynamics_model.Y_.shape),self.name)
         if self.dynamics_model.should_recompile:
             # reinitialize log likelihood
-            self.dynamics_model.init_log_likelihood()
+            self.dynamics_model.init_loss()
             # reinitialize rollot and policy gradients
             self.init_rollout(derivs=True)
  

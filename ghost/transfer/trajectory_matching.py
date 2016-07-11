@@ -1,6 +1,6 @@
 import numpy as np 
 import utils
-from ghost.regression.GPRegressor import GP_UI
+from ghost.regression.GP import GP_UI
 from ghost.learners.EpisodicLearner import EpisodicLearner
 
 class TrajectoryMatching(EpisodicLearner):
@@ -81,7 +81,7 @@ class TrajectoryMatching(EpisodicLearner):
         utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.inverse_dynamics_model.X_.shape,self.inverse_dynamics_model.Y_.shape),self.name)
         if self.inverse_dynamics_model.should_recompile:
             # reinitialize log likelihood
-            self.inverse_dynamics_model.init_log_likelihood()
+            self.inverse_dynamics_model.init_loss()
  
         self.inverse_dynamics_model.train()
         utils.print_with_stamp('Done training inverse dynamics model',self.name)

@@ -4,7 +4,7 @@ import signal,sys,os
 import numpy as np
 import utils
 from functools import partial
-from ghost.regression.GPRegressor import SSGP_UI
+from ghost.regression.GP import SSGP_UI
 from ghost.learners.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import RBFPolicy

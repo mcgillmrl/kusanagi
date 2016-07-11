@@ -3,7 +3,7 @@ import signal,sys
 #sys.path.append('/home/adaptation/achatr/Desktop/Summer2016/PILCO_clone/kusanagi')
 import numpy as np
 from functools import partial
-from ghost.regression.GPRegressor import SSGP_UI
+from ghost.regression.GP import SSGP_UI
 from ghost.learners.PILCO import PILCO
 from shell.plant import SerialPlant
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss

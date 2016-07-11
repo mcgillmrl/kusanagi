@@ -3,7 +3,7 @@ import signal,sys
 import numpy as np
 from functools import partial
 from utils import plot_results
-from ghost.regression.GPRegressor import SSGP_UI
+from ghost.regression.GP import SSGP_UI
 from ghost.learners.PILCO import PILCO
 from shell.double_cartpole import DoubleCartpole, DoubleCartpoleDraw, double_cartpole_loss
 from ghost.control import RBFPolicy

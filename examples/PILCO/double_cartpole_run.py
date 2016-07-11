@@ -1,59 +1,55 @@
 import signal,sys
 import numpy as np
 from functools import partial
+from ghost.regression.GP import SSGP_UI
 from ghost.learners.PILCO import PILCO
 from shell.double_cartpole import DoubleCartpole, DoubleCartpoleDraw, double_cartpole_loss
 from ghost.control import RBFPolicy
 
 if __name__ == '__main__':
-    #np.random.seed(31337)
-    np.set_printoptions(linewidth=500)
-    # initliaze plant
-    dt = 0.05                                                         # simulation time step
-    model_parameters ={}                                             # simulation parameters
-    model_parameters['m1'] = 0.5
-    model_parameters['m2'] = 0.5
-    model_parameters['m3'] = 0.5
-    model_parameters['l2'] = 0.6
-    model_parameters['l3'] = 0.6
-    model_parameters['b'] = 0.1
-    model_parameters['g'] = 9.82
-    x0 = [0,0,0,0,np.pi,np.pi]                                               # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2
-    S0 = np.eye(6)*(0.1**2)                                          # initial state covariance
-    measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
-    plant = DoubleCartpole(model_parameters,x0,S0,dt,measurement_noise)
-    draw_dcp = DoubleCartpoleDraw(plant,0.033)                              # initializes visualization
-    draw_dcp.start()
+    # setup learner parameters
+    # general parameters
+    J = 2                                                                   # number of random initial trials
+    N = 100                                                                 # learning iterations
+    learner_params = {}
+    learner_params['x0'] = [0,0,0,0,np.pi,np.pi]                            # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2
+    learner_params['S0'] = np.eye(6)*(0.1**2)                               # initial state covariance
+    learner_params['angle_dims'] = [4,5]                                    # angle dimensions
+    learner_params['H'] = 5.0                                               # control horizon
+    learner_params['discount'] = 1.0                                        # discoutn factor
+    # plant
+    plant_params = {}
+    plant_params['dt'] = 0.05
+    plant_params['params'] = {'m1': 0.5, 'm2': 0.5, 'm3': 0.5, 'l2': 0.6, 'l3': 0.6, 'b': 0.1, 'g': 9.82}
+    plant_params['noise'] = np.diag(np.ones(len(learner_params['x0']))*0.01**2)   # model measurement noise (randomizes the output of the plant)
+    # policy
+    policy_params = {}
+    policy_params['m0'] = learner_params['x0']
+    policy_params['S0'] = learner_params['S0']
+    policy_params['n_basis'] = 200
+    policy_params['maxU'] = [20]
+    # dynamics model
+    dynmodel_params = {}
+    dynmodel_params['n_basis'] = 100
+    # cost function
+    cost_params = {}
+    cost_params['target'] = [0,0,0,0,0,0]
+    cost_params['width'] = 0.5
+    cost_params['expl'] = 0.0
+    cost_params['pendulum_lengths'] = [ plant_params['params']['l2'], plant_params['params']['l3'] ]
 
-    # initialize policy
-    angle_dims = [4,5]
-    policy = RBFPolicy(x0,S0,[20],100, angle_dims)
-
-    # initialize cost function
-    cost_parameters = {}
-    cost_parameters['angle_dims'] = angle_dims
-    cost_parameters['target'] = [0,0,0,0,0,0]
-    cost_parameters['width'] = 0.5
-    cost_parameters['expl'] = 0.0
-    cost_parameters['pendulum_lengths'] = [model_parameters['l2'],model_parameters['l3']]
-    cost = partial(double_cartpole_loss, params=cost_parameters)
+    learner_params['plant'] = plant_params
+    learner_params['policy'] = policy_params
+    learner_params['dynmodel'] = dynmodel_params
+    learner_params['cost'] = cost_params
 
     # initialize learner
-    T = 5.0                                                          # controller horizon
-    J = 500                                                            # number of random initial trials
-    N = 15                                                           # learning iterations
-    learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
+    learner = PILCO(learner_params, DoubleCartpole, RBFPolicy, double_cartpole_loss, dynmodel_class=SSGP_UI)#,viz=DoubleCartpoleDraw)
+    atexit.register(learner.stop)
 
-    def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
-        print 'Caught CTRL-C!'
-        draw_dcp.stop()
-        plant.stop()
-        sys.exit(0)
-    signal.signal(signal.SIGINT, signal_handler)
+    for i in xrange(N):
+        # execute it on the robot
+        learner.plant.reset_state()
+        learner.apply_controller()
 
-    # gather data with random trials
-    for i in xrange(J):
-        plant.reset_state()
-        learner.apply_controller(H=T)
-
-    draw_dcp.stop()
+    sys.exit(0)

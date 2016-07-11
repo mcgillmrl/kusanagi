@@ -4,7 +4,8 @@ import os, sys
 import utils
 
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
-from ghost.regression.GPRegressor import RBFGP, SSGP_UI
+from ghost.regression.GP import RBFGP, SSGP_UI
+from ghost.regression.NN import NN
 from ghost.control.saturation import gSat
 from functools import partial
 from utils import gTrig2, gTrig2_np
@@ -96,7 +97,7 @@ class RBFPolicy(RBFGP):
         # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
         l0 = np.hstack([np.ones(self.m0.size-len(self.angle_dims)),0.7*np.ones(2*len(self.angle_dims)),1,0.01])
         self.set_loghyp(np.log(np.tile(l0,(self.maxU.size,1))))
-        self.init_log_likelihood()
+        self.init_loss()
         self.init_predict()
 
     def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False):
@@ -287,3 +288,50 @@ class AdjustedPolicy:
 
     def save(self):
         self.adjustment_model.save()
+
+# GP based controller
+class NNPolicy(NN):
+    def __init__(self, m0=None, S0=None, maxU=[10], hidden_dims=[20,20,20], angle_dims=[], name='NNPolicy', filename=None):
+        self.maxU = np.array(maxU)
+        self.angle_dims = angle_dims
+        self.name = name
+        # set the model to be a RBF with saturated outputs
+        sat_func = partial(gSat, e=maxU)
+
+        if filename is not None:
+            # try loading from file
+            self.uncertain_inputs = True
+            self.X_ = None; self.Y_ = None; self.loghyp_=None
+            self.filename = filename
+            self.sat_func = sat_func
+            self.load()
+        else:
+            self.m0 = np.array(m0)
+            self.S0 = np.array(S0)
+
+            policy_idims = len(self.m0) + len(self.angle_dims)
+            policy_odims = len(self.maxU)
+            super(NNPolicy, self).__init__(idims=policy_idims, hidden_dims=hidden_dims, odims=policy_odims, sat_func=sat_func, name=self.name)
+            
+            # check if we need to initialize
+            params = self.get_params()
+            for p in params:
+                if p is None or p.size == 0:
+                    self.set_default_parameters()
+                    break
+
+    def set_default_parameters(self):
+        self.init_loss()
+        self.init_predict()
+
+    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False):
+        D = m.shape[0]
+        if symbolic:
+            if s is None:
+                s = theano.tensor.zeros((D,D))
+            ret = self.predict_symbolic(m,s)
+        else:
+            if s is None:
+                s = np.zeros((D,D))
+            ret = self.predict(m,s) if not derivs else self.predict_d(m,s)
+        return ret 

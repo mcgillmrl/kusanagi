@@ -1,4 +1,4 @@
-from ghost.regression.GPRegressor import *
+from ghost.regression.GP import *
 from matplotlib import pyplot as plt
 from utils import gTrig2_np, print_with_stamp
 from scipy.signal import convolve2d

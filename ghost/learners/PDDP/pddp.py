@@ -1,7 +1,7 @@
 import numpy as np
 from utils import print_with_stamp, gTrig_np, gTrig2, gTrig2_np
 from ghost.learners.EpisodicLearner import *
-from ghost.regression.GPRegressor import GP_UI
+from ghost.regression.GP import GP_UI
 from ghost.control import LocalLinearPolicy
 from theano.tensor.nlinalg import matrix_inverse, pinv
 import theano

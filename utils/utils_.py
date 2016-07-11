@@ -293,6 +293,18 @@ def integer_generator(i=0):
         yield i
         i += 1
 
+def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
+    assert len(inputs) == len(targets)
+    if shuffle:
+        indices = np.arange(len(inputs))
+        np.random.shuffle(indices)
+    for start_idx in range(0, len(inputs) - batchsize + 1, batchsize):
+        if shuffle:
+            excerpt = indices[start_idx:start_idx + batchsize]
+        else:
+            excerpt = slice(start_idx, start_idx + batchsize)
+        yield inputs[excerpt], targets[excerpt]
+
 def update_errorbar(errobj, x, y, y_error):
     # from http://stackoverflow.com/questions/25210723/matplotlib-set-data-for-errorbar-plot
     ln, (erry_top, erry_bot), (barsy,) = errobj
