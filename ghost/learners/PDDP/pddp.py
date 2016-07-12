@@ -64,9 +64,8 @@ class PDDP(EpisodicLearner):
             # compute state control joint distribution
             #mx, Sx, _ = gTrig2(mx, Sx, self.angle_idims, len(self.mx0))
             mxu = theano.tensor.concatenate([mx,u_prev])
-            q = Sx.dot(Cu)
-            Sxu_up = theano.tensor.concatenate([Sx,q],axis=1)
-            Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
+            Sxu_up = theano.tensor.concatenate([Sx,Cu],axis=1)
+            Sxu_lo = theano.tensor.concatenate([Cu.T,Su],axis=1)
             Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0)
 
             #  predict the change in state given current state-action
@@ -75,7 +74,8 @@ class PDDP(EpisodicLearner):
 
             # compute the successor state distribution
             mx_next = mx + m_deltax
-            Sx_deltax = Sxu[:D,:].dot(C_deltax)
+            iSxu_Cdeltax = matrix_inverse(Sxu).dot(Cdeltax)
+            Sx_deltax = Sxu[:D,:].dot(iSxu_Cdeltax)
             Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
             #  get cost:

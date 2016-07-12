@@ -35,12 +35,12 @@ if __name__ == '__main__':
     policy_params['m0'] = learner_params['x0']
     policy_params['S0'] = learner_params['S0']
     policy_params['n_basis'] = 10
-    #policy_params['hidden_dims'] = [50,50,50,50]
+    #policy_params['hidden_dims'] = [50,50,50]
     policy_params['maxU'] = [10]
     # dynamics model
     dynmodel_params = {}
     dynmodel_params['n_basis'] = 100
-    #dynmodel_params['hidden_dims'] = [50,50,50,50]
+    #dynmodel_params['hidden_dims'] = [50,50,50]
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
@@ -55,6 +55,7 @@ if __name__ == '__main__':
 
     # initialize learner
     learner = PILCO(learner_params, Cartpole, RBFPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#, viz_class=CartpoleDraw)
+    #learner = PILCO(learner_params, Cartpole, NNPolicy, cartpole_loss, dynmodel_class=NN)#, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data
@@ -70,6 +71,8 @@ if __name__ == '__main__':
         learner.init_rollout(derivs=False)
         plot_results(learner)
 
+    learner.plant.reset_state()
+    learner.apply_controller()
     # learning loop
     for i in xrange(N):
         # train the dynamics models given the collected data

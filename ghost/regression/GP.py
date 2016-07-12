@@ -74,7 +74,7 @@ class GP(object):
             # initialize the class if no pickled version is available
             if X_dataset is not None and Y_dataset is not None:
                 self.set_dataset(X_dataset,Y_dataset)
-                self.init_log_likelihood()
+                self.init_loss()
         
         self.ready = False
         utils.print_with_stamp('Finished initialising GP regressor',self.name)
@@ -165,8 +165,8 @@ class GP(object):
         self.set_dataset(inputs,targets)
         self.set_loghyp(loghyp)
 
-    def init_log_likelihood(self):
-        utils.print_with_stamp('Initialising expression graph for full GP log likelihood',self.name)
+    def init_loss(self):
+        utils.print_with_stamp('Initialising expression graph for full GP training loss function',self.name)
         idims = self.D
         odims = self.E
 
@@ -209,9 +209,9 @@ class GP(object):
         dnlml = T.jacobian(nlml.sum(),self.loghyp)
 
         # Compile the theano functions
-        utils.print_with_stamp('Compiling full GP log likelihood',self.name)
+        utils.print_with_stamp('Compiling full GP training loss function',self.name)
         self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-        utils.print_with_stamp('Compiling jacobian of full GP log likelihood',self.name)
+        utils.print_with_stamp('Compiling jacobian of full GP training loss function',self.name)
         self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
         self.state_changed = True # for saving
     
@@ -270,12 +270,10 @@ class GP(object):
 
         # reshape output variables
         M = T.stack(mean).T.flatten()
-        #S = T.stack(mean).T.flatten()
-        #M = mx
-        #S = Sx
         S = T.diag(T.stack(variance).T.flatten())
+        V = T.zeros((self.D,self.E))
 
-        return M,S
+        return M,S,V
     
     def predict(self,mx,Sx = None, derivs=False):
         predict = None
@@ -312,7 +310,7 @@ class GP(object):
 
     def train(self):
         if self.nlml is None:
-            self.init_log_likelihood()
+            self.init_loss()
         utils.print_with_stamp('Current hyperparameters:',self.name)
         loghyp0 = self.loghyp_.copy()
         print (loghyp0)
@@ -395,12 +393,12 @@ class GP_UI(GP):
         t = T.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
         c = sf2/T.sqrt(T.stack([det(B[i]) for i in xrange(odims)]))
         l = T.exp(-0.5*T.sum(inp*t,2))
-        lb = l*self.beta # beta should have been precomputed in init_log_likelihood # E x N dot E x N
+        lb = l*self.beta # beta should have been precomputed in init_loss # E x N dot E x N
         M = T.sum(lb,1)*c
         
-        # inv(Sx) times input output covariance
+        # input output covariance
         tiL = T.stack([t[i].dot(iL[i]) for i in xrange(odims)])
-        V = T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+        V = Sx.dot(T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
@@ -499,22 +497,22 @@ class SPGP(GP):
             self.should_recompile = False
 
         if self.N > self.n_basis and self.X_sp is None:
-            utils.print_with_stamp('Dataset is large enough for using pseudo inputs. You should reinitiialise the log likelihood and predictions.',self.name)
+            utils.print_with_stamp('Dataset is large enough for using pseudo inputs. You should reinitiialise the training loss function and predictions.',self.name)
             # init the shared variable for the pseudo inputs
             self.init_pseudo_inputs()
             self.should_recompile = True
         
-    def init_log_likelihood(self):
-        # initialize the log likelihood of the GP class
-        super(SPGP, self).init_log_likelihood()
+    def init_loss(self):
+        # initialize the training loss function of the GP class
+        super(SPGP, self).init_loss()
         # here nlml and dnlml have already been innitialised, sow e can replace nlml and dnlml
         # only if we have enough data to train the pseudo inputs ( i.e. self.N > self.n_basis)
         if self.N > self.n_basis:
-            utils.print_with_stamp('Initialising FITC log likelihood',self.name)
+            utils.print_with_stamp('Initialising FITC training loss function',self.name)
             self.should_recompile = False
             odims = self.E
             idims = self.D
-            # initialize the log likelihood of the sparse FITC approximation
+            # initialize the training loss function of the sparse FITC approximation
             self.Lmm = [[]]*odims
             self.Amm = [[]]*odims
             self.beta_sp = [[]]*odims
@@ -566,9 +564,9 @@ class SPGP(GP):
             dnlml_sp = T.jacobian(nlml_sp.sum(),self.X_sp)
 
             # Compile the theano functions
-            utils.print_with_stamp('Compiling FITC log likelihood',self.name)
+            utils.print_with_stamp('Compiling FITC training loss function',self.name)
             self.nlml_sp = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-            utils.print_with_stamp('Compiling jacobian of FITC log likelihood',self.name)
+            utils.print_with_stamp('Compiling jacobian of FITC training loss function',self.name)
             self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             
     def predict_symbolic(self,mx,Sx):
@@ -591,8 +589,9 @@ class SPGP(GP):
         # reshape the prediction output variables
         M = T.stack(mean).T.flatten()
         S = T.diag(T.stack(variance).T.flatten())
+        V = T.zeros((self.D,self.E))
 
-        return M,S
+        return M,S,V
 
     def set_X_sp(self, X_sp):
         X_sp = X_sp.reshape(self.X_sp_.shape).astype(theano.config.floatX)
@@ -624,7 +623,7 @@ class SPGP(GP):
         if self.N > self.n_basis:
             # train the pseudo input locations
             if self.nlml_sp is None:
-                self.init_log_likelihood()
+                self.init_loss()
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
             m_loss_sp = utils.MemoizeJac(self.loss_sp)
             opt_res = minimize(m_loss_sp, self.X_sp_, jac=m_loss_sp.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
@@ -662,12 +661,12 @@ class SPGP_UI(SPGP,GP_UI):
         t = T.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
         c = sf2/T.sqrt(T.stack([det(B[i]) for i in xrange(odims)]))
         l = T.exp(-0.5*T.sum(inp*t,2))
-        lb = l*self.beta_sp # beta_sp should have been precomputed in init_log_likelihood # E x N dot E x N
+        lb = l*self.beta_sp # beta_sp should have been precomputed in init_loss # E x N dot E x N
         M = T.sum(lb,1)*c
         
-        # inv(Sx) times input output covariance
+        # input output covariance
         tiL = T.stack([t[i].dot(iL[i]) for i in xrange(odims)])
-        V = T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+        V = Sx.dot(T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
@@ -759,12 +758,12 @@ class RBFGP(GP_UI):
         t = T.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
         c = sf2/T.sqrt(T.stack([det(B[i]) for i in xrange(odims)]))
         l = T.exp(-0.5*T.sum(inp*t,2))
-        lb = l*self.beta # beta should have been precomputed in init_log_likelihood # E x N
+        lb = l*self.beta # beta should have been precomputed in init_loss # E x N
         M = T.sum(lb,1)*c
         
-        # inv(Sx) times input output covariance
+        # input output covariance
         tiL = T.stack([t[i].dot(iL[i]) for i in xrange(odims)])
-        V = T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+        V = Sx.dot(T.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*T.sum(inp*inp,2)
@@ -795,8 +794,9 @@ class RBFGP(GP_UI):
 
         # apply saturating function to the output if available
         if self.sat_func is not None:
-            # compute the joint input output covariance
+            # saturate the output
             M,S,U = self.sat_func(M,S)
+            # compute the joint input output covariance
             V = V.dot(U)
 
         return M,S,V
@@ -840,9 +840,9 @@ class SSGP(GP):
         state.append(self.dnlml_ss)
         return state
 
-    def init_log_likelihood(self):
-        super(SSGP, self).init_log_likelihood()
-        utils.print_with_stamp('Initialising expression graph for sparse spectral log likelihood',self.name)
+    def init_loss(self):
+        super(SSGP, self).init_loss()
+        utils.print_with_stamp('Initialising expression graph for sparse spectral training loss function',self.name)
         idims = self.D
         odims = self.E
 
@@ -889,9 +889,9 @@ class SSGP(GP):
         dnlml_wrt_lh = T.jacobian(nlml_ss.sum(),self.loghyp)
         dnlml_wrt_w = T.jacobian(nlml_ss.sum(),self.w)
 
-        utils.print_with_stamp('Compiling sparse spectral log likelihood',self.name)
+        utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
         self.nlml_ss = F((),nlml_ss,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-        utils.print_with_stamp('Compiling jacobian of sparse spectral log likelihood',self.name)
+        utils.print_with_stamp('Compiling jacobian of sparse spectral training loss function',self.name)
         self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
 
     def set_spectral_samples(self,w=None):
@@ -956,7 +956,7 @@ class SSGP(GP):
         odims = self.E
 
         if self.nlml_ss is None:
-            self.init_log_likelihood()
+            self.init_loss()
 
         # initialize spectral samples
         nlml = self.nlml_ss()
@@ -1011,8 +1011,9 @@ class SSGP(GP):
         # reshape output variables
         M = T.stack(mean).T.flatten()
         S = T.diag(T.stack(variance).T.flatten())
+        V = T.zeros((self.D,self.E))
 
-        return M,S
+        return M,S,V
 
 class SSGP_UI(SSGP, GP_UI):
     ''' Sparse Spectral Gaussian Process Regression with Uncertain Inputs'''
@@ -1055,13 +1056,12 @@ class SSGP_UI(SSGP, GP_UI):
         mphi = T.horizontal_stack( sin_srdotx_e, cos_srdotx_e ) # E x 2*Ms
         M = T.sum( mphi*self.beta_ss, 1)
 
-        # inv(s) times input output covariance
+        # input output covariance
         mx_c = mx.dimshuffle(0,'x'); mx_r = mx.dimshuffle('x',0)
         sin_srdotx_e_r = sin_srdotx_e.dimshuffle(0,'x',1); cos_srdotx_e_r = cos_srdotx_e.dimshuffle(0,'x',1)
         c = T.concatenate([ mx_c*sin_srdotx_e_r + srdotSx.transpose(0,2,1)*cos_srdotx_e_r, mx_c*cos_srdotx_e_r - srdotSx.transpose(0,2,1)*sin_srdotx_e_r ], axis=2) # E x D x 2*Ms
         beta_ss_r = self.beta_ss.dimshuffle(0,'x',1)
-        v = T.sum( c*beta_ss_r, 2 ).T - T.outer(mx,M)
-        V = matrix_inverse(Sx).dot(v)
+        V = T.sum( c*beta_ss_r, 2 ).T - T.outer(mx,M)
         
         # compute the second moment matrix
         sijSxsij = -0.5*(srdotSxdotsr.dimshuffle(0,'x',1,'x') + srdotSxdotsr.dimshuffle('x',0,'x',1)) 
@@ -1092,6 +1092,7 @@ class SSGP_UI(SSGP, GP_UI):
 
         # compute the predictive covariance
         S = M2 - T.outer(M,M)
+        print '%s %s %s'%(M.dtype,M2.dtype,S.dtype)
         
         return M,S,V
 
@@ -1105,7 +1106,7 @@ class SSGP_UI(SSGP, GP_UI):
         
         # precompute some variables
         Ms = self.sr.shape[1]
-        sf2 = T.exp(2*self.loghyp[:,idims])
+        sf2M = T.exp(2*self.loghyp[:,idims])/T.cast(Ms,theano.config.floatX)
         sn2 = T.exp(2*self.loghyp[:,idims+1])
         srdotx = self.sr.dot(mx)
         srdotSx = self.sr.dot(Sx) 
@@ -1120,12 +1121,11 @@ class SSGP_UI(SSGP, GP_UI):
         mphi = T.horizontal_stack( sin_srdotx_e, cos_srdotx_e ) # E x 2*Ms
         M = T.sum( mphi*self.beta_ss, 1)
 
-        # inv(s) times input output covariance
+        # input output covariance
         mx_c = mx.dimshuffle(0,'x'); mx_r = mx.dimshuffle('x',0)
         sin_srdotx_e_r = sin_srdotx_e.dimshuffle(0,'x',1); cos_srdotx_e_r = cos_srdotx_e.dimshuffle(0,'x',1)
         c = T.concatenate([ mx_c*sin_srdotx_e_r + srdotSx.transpose(0,2,1)*cos_srdotx_e_r, mx_c*cos_srdotx_e_r - srdotSx.transpose(0,2,1)*sin_srdotx_e_r ], axis=2) # E x D x 2*Ms
-        v = T.sum( c*(self.beta_ss.dimshuffle(0,'x',1)), 2 ).T - T.outer(mx,M)
-        V = matrix_inverse(Sx).dot(v)
+        V = T.sum( c*(self.beta_ss.dimshuffle(0,'x',1)), 2 ).T - T.outer(mx,M)
         
         # TODO vectorize this operation
         srdotSxdotsr_c = srdotSxdotsr.dimshuffle(0,1,'x')
@@ -1163,7 +1163,7 @@ class SSGP_UI(SSGP, GP_UI):
                 if i == j:
                     # if i==j we need to add the trace term
                     iAi = solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms)))
-                    m2 =  m2 + sn2[i]*(1 + (sf2[i]/Ms)*T.sum(iAi*Qij + 1e-9))
+                    m2 =  m2 + sn2[i]*(1 + sf2M[i]*T.sum(iAi*Qij + 1e-9))
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
@@ -1180,9 +1180,9 @@ class VSSGP(SSGP):
         self.n_basis = n_basis
         super(VSSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
-    def init_log_likelihood(self):
-        super(VSSGP, self).init_log_likelihood()
-        utils.print_with_stamp('Initialising expression graph for sparse spectral log likelihood',self.name)
+    def init_loss(self):
+        super(VSSGP, self).init_loss()
+        utils.print_with_stamp('Initialising expression graph for sparse spectral training loss function',self.name)
         idims = self.D
         odims = self.E
 
@@ -1244,9 +1244,9 @@ class VSSGP(SSGP):
         dnlml_wrt_lh = T.jacobian(nlml_ss.sum(),self.loghyp)
         dnlml_wrt_w = T.jacobian(nlml_ss.sum(),self.w)
 
-        utils.print_with_stamp('Compiling sparse spectral log likelihood',self.name)
+        utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
         self.nlml_ss = F((),nlml_ss,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-        utils.print_with_stamp('Compiling jacobian of sparse spectral log likelihood',self.name)
+        utils.print_with_stamp('Compiling jacobian of sparse spectral training loss function',self.name)
         self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
 
 
