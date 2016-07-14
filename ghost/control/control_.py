@@ -160,12 +160,15 @@ class LocalLinearPolicy(object):
         self.u_nominal = theano.shared(self.u_nominal_,borrow=True)
         self.z_nominal = theano.shared(self.z_nominal_,borrow=True)
 
-    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False, alpha = 1, u = None, use_gTrig = False):
+	self.alpha = theano.shared(np.asarray(1,dtype=theano.config.floatX))
+
+    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False, u = None, use_gTrig = False):
         D = m.shape[0]
         if t is not None:
             self.t = t
         t = self.t
         if symbolic:
+            alpha = self.alpha
             u_t = self.u_nominal[t]
             z_t = self.z_nominal[t]
             A_t = self.A[t]
@@ -177,6 +180,7 @@ class LocalLinearPolicy(object):
                 m,s,_ =  gTrig2(m, s, self.angle_dims, len(self.m0))
                 z = theano.tensor.concatenate([m.flatten(),s.flatten()])
         else:
+            alpha = self.alpha.get_value()
             u_t = self.u_nominal.get_value()[t]
             z_t = self.z_nominal.get_value()[t]
             A_t = self.A.get_value()[t]
