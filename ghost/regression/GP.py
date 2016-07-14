@@ -886,8 +886,8 @@ class SSGP(GP):
         super(SSGP, self).set_dataset(X_dataset,Y_dataset)
         self.A = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>A"%(self.name))
         self.iA = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>iA"%(self.name))
-        self.Lmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>Lmm"%(self.name))
-        self.beta_ss = S(np.zeros((self.E,self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
+        self.Lmm = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>Lmm"%(self.name))
+        self.beta_ss = S(np.zeros((self.E,2*self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
 
     def init_loss(self,cache_vars=True):
         super(SSGP, self).init_loss()
