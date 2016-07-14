@@ -57,6 +57,7 @@ class PDDP(EpisodicLearner):
             of the system using the learned GP dynamics model '''
                 # define the function for a single propagation step
         def rollout_single_step(mx,Sx, alpha = 1.0, eval_t = None, u=None, use_gTrig = False):
+            D = Sx.shape[1]
             # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
@@ -179,8 +180,8 @@ class PDDP(EpisodicLearner):
             return self.forward_dynamics(z, u)
 
         shared_vars = []
-        shared_vars.extend(self.dynamics_model.get_params(symbolic=True))
-        shared_vars.extend(self.policy.get_params(symbolic=True))
+        shared_vars.extend(self.dynamics_model.get_all_shared_vars())
+        shared_vars.extend(self.policy.get_all_shared_vars())
         (Fx_list, Fu_list), updts = theano.scan(fn=forward_pass_func, 
                                                       outputs_info=None, 
                                                       non_sequences=shared_vars,
@@ -207,8 +208,8 @@ class PDDP(EpisodicLearner):
 
 
         shared_vars = []
-        shared_vars.extend(self.dynamics_model.get_params(symbolic=True))
-        shared_vars.extend(self.policy.get_params(symbolic=True))
+        shared_vars.extend(self.dynamics_model.get_all_shared_vars())
+        shared_vars.extend(self.policy.get_all_shared_vars())
         (mx_list,Sx_list,alpha_list,u_list, cost_list), updts = theano.scan(fn=policy_update_func, 
                                                       outputs_info=[mx0, Sx0, alpha0, u0, sum0], 
                                                       non_sequences=shared_vars,
@@ -238,18 +239,18 @@ class PDDP(EpisodicLearner):
         z_nominal = [None for a0 in xrange(H_steps)]
 
         #SETUP FOR STEP 2
-        V_list = [None for a0 in xrange(H_steps-1)]
-        Vx_list = [None for a0 in xrange(H_steps-1)]
-        Vxx_list = [None for a0 in xrange(H_steps-1)]
-        I_list = [None for a0 in xrange(H_steps-1)]
-        L_list = [None for a0 in xrange(H_steps-1)]
+        V_list = [None for a0 in xrange(H_steps)]
+        Vx_list = [None for a0 in xrange(H_steps)]
+        Vxx_list = [None for a0 in xrange(H_steps)]
+        I_list = [None for a0 in xrange(H_steps)]
+        L_list = [None for a0 in xrange(H_steps)]
         
         self.policy.t = 0
         if self.forward_pass is None or self. policy_update is None or self.min_cost is None:
             self.init_rollout()
             self.compile_policy_update()
             self.compile_forward_pass()
-            mx_list, Sx_list, _, u_list, self.min_cost = self.policy_update(self.params['x0'], self.params['S0'], 0, 0)
+            #mx_list, Sx_list, _, u_list, self.min_cost = self.policy_update(self.params['x0'], self.params['S0'], 0, 0)
             self.policy.set_params(uin = np.array(u_list))
             for i in xrange(0,H_steps):
                 z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
@@ -271,7 +272,9 @@ class PDDP(EpisodicLearner):
             u_list, z_list, _, _ = self.policy.get_params()
             Fx_list, Fu_list = self.forward_pass(z_list,u_list)
 
-
+            print Fx_list
+            print Fu_list
+            raw_input()
 
             #STEP 2
             print_with_stamp('Current policy iteration number: [%d] ... Running Backpropagation'%(self.n_evals), self.name, same_line=False)

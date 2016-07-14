@@ -247,6 +247,10 @@ class LocalLinearPolicy(object):
                 t_dump(state,f,2)
             self.state_changed = False
 
+    def get_all_shared_vars(self):
+        return [attr for attr in self.__dict__.values() if isinstance(attr,theano.tensor.sharedvar.SharedVariable)]
+
+
 class AdjustedPolicy:
     def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI, use_control_input=True):
         self.use_control_input = use_control_input
