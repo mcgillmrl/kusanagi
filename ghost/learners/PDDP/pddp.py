@@ -166,6 +166,7 @@ class PDDP(EpisodicLearner):
         self.rollout_single_step = rollout_single_step
         self.forward_dynamics = forward_dynamics
         self.backward_propagation_function = theano.function([z,u,V,Vx,Vxx,Fx,Fu], backward_propagation(z,u,V,Vx,Vxx,Fx,Fu))
+        print_with_stamp('Compiled backward_propagation_function',self.name)
 
     def compile_forward_pass(self):
 
@@ -189,6 +190,7 @@ class PDDP(EpisodicLearner):
                                                       strict=True,
                                                       allow_gc=False)
         self.forward_pass = theano.function([z_list, u_list], [Fx_list, Fu_list], updates = updts)
+        print_with_stamp('Compiled forward_pass',self.name)
 
 
     def compile_policy_update(self):
@@ -201,8 +203,8 @@ class PDDP(EpisodicLearner):
         alpha0 = theano.tensor.scalar('alpha0')
         sum0 = theano.tensor.scalar('sum0')
 
-        def policy_update_func(mx, Sx, alpha, u, sum0, *args):
-            mx_next, Sx_next, u_new = self.rollout_single_step(mx, Sx, alpha = alpha)
+        def policy_update_func(t, mx, Sx, alpha, u, sum0, *args):
+            mx_next, Sx_next, u_new = self.rollout_single_step(mx, Sx, alpha = alpha, eval_t = t)
             step_cost, _ = self.cost_symbolic(mx_next, Sx_next)
             return mx_next, Sx_next, alpha, u_new, step_cost
 
@@ -211,14 +213,15 @@ class PDDP(EpisodicLearner):
         shared_vars.extend(self.dynamics_model.get_all_shared_vars())
         shared_vars.extend(self.policy.get_all_shared_vars())
         (mx_list,Sx_list,alpha_list,u_list, cost_list), updts = theano.scan(fn=policy_update_func, 
-                                                      outputs_info=[mx0, Sx0, alpha0, u0, sum0], 
+                                                      outputs_info=[mx0, Sx0, alpha0, u0, sum0],
+                                                      sequences=[theano.tensor.arange(H_steps)],
                                                       non_sequences=shared_vars,
-                                                      n_steps=H_steps, 
                                                       strict=True,
                                                       allow_gc=False)
         mx_list = theano.tensor.concatenate([mx0.dimshuffle('x',0), mx_list])
         Sx_list = theano.tensor.concatenate([Sx0.dimshuffle('x',0,1), Sx_list])
-        self.policy_update = theano.function([mx0, Sx0, alpha0, sum0], [mx_list, Sx_list, alpha_list, u_list, cost_list.sum()], updates = updts)
+        self.policy_update = theano.function(inputs=[mx0, Sx0, alpha0, sum0], outputs=[mx_list, Sx_list, alpha_list, u_list, cost_list.sum()], updates = updts)
+        print_with_stamp('Compiled policy_update',self.name)
 
     def train_policy(self):
         ''' Runs the trajectory optimization loop: 1. forward pass 2. backward propagation 3. update policy 4. repeat '''
@@ -245,20 +248,23 @@ class PDDP(EpisodicLearner):
         I_list = [None for a0 in xrange(H_steps)]
         L_list = [None for a0 in xrange(H_steps)]
         
-        self.policy.t = 0
         if self.forward_pass is None or self. policy_update is None or self.min_cost is None:
             self.init_rollout()
             self.compile_policy_update()
             self.compile_forward_pass()
-            #mx_list, Sx_list, _, u_list, self.min_cost = self.policy_update(self.params['x0'], self.params['S0'], 0, 0)
-            self.policy.set_params(uin = np.array(u_list))
-            for i in xrange(0,H_steps):
-                z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
-            self.policy.set_params(zin = np.array(z_nominal))
-            self.policy.t = 0  
-
-            print "MIN COST INIT:" + str(self.min_cost)
         
+        # Get an initial min cost with the current dynamics model ( we need to reinintialize the minimum cost every time, since
+        # the predictions from past runs might be completely wrong
+        self.policy.t = 0
+        mx_list, Sx_list, _, u_list, self.min_cost = self.policy_update(self.params['x0'], self.params['S0'], 0, 0)
+        self.policy.set_params(uin = np.array(u_list))
+        for i in xrange(0,H_steps):
+            z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
+        print zip(mx_list,u_list)
+        self.policy.set_params(zin = np.array(z_nominal))
+        self.policy.t = 0  
+
+        print_with_stamp("Initial predicted cost of trajectory: [ %f ]"%(self.min_cost), self.name)
 
         #MAIN LOOP
         print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)
@@ -271,10 +277,6 @@ class PDDP(EpisodicLearner):
             self.policy.t = 0
             u_list, z_list, _, _ = self.policy.get_params()
             Fx_list, Fu_list = self.forward_pass(z_list,u_list)
-
-            print Fx_list
-            print Fu_list
-            raw_input()
 
             #STEP 2
             print_with_stamp('Current policy iteration number: [%d] ... Running Backpropagation'%(self.n_evals), self.name, same_line=False)
@@ -300,11 +302,11 @@ class PDDP(EpisodicLearner):
             self.policy.t = 0
             line_search_iters = 0
             while trajectory_cost > self.min_cost:
-                alpha = alpha*0.75
+                alpha = alpha*0.8
                 mx_list, Sx_list, _, u_list, trajectory_cost = self.policy_update(self.params['x0'], self.params['S0'], alpha, 0)
                 self.policy.t = 0
                 line_search_iters += 1
-                if line_search_iters == 100:
+                if line_search_iters == 200:
                     abort = True
                     break            
             mx_list = mx_list[:-1]
@@ -313,7 +315,7 @@ class PDDP(EpisodicLearner):
             #EXIT AND SAVE
             if not abort:
                 self.min_cost = trajectory_cost
-                print "Finished with " + str(line_search_iters) + " line search iterations and cost " + str(self.min_cost)
+                print_with_stamp("Finished with %d line search iterations and cost [ %f ] "%(line_search_iters,self.min_cost), self.name)
                 self.policy.set_params(uin = np.array(u_list))
                 for i in xrange(0,H_steps):
                     z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
@@ -322,7 +324,7 @@ class PDDP(EpisodicLearner):
                 self.n_evals += 1
                 self.policy.state_changed = True
             else:
-                print "Could not find a better policy in this iteration. (Current best cost: " + str(self.min_cost) + ")"
+                print_with_stamp("Could not find a better policy in this iteration. (Current best cost: [ %f ]"%(self.min_cost), self.name)
                 self.n_evals = self.max_evals
         print "\n"
         #self.experience.reset()
@@ -369,6 +371,7 @@ class PDDP(EpisodicLearner):
         else:
             self.dynamics_model.set_dataset(X,Y)
  
+        print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X.shape.eval(),self.dynamics_model.Y.shape.eval()),self.name)
         self.dynamics_model.train()
         self.dynamics_model.save()
         print_with_stamp('Done training dynamics model',self.name)

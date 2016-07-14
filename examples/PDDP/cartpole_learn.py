@@ -2,7 +2,7 @@ import atexit
 import signal,sys
 import numpy as np
 from functools import partial
-from ghost.regression.GP import SSGP_UI
+from ghost.regression.GP import SSGP_UI, GP_UI
 from ghost.learners.PDDP import PDDP
 from ghost.cost import quadratic_loss
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
@@ -14,7 +14,7 @@ np.set_printoptions(linewidth=500)
 if __name__ == '__main__':
     # setup learner parameters
     # general parameters
-    J = 1                                                                   # number of random initial trials
+    J = 4                                                                   # number of random initial trials
     N = 50                                                                 # learning iterations
     learner_params = {}
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     policy_params['dt'] = plant_params['dt']
     # dynamics model
     dynmodel_params = {}
-    dynmodel_params['n_basis'] = 100
+    #dynmodel_params['n_basis'] = 100
     # cost function
     cost_params = {}
     cost_params['target'] = gTrig_np(np.array([0,0,0,np.pi])[None,:], [3])[0]
@@ -62,24 +62,15 @@ if __name__ == '__main__':
     learner_params['cost'] = cost_params
 
     # initialize learner
-    learner = PDDP(learner_params, Cartpole, LocalLinearPolicy, quadratic_loss, dynmodel_class=SSGP_UI, viz_class=CartpoleDraw)
+    learner = PDDP(learner_params, Cartpole, LocalLinearPolicy, quadratic_loss, dynmodel_class=GP_UI, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
 
-    if learner.experience.n_samples() == 0: #if we have no prior data
-        # gather data with random trials
-        print "RUNNING RANDOM TRIALS"
-        for i in xrange(J):
-            learner.plant.reset_state()
-            learner.apply_controller(random_controls=True)
-    #else:
-    #    learner.plant.reset_state()
-    #    experience_data = learner.apply_controller()
-        
-        # plot results
-    #    learner.init_rollout(derivs=False)
-        #plot_results(learner) # TODO this does not work with PDDP
-    learner.plant.reset_state()
-    learner.apply_controller()
+    learner.experience.reset()
+    # gather data with random trials
+    print "RUNNING RANDOM TRIALS"
+    for i in xrange(J):
+        learner.plant.reset_state()
+        learner.apply_controller(random_controls=True)
 
     # learning loop
     for i in xrange(N):
@@ -104,6 +95,7 @@ if __name__ == '__main__':
         # print a
         # print b
         #raw_input()
+        learner.experience.reset()
         for i in xrange(J):
             learner.policy.t = 0
             experience_data = learner.apply_controller()
