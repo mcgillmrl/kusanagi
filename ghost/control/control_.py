@@ -139,6 +139,7 @@ class LocalLinearPolicy(object):
         self.S0 = S0 if S0 is not None else np.zeros((D,D))
         self.t = 0
         self.name = name
+        self.add_noise = True
         self.set_default_parameters()
 
     def set_default_parameters(self):
@@ -196,6 +197,8 @@ class LocalLinearPolicy(object):
         else:
             new_action[new_action>self.maxU] = self.maxU[new_action>self.maxU]
             new_action[new_action<-self.maxU] = self.maxU[new_action<-self.maxU]
+            if self.add_noise:
+                new_action = new_action + np.random.multivariate_normal(np.zeros(new_action.shape), 0.01*np.eye(new_action.size))
         return new_action, 0.01*theano.tensor.eye(U), theano.tensor.zeros((D,U))
 
     def get_params(self, symbolic=False, t=None):

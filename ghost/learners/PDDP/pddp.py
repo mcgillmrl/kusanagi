@@ -303,7 +303,7 @@ class PDDP(EpisodicLearner):
             line_search_iters = 0
             prev_cost = trajectory_cost
             while trajectory_cost >= self.min_cost:
-                alpha = alpha*0.8
+                alpha = alpha*0.5
                 mx_list, Sx_list, _, u_list, trajectory_cost = self.policy_update(self.params['x0'], self.params['S0'], alpha, 0)
                 self.policy.t = 0
                 line_search_iters += 1
