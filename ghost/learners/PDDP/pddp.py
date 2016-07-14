@@ -27,7 +27,7 @@ class PDDP(EpisodicLearner):
             params['dynmodel'] = {}
         params['dynmodel']['idims'] = dyn_idims
         params['dynmodel']['odims'] = dyn_odims
-
+        self.params = params
         self.dynamics_model = dynmodel_class(**params['dynmodel'])
         self.next_episode = 0
         self.min_cost = None
@@ -39,6 +39,7 @@ class PDDP(EpisodicLearner):
         # initialise parent class
         filename_prefix = name+'_'+self.dynamics_model.name if filename_prefix is None else filename_prefix
         super(PDDP, self).__init__(params, plant_class, policy_class, cost_func,viz_class, experience, async_plant, name, filename_prefix)
+
 
     def save(self):
         ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
@@ -54,13 +55,15 @@ class PDDP(EpisodicLearner):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
             of the system using the learned GP dynamics model '''
                 # define the function for a single propagation step
-        def rollout_single_step(mx,Sx, alpha = 1, eval_t = None, u=None, use_gTrig = False):
+        def rollout_single_step(mx,Sx, alpha = 1.0, eval_t = None, u=None, use_gTrig = False):
             D=mx.shape[0]
                 
             # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
             u_prev, Su, Cu = self.policy.evaluate(mx, Sx_,symbolic=True, alpha = alpha, t = eval_t, u=u, use_gTrig = use_gTrig)
+            if u is not None:
+                u_prev = u
             # compute state control joint distribution
             #mx, Sx, _ = gTrig2(mx, Sx, self.angle_idims, len(self.mx0))
             mxu = theano.tensor.concatenate([mx,u_prev])
@@ -74,7 +77,7 @@ class PDDP(EpisodicLearner):
 
             # compute the successor state distribution
             mx_next = mx + m_deltax
-            iSxu_Cdeltax = matrix_inverse(Sxu).dot(Cdeltax)
+            iSxu_Cdeltax = matrix_inverse(Sxu).dot(C_deltax)
             Sx_deltax = Sxu[:D,:].dot(iSxu_Cdeltax)
             Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
@@ -91,35 +94,34 @@ class PDDP(EpisodicLearner):
         gamma = theano.tensor.scalar('gamma')
         
         # For this, you'll need to read how theano.scan and theano.tensor.grad work ( look at pilco.py for an example )
-        def forward_dynamics(mx, Sx):
+        def forward_dynamics(z, u):
             ''' This computes the Jacobian matrices Fu and Fx which satisfy the first order expansion of the dynamics.
             We use a Gaussian belief augmented state vector to incorporate uncertainty.'''
             # TODO use the rollout single step file to do the forward dynamics
             # this should return the list of all matrices (F_k)^u and (F_k)^x
             # ( Eq. (11) )
-            [mx_next,Sx_next,u_prev] = rollout_single_step(mx, Sx)
-            z = theano.tensor.concatenate((mx.flatten(),Sx.flatten()))
-            z_next = theano.tensor.concatenate((mx_next.flatten(),Sx_next.flatten()))
+            n_shape = self.params['x0'].shape[0]
+            mx_next, Sx_next, _ = self.rollout_single_step(z[:n_shape],z[n_shape:].reshape((n_shape,n_shape)),u = u)
+            z_next = theano.tensor.concatenate((mx_next, Sx_next.flatten()))
             z_next_shape = z_next.shape[0]
-            u_shape = u_prev.shape[0]
-            Fx = theano.tensor.jacobian(z_next, z, disconnected_inputs='ignore')
-            Fu = theano.tensor.jacobian(z_next, u_prev, disconnected_inputs='ignore')
+            u_shape = u.shape[0]
+            Fx = theano.tensor.jacobian(z_next.flatten(), z, disconnected_inputs='ignore')
+            Fu = theano.tensor.jacobian(z_next.flatten(), u, disconnected_inputs='ignore')
             Fx = Fx.reshape((z_next_shape, z_next_shape))
             Fu = Fu.reshape((z_next_shape, u_shape))
 
-            return [Fx, Fu, mx_next, Sx_next, u_prev]
+            return [Fx, Fu]
 
-        def backward_propagation(mx,Sx,u,V,Vx,Vxx,Fx,Fu): 
+        def backward_propagation(z,u,V,Vx,Vxx,Fx,Fu): 
             #TODO compute Q_t and the associated L_t and I_t
             # ( Eq. (17) ). Use self.cost_symbolic(mx,Sx) to get the cost of the current state. We
             # might need to create a new cost function that takes u as an optional input, so we can call self.cost_symbolic(mx,Sx,u)
             # you only need to use the mean of the cost to compute the derivatives ( See the paragraph after Eq 13 )
             # Here C is used in place of script L
-            n = mx.shape[0]
-            n = n*n + n
+            n_shape = self.params['x0'].shape[0]
+            n = n_shape*n_shape + n_shape
             m = u.shape[0]
-            z = theano.tensor.concatenate((mx, Sx.flatten()))
-            C, _ = self.cost_symbolic(z[:mx.shape[0]],z[mx.shape[0]:].reshape(Sx.shape),u = u)
+            C, _ = self.cost_symbolic(z[:n_shape],z[n_shape:].reshape((n_shape,n_shape)),u = u)
             Cx = theano.tensor.jacobian(C.flatten(), z)
             Cxx = theano.tensor.jacobian(Cx.flatten(), z)
             Cu = theano.tensor.jacobian(C.flatten(),u,disconnected_inputs='ignore')
@@ -148,21 +150,46 @@ class PDDP(EpisodicLearner):
             return [V_prev, Vx_prev, Vxx_prev, I, L]
 
         #compile the previous functions in theano
+        z = theano.tensor.vector('z')
+        z_next = theano.tensor.vector('z_next')
         mx = theano.tensor.vector('mx')
         Sx = theano.tensor.matrix('Sx')
-        self.forward_dynamics = forward_dynamics
         u = theano.tensor.vector('u')
+        alpha = theano.tensor.scalar('alpha')
         V = theano.tensor.scalar('V')
         Vx = theano.tensor.vector('Vx')
         Vxx = theano.tensor.matrix('Vxx')
         Fx = theano.tensor.matrix('Fx')
         Fu = theano.tensor.matrix('Fu')
-        self.backward_propagation_function = theano.function([mx,Sx,u,V,Vx,Vxx,Fx,Fu], backward_propagation(mx,Sx,u,V,Vx,Vxx,Fx,Fu))
-        print_with_stamp("Backprop compiled",self.name)
         I = theano.tensor.vector('I')
         L = theano.tensor.matrix('L')
-        alpha = theano.tensor.scalar('alpha')
         self.rollout_single_step = rollout_single_step
+        self.forward_dynamics = forward_dynamics
+        self.backward_propagation_function = theano.function([z,u,V,Vx,Vxx,Fx,Fu], backward_propagation(z,u,V,Vx,Vxx,Fx,Fu))
+
+    def compile_forward_pass(self):
+
+        Fx = theano.tensor.matrix('Fx')
+        Fu = theano.tensor.matrix('Fu')
+        z = theano.tensor.vector('z')
+        u = theano.tensor.vector('u')
+        z_list = theano.tensor.matrix('z_list')
+        u_list = theano.tensor.matrix('u_list')
+
+        def forward_pass_func(z,u, *args):
+            return self.forward_dynamics(z, u)
+
+        shared_vars = []
+        shared_vars.extend(self.dynamics_model.get_params(symbolic=True))
+        shared_vars.extend(self.policy.get_params(symbolic=True))
+        (Fx_list, Fu_list), updts = theano.scan(fn=forward_pass_func, 
+                                                      outputs_info=None, 
+                                                      non_sequences=shared_vars,
+                                                      sequences=[z_list,u_list], 
+                                                      strict=True,
+                                                      allow_gc=False)
+        self.forward_pass = theano.function([z_list, u_list], [Fx_list, Fu_list], updates = updts)
+
 
     def compile_policy_update(self):
         H_steps = int(np.ceil(self.H/self.plant.dt))
@@ -175,7 +202,7 @@ class PDDP(EpisodicLearner):
         sum0 = theano.tensor.scalar('sum0')
 
         def policy_update_func(mx, Sx, alpha, u, sum0, *args):
-            mx_next, Sx_next, u_new = self.rollout_single_step(mx, Sx, alpha = alpha, u = u)
+            mx_next, Sx_next, u_new = self.rollout_single_step(mx, Sx, alpha = alpha)
             step_cost, _ = self.cost_symbolic(mx_next, Sx_next)
             return mx_next, Sx_next, alpha, u_new, step_cost
 
@@ -192,36 +219,6 @@ class PDDP(EpisodicLearner):
         mx_list = theano.tensor.concatenate([mx0.dimshuffle('x',0), mx_list])
         Sx_list = theano.tensor.concatenate([Sx0.dimshuffle('x',0,1), Sx_list])
         self.policy_update = theano.function([mx0, Sx0, alpha0, sum0], [mx_list, Sx_list, alpha_list, u_list, cost_list.sum()], updates = updts)
-        print_with_stamp("Policy/Trajectory update compiled",self.name)
-
-    def compile_forward_pass(self):
-        H_steps = int(np.ceil(self.H/self.plant.dt))
-        x0 = theano.tensor.vector('x0')
-        S0 = theano.tensor.matrix('S0')
-        temp_u, _ , _ ,_ = self.policy.get_params() 
-        u0 = theano.tensor.zeros(temp_u[0].shape)
-        u0 = theano.tensor.unbroadcast(u0,0)
-        Fx0 = theano.tensor.zeros((x0.shape[0]*x0.shape[0] + x0.shape[0], x0.shape[0]*x0.shape[0] + x0.shape[0]))
-        Fu0 = theano.tensor.zeros((x0.shape[0]*x0.shape[0] + x0.shape[0],u0.shape[0]))
-        Fu0 = theano.tensor.unbroadcast(Fu0, 1)
-
-        def forward_func(Fx,Fu,mx,Sx,u,*args):
-             Fx, Fu, mx_next, Sx_next, u_prev = self.forward_dynamics(mx,Sx)
-             return Fx, Fu, mx_next, Sx_next, u_prev
-        
-        shared_vars = []
-        shared_vars.extend(self.dynamics_model.get_params(symbolic=True))
-        shared_vars.extend(self.policy.get_params(symbolic=True))
-        (Fx_list,Fu_list,mx_list,Sx_list,u_list), updts = theano.scan(fn=forward_func, 
-                                                      outputs_info=[Fx0,Fu0,x0, S0, u0], 
-                                                      non_sequences=shared_vars,
-                                                      n_steps=H_steps, 
-                                                      strict=True,
-                                                      allow_gc=False)
-        mx_list = theano.tensor.concatenate([x0.dimshuffle('x',0), mx_list])
-        Sx_list = theano.tensor.concatenate([S0.dimshuffle('x',0,1), Sx_list])
-        self.forward_pass = theano.function([x0, S0], [Fx_list,Fu_list,mx_list,Sx_list,u_list], updates = updts)
-        print_with_stamp("Forward dynamics compiled",self.name)
 
     def train_policy(self):
         ''' Runs the trajectory optimization loop: 1. forward pass 2. backward propagation 3. update policy 4. repeat '''
@@ -235,27 +232,33 @@ class PDDP(EpisodicLearner):
         	#		 need to use rollout_single_step without the policy.evaluate step, and instead use the new optimal action. This should return the sequence of states and
         	#		 actions that correspond to the new optimal trajectory. 
 
+        #SETUP FOR STEP 1
+        H_steps = int(np.ceil(self.H/self.plant.dt))
+        Fx_list = [None for a0 in xrange(H_steps)]
+        Fu_list = [None for a0 in xrange(H_steps)]
+        z_nominal = [None for a0 in xrange(H_steps)]
+
+        #SETUP FOR STEP 2
+        V_list = [None for a0 in xrange(H_steps-1)]
+        Vx_list = [None for a0 in xrange(H_steps-1)]
+        Vxx_list = [None for a0 in xrange(H_steps-1)]
+        I_list = [None for a0 in xrange(H_steps-1)]
+        L_list = [None for a0 in xrange(H_steps-1)]
         
         self.policy.t = 0
         if self.forward_pass is None or self. policy_update is None or self.min_cost is None:
             self.init_rollout()
-            self.compile_forward_pass()
             self.compile_policy_update()
-            _, _, _, _, self.min_cost = self.policy_update(self.plant.x0, self.plant.S0, 0, 0)
+            self.compile_forward_pass()
+            mx_list, Sx_list, _, u_list, self.min_cost = self.policy_update(self.params['x0'], self.params['S0'], 0, 0)
+            self.policy.set_params(uin = np.array(u_list))
+            for i in xrange(0,H_steps):
+                z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
+            self.policy.set_params(zin = np.array(z_nominal))
+            self.policy.t = 0  
+
             print "MIN COST INIT:" + str(self.min_cost)
-
-        #SETUP FOR STEP 1
-        H_steps = int(np.ceil(self.H/self.plant.dt))
-        z_nominal = [None for a0 in xrange(H_steps)]
-
-
-        #SETUP FOR STEP 2
-        V_list = [None for a0 in xrange(H_steps)]
-        Vx_list = [None for a0 in xrange(H_steps)]
-        Vxx_list = [None for a0 in xrange(H_steps)]
-        I_list = [None for a0 in xrange(H_steps)]
-        L_list = [None for a0 in xrange(H_steps)]
-
+        
 
         #MAIN LOOP
         print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)
@@ -263,71 +266,56 @@ class PDDP(EpisodicLearner):
         while self.n_evals < self.max_evals:
 
 
-
-            print_with_stamp('Current policy iteration number: [%d]'%(self.n_evals), self.name, same_line=False)
-            self.policy.t = 0
-
             #STEP 1
             print_with_stamp('Current policy iteration number: [%d] ... Running Forward Dynamics'%(self.n_evals), self.name, same_line=False)
-
-            Fx_list, Fu_list, mx_list, Sx_list, u_list = self.forward_pass(self.plant.x0, self.plant.S0)
-            mx_list = mx_list[:-1]
-            Sx_list = Sx_list[:-1]
             self.policy.t = 0
+            u_list, z_list, _, _ = self.policy.get_params()
+            Fx_list, Fu_list = self.forward_pass(z_list,u_list)
 
-            for i in xrange(0,H_steps):
-                z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
-            zin = np.array(z_nominal)
-            self.policy.set_params(zin = zin)
 
 
             #STEP 2
             print_with_stamp('Current policy iteration number: [%d] ... Running Backpropagation'%(self.n_evals), self.name, same_line=False)
-            n = len(self.plant.x0) + len(self.angle_idims)
+            n = len(self.params['x0']) + len(self.angle_idims)
             n = n*n + n
-            V_list[-1] = 0
+            V_list[-1] = 1
             Vx_list[-1] = np.zeros((n,))
             Vxx_list[-1] = np.zeros((n,n))
 
             for i in reversed(xrange(1,H_steps)):
-                V_list[i-1], Vx_list[i-1], Vxx_list[i-1], I_list[i], L_list[i] = self.backward_propagation_function(mx_list[i],Sx_list[i],u_list[i],V_list[i],Vx_list[i],Vxx_list[i],Fx_list[i],Fu_list[i])
-            _, _, _, I_list[0], L_list[0] = self.backward_propagation_function(mx_list[0],Sx_list[0],u_list[0],V_list[0],Vx_list[0],Vxx_list[0],Fx_list[0],Fu_list[0])
+                V_list[i-1], Vx_list[i-1], Vxx_list[i-1], I_list[i], L_list[i] = self.backward_propagation_function(z_list[i],u_list[i],V_list[i],Vx_list[i],Vxx_list[i],Fx_list[i],Fu_list[i])
+            _, _, _, I_list[0], L_list[0] = self.backward_propagation_function(z_list[0],u_list[0],V_list[0],Vx_list[0],Vxx_list[0],Fx_list[0],Fu_list[0])
             self.policy.t = 0
 
-            self.policy.set_params(Bin = np.array(I_list))
             self.policy.set_params(Ain = np.array(L_list))
-
+            self.policy.set_params(Bin = np.array(I_list))
 
             #STEP 3
             print_with_stamp('Current policy iteration number: [%d] ... Running Trajectory Update'%(self.n_evals), self.name, same_line=False)
             abort = False
             alpha = 1.0
-            mx_list, Sx_list, _, u_list, trajectory_cost = self.policy_update(self.plant.x0, self.plant.S0, alpha, 0)
+            mx_list, Sx_list, _, u_list, trajectory_cost = self.policy_update(self.params['x0'], self.params['S0'], alpha, 0)
             self.policy.t = 0
             line_search_iters = 0
             while trajectory_cost > self.min_cost:
-                alpha = alpha*0.7
-                mx_list, Sx_list, _, u_list, trajectory_cost = self.policy_update(self.plant.x0, self.plant.S0, alpha, 0)
+                alpha = alpha*0.75
+                mx_list, Sx_list, _, u_list, trajectory_cost = self.policy_update(self.params['x0'], self.params['S0'], alpha, 0)
                 self.policy.t = 0
                 line_search_iters += 1
                 if line_search_iters == 100:
                     abort = True
-                    break
-            
+                    break            
             mx_list = mx_list[:-1]
             Sx_list = Sx_list[:-1]
-            
 
             #EXIT AND SAVE
             if not abort:
                 self.min_cost = trajectory_cost
                 print "Finished with " + str(line_search_iters) + " line search iterations and cost " + str(self.min_cost)
-                uin = np.array(u_list)
-                self.policy.set_params(uin = uin)
+                self.policy.set_params(uin = np.array(u_list))
                 for i in xrange(0,H_steps):
                     z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
-                zin = np.array(z_nominal)
-                self.policy.set_params(zin = zin)
+                self.policy.set_params(zin = np.array(z_nominal))
                 self.policy.t = 0        
                 self.n_evals += 1
                 self.policy.state_changed = True
@@ -335,7 +323,7 @@ class PDDP(EpisodicLearner):
                 print "Could not find a better policy in this iteration. (Current best cost: " + str(self.min_cost) + ")"
                 self.n_evals = self.max_evals
         print "\n"
-        self.experience.reset()
+        #self.experience.reset()
         self.n_evals=0
 
 

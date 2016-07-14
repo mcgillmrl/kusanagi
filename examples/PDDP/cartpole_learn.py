@@ -2,30 +2,37 @@ import atexit
 import signal,sys
 import numpy as np
 from functools import partial
-from ghost.regression.GPRegressor import SSGP_UI
+from ghost.regression.GP import SSGP_UI
 from ghost.learners.PDDP import PDDP
 from ghost.cost import quadratic_loss
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import LocalLinearPolicy
-from utils import plot_results
+from utils import plot_results, gTrig2_np, gTrig_np
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     # setup learner parameters
     # general parameters
-    J = 4                                                                   # number of random initial trials
+    J = 1                                                                   # number of random initial trials
     N = 50                                                                 # learning iterations
     learner_params = {}
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
     learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
     learner_params['angle_dims'] = []                                      # angle dimensions
-    learner_params['H'] = 4.0                                              # control horizon
+    x0 = np.array(learner_params['x0'])[None,:]
+    S0 = np.array(learner_params['S0'])[None,:,:]
+    x0, S0 = gTrig2_np(x0,S0,np.array([3]),len(learner_params['x0']))
+    learner_params['x0'], learner_params['S0'] = x0[0], S0[0]
+    learner_params['H'] = 4.0                                             # control horizon
     learner_params['discount'] = 1.0                                        # discoutn factor
     learner_params['max_evals'] = 200
     # plant
     plant_params = {}
+    plant_params['x0'] = [0,0,0,0]   
+    plant_params['S0'] = np.eye(4)*(0.1**2)
     plant_params['dt'] = 0.1
+    plant_params['angle_dims'] = [3]
     plant_params['params'] = {'l': 0.5, 'm': 0.5, 'M': 0.5, 'b': 0.1, 'g': 9.82}
     plant_params['noise'] = np.diag(np.ones(len(learner_params['x0']))*0.01**2)   # model measurement noise (randomizes the output of the plant)
     # policy
@@ -34,14 +41,13 @@ if __name__ == '__main__':
     policy_params['m0'] = learner_params['x0']
     policy_params['H'] = learner_params['H']
     policy_params['dt'] = plant_params['dt']
-    policy_params['angle_dims'] = learner_params['angle_dims']
     # dynamics model
     dynmodel_params = {}
     dynmodel_params['n_basis'] = 100
     # cost function
     cost_params = {}
-    cost_params['target'] = [0,0,0,np.pi]
-    cost_params['angi'] = [3]
+    cost_params['target'] = gTrig_np(np.array([0,0,0,np.pi])[None,:], [3])[0]
+    cost_params['angi'] = learner_params['angle_dims']
     cost_params['D'] = len(cost_params['target'])
     Q = np.zeros((5,5))
     Q[0,0] = 1; Q[0,-2] = plant_params['params']['l']; Q[-2,0] = plant_params['params']['l']; Q[-2,-2] = plant_params['params']['l']**2; Q[-1,-1]=plant_params['params']['l']**2
