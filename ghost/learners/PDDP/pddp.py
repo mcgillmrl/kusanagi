@@ -1,6 +1,7 @@
 import numpy as np
 from utils import print_with_stamp, gTrig_np, gTrig2, gTrig2_np
-from ghost.learners.EpisodicLearner import *
+from ghost.learners.EpisodicLearner import EpisodicLearner
+from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.regression.GP import GP_UI
 from ghost.control import LocalLinearPolicy
 from theano.tensor.nlinalg import matrix_inverse, pinv
@@ -55,8 +56,6 @@ class PDDP(EpisodicLearner):
             of the system using the learned GP dynamics model '''
                 # define the function for a single propagation step
         def rollout_single_step(mx,Sx, alpha = 1, eval_t = None, u=None, use_gTrig = False):
-            D=mx.shape[0]
-                
             # compute distribution of control signal
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
@@ -64,8 +63,9 @@ class PDDP(EpisodicLearner):
             # compute state control joint distribution
             #mx, Sx, _ = gTrig2(mx, Sx, self.angle_idims, len(self.mx0))
             mxu = theano.tensor.concatenate([mx,u_prev])
-            Sxu_up = theano.tensor.concatenate([Sx,Cu],axis=1)
-            Sxu_lo = theano.tensor.concatenate([Cu.T,Su],axis=1)
+            q = Sx.dot(Cu)
+            Sxu_up = theano.tensor.concatenate([Sx,q],axis=1)
+            Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
             Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0)
 
             #  predict the change in state given current state-action
@@ -74,8 +74,7 @@ class PDDP(EpisodicLearner):
 
             # compute the successor state distribution
             mx_next = mx + m_deltax
-            iSxu_Cdeltax = matrix_inverse(Sxu).dot(Cdeltax)
-            Sx_deltax = Sxu[:D,:].dot(iSxu_Cdeltax)
+            Sx_deltax = Sxu[:D,:].dot(C_deltax)
             Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
             #  get cost:
