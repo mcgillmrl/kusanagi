@@ -10,10 +10,10 @@ def test_random(gp_type='GP',angi=[]):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-0.5*(np.sum((X**2),1)))*np.sin(X.sum(1))
 
-    n_samples = 250
+    n_samples = 100
     n_test = 100
-    idims = 7
-    odims = 6
+    idims = 4
+    odims = 4
     np.random.seed(31337)
     
     #  ================== train dataset ==================
@@ -301,4 +301,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('SSGP')
+    test_random('SSGP_UI')

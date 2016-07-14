@@ -5,7 +5,6 @@ import sys
 import theano
 import utils
 
-from theano.sandbox.linalg import psd,matrix_inverse,det,cholesky
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.compile.nanguardmode import NanGuardMode
 from ghost.learners.EpisodicLearner import *
@@ -128,9 +127,7 @@ class PILCO(EpisodicLearner):
             logsn = self.dynamics_model.loghyp[:,-1]
             Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
             mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
-            Sxa_.name = 'Sxa_'
             mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
-            Cu.name = 'Cu'
             
             # compute state control joint distribution
             n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
@@ -139,7 +136,6 @@ class PILCO(EpisodicLearner):
             Sxu_up = theano.tensor.concatenate([Sxa,q],axis=1)
             Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
             Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
-            Sxu.name = 'Sxu'
 
             # state control covariance without angle dimensions
 	    if Ca is not None:
@@ -149,16 +145,14 @@ class PILCO(EpisodicLearner):
 	    else:
                 Sxu_ = Sxu[:D,:] # [D] x [D+U]
 
-            Sxu_.name = 'Sxu_'
             #  predict the change in state given current state-action
             # C_deltax = inv (Sxu) dot Sxu_deltax
-            mdeltax, Sdeltax, Cdeltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
-            Cdeltax.name = 'Cdeltax'
+            m_deltax, S_deltax, C_deltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
 
             # compute the successor state distribution
-            mx_next = mx + mdeltax
-            Sx_deltax = Sxu_.dot(Cdeltax)
-            Sx_next = Sx + Sdeltax + Sx_deltax + Sx_deltax.T
+            mx_next = mx + m_deltax
+            Sx_deltax = Sxu_.dot(C_deltax)
+            Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
             #  get cost:
             mcost, Scost = self.cost_symbolic(mx_next,Sx_next)
@@ -185,7 +179,6 @@ class PILCO(EpisodicLearner):
         shared_vars = []
         shared_vars.extend(self.dynamics_model.get_all_shared_vars())
         shared_vars.extend(self.policy.get_all_shared_vars())
-        print shared_vars
         (mV_,SV_,mx_,Sx_,gamma_), updts = theano.scan(fn=get_discounted_reward, 
                                                       outputs_info=[mv0,Sv0,mx,Sx,gamma], 
                                                       non_sequences=shared_vars,
