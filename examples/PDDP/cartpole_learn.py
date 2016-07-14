@@ -14,8 +14,8 @@ np.set_printoptions(linewidth=500)
 if __name__ == '__main__':
     # setup learner parameters
     # general parameters
-    J = 4                                                                   # number of random initial trials
-    N = 50                                                                 # learning iterations
+    J = 10                                                                   # number of random initial trials
+    N = 100                                                                 # learning iterations
     learner_params = {}
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
     learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
