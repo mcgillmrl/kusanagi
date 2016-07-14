@@ -39,8 +39,8 @@ def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
     return sum(M_cost), sum(S_cost)
 
 class Cartpole(ODEPlant):
-    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Cartpole', integrator='dopri5', atol=1e-12, rtol=1e-12):
-        super(Cartpole, self).__init__(params, x0, S0, dt=dt, noise=noise, name=name, integrator=integrator, atol=atol, rtol=rtol)
+    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Cartpole', integrator='dopri5', atol=1e-12, rtol=1e-12, angle_dims = []):
+        super(Cartpole, self).__init__(params, x0, S0, dt=dt, noise=noise, name=name, integrator=integrator, atol=atol, rtol=rtol, angle_dims = angle_dims)
 
     def dynamics(self,t,z):
         l = self.params['l']

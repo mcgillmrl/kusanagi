@@ -11,12 +11,12 @@ from scipy.integrate import ode
 from time import time, sleep
 from threading import Thread, Lock
 from multiprocessing import Process,Pipe,Event
-from utils import print_with_stamp
+from utils import print_with_stamp, gTrig_np
 
 color_generator = cnames.iteritems()
 
 class Plant(object):
-    def __init__(self, params=None, x0=None, S0=None, dt=0.01, noise=None, name='Plant'):
+    def __init__(self, params=None, x0=None, S0=None, dt=0.01, noise=None, name='Plant', angle_dims = []):
         self.name = name
         self.params = params
         self.x0 = x0
@@ -29,6 +29,7 @@ class Plant(object):
         self.running = Event()
         self.done = False
         self.plant_thread = None
+        self.angle_dims = angle_dims
     
     def apply_control(self,u):
         self.u = np.array(u,dtype=np.float64)
@@ -36,7 +37,10 @@ class Plant(object):
             self.u = self.u[:,None]
 
     def get_state(self):
-        return self.x.flatten(),self.t
+        if self.angle_dims is None:
+            return self.x.flatten(),self.t
+        else:
+            return gTrig_np(self.x, self.angle_dims).flatten(), self.t
     
     def run(self):
         start_time = time()
@@ -76,8 +80,8 @@ class Plant(object):
         raise NotImplementedError("You need to implement the reset_state method in your Plant subclass.")
 
 class ODEPlant(Plant):
-    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='ODEPlant', integrator='dopri5', atol=1e-12, rtol=1e-12):
-        super(ODEPlant,self).__init__(params, x0, S0, dt, noise, name)
+    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='ODEPlant', integrator='dopri5', atol=1e-12, rtol=1e-12, angle_dims = []):
+        super(ODEPlant,self).__init__(params, x0, S0, dt, noise, name, angle_dims)
         self.solver = ode(self.dynamics).set_integrator(integrator,atol=atol,rtol=rtol)
         self.set_state(self.x0)
 
@@ -114,8 +118,8 @@ class SerialPlant(Plant):
     cmds = ['RESET_STATE','GET_STATE','APPLY_CONTROL','CMD_OK','STATE']
     cmds = dict(zip(cmds,[str(i) for i in xrange(len(cmds))]))
 
-    def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None):
-        super(SerialPlant,self).__init__(params, x0, S0, dt, noise, name)
+    def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None, angle_dims = []):
+        super(SerialPlant,self).__init__(params, x0, S0, dt, noise, name, angle_dims)
         self.port = port
         self.baud_rate = baud_rate
         self.serial = serial.Serial(self.port,self.baud_rate)

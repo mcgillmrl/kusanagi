@@ -18,8 +18,9 @@ class EpisodicLearner(object):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
         self.name = name
         # initialize plant
-        params['plant']['x0'] = params['x0']
-        params['plant']['S0'] = params['S0']
+        if 'x0' not in params['plant']:
+            params['plant']['x0'] = params['x0']
+            params['plant']['S0'] = params['S0']
         self.plant = plant_class(**params['plant'])
         # initialize policy
         params['policy']['angle_dims'] = params['angle_dims']

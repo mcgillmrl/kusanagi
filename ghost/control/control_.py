@@ -198,9 +198,12 @@ class LocalLinearPolicy(object):
             new_action[new_action<-self.maxU] = self.maxU[new_action<-self.maxU]
         return new_action, 0.01*theano.tensor.eye(U), theano.tensor.zeros((D,U))
 
-    def get_params(self, symbolic=False):
+    def get_params(self, symbolic=False, t=None):
         if symbolic:
-            return (self.u_nominal,self.z_nominal,self.A,self.b)
+            if t is None:
+                return (self.u_nominal,self.z_nominal,self.A,self.b)
+            else:
+                return (self.u_nominal[t],self.z_nominal[t],self.A[t],self.b[t])
         else:
             return (self.u_nominal.get_value(),self.z_nominal.get_value(),self.A.get_value(),self.b.get_value())
 
