@@ -8,7 +8,7 @@ from ghost.cost import quadratic_loss
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from ghost.control import LocalLinearPolicy
 from utils import plot_results, gTrig2_np, gTrig_np
-#np.random.seed(31337)
+#np.random.seed(31347)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
