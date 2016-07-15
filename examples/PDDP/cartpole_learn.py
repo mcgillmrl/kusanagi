@@ -99,6 +99,7 @@ if __name__ == '__main__':
         learner.experience.reset()
         for i in xrange(J):
             learner.policy.t = 0
+            learner.plant.reset_state()
             experience_data = learner.apply_controller()
 
         # plot results

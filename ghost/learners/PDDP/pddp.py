@@ -255,6 +255,7 @@ class PDDP(EpisodicLearner):
         # the predictions from past runs might be completely wrong
         self.policy.t = 0
         mx_list, Sx_list, u_list, self.min_cost = self.policy_update(self.params['x0'], self.params['S0'])
+        self.best_alpha=1.0
         self.policy.set_params(uin = np.array(u_list))
         for i in xrange(0,H_steps):
             z_nominal[i] = np.concatenate([mx_list[i].flatten(),Sx_list[i].flatten()])
@@ -322,7 +323,8 @@ class PDDP(EpisodicLearner):
                 self.policy.t = 0        
                 self.n_evals += 1
                 self.policy.state_changed = True
-                if abs(cost_improvement) < 1e-9:
+                self.best_alpha = self.policy.alpha.get_value()
+                if abs(cost_improvement) < 1e-6:
                     self.n_evals = self.max_evals
             else:
                 print_with_stamp("Could not find a better policy in this iteration. ( Current best cost: [ %f ] )"%(self.min_cost), self.name)
@@ -330,6 +332,7 @@ class PDDP(EpisodicLearner):
         print "\n"
         #self.experience.reset()
         self.n_evals=0
+        self.policy.alpha.set_value(best_alpha)
 
 
     def train_dynamics(self):
