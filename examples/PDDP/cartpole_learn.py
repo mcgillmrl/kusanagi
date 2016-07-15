@@ -69,6 +69,7 @@ if __name__ == '__main__':
     # gather data with random trials
     print "RUNNING RANDOM TRIALS"
     for i in xrange(J):
+        learner.policy.t = 0
         learner.plant.reset_state()
         learner.apply_controller(random_controls=True)
 

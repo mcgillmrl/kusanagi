@@ -180,6 +180,8 @@ class LocalLinearPolicy(object):
                 m,s,_ =  gTrig2(m, s, self.angle_dims, len(self.m0))
                 z = theano.tensor.concatenate([m.flatten(),s.flatten()])
         else:
+            H = self.u_nominal.get_value().shape[0]
+            t = t%H
             alpha = self.alpha.get_value()
             u_t = self.u_nominal.get_value()[t]
             z_t = self.z_nominal.get_value()[t]
@@ -202,7 +204,7 @@ class LocalLinearPolicy(object):
             new_action[new_action>self.maxU] = self.maxU[new_action>self.maxU]
             new_action[new_action<-self.maxU] = self.maxU[new_action<-self.maxU]
             if self.add_noise:
-                new_action = new_action + np.random.multivariate_normal(np.zeros(new_action.shape), 0.01*np.eye(new_action.size))
+                new_action = new_action + np.random.multivariate_normal(np.zeros(new_action.shape), 0.001*np.eye(new_action.size))
         return new_action, 0.01*theano.tensor.eye(U), theano.tensor.zeros((D,U))
 
     def get_params(self, symbolic=False, t=None):
