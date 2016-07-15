@@ -267,8 +267,6 @@ class PDDP(EpisodicLearner):
         print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)
         self.learning_iteration += 1
         while self.n_evals < self.max_evals:
-
-
             #STEP 1
             print_with_stamp('Current policy iteration number: [%d] ... Running Forward Dynamics'%(self.n_evals), self.name, same_line=False)
             self.policy.t = 0
@@ -298,18 +296,17 @@ class PDDP(EpisodicLearner):
             mx_list, Sx_list, u_list, trajectory_cost = self.policy_update(self.params['x0'], self.params['S0'])
             self.policy.t = 0
             line_search_iters = 0
-            prev_cost = trajectory_cost
             while trajectory_cost > self.min_cost:
                 self.policy.alpha.set_value( self.policy.alpha.get_value()*0.5 )
                 mx_list, Sx_list, u_list, trajectory_cost = self.policy_update(self.params['x0'], self.params['S0'])
                 self.policy.t = 0
                 line_search_iters += 1
                 print_with_stamp('Current cost: %f, Current alpha: %f,  Linesearch iteration: %d    '%(trajectory_cost,self.policy.alpha.get_value(),line_search_iters),self.name,True)
-                if abs(prev_cost - trajectory_cost) < 1e-9 or line_search_iters == 200: # TODO put this as user parameter
+                if line_search_iters == 100: # TODO put this as user parameter
                     abort = True
                     break
-                prev_cost = trajectory_cost
-            print''
+            if line_search_iters>0:
+                print''
             mx_list = mx_list[:-1]
             Sx_list = Sx_list[:-1]
 
@@ -325,6 +322,8 @@ class PDDP(EpisodicLearner):
                 self.policy.t = 0        
                 self.n_evals += 1
                 self.policy.state_changed = True
+                if abs(cost_improvement) < 1e-9:
+                    self.n_evals = self.max_evals
             else:
                 print_with_stamp("Could not find a better policy in this iteration. ( Current best cost: [ %f ] )"%(self.min_cost), self.name)
                 self.n_evals = self.max_evals
