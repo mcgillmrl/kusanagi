@@ -332,7 +332,7 @@ class PDDP(EpisodicLearner):
         print "\n"
         #self.experience.reset()
         self.n_evals=0
-        self.policy.alpha.set_value(best_alpha)
+        self.policy.alpha.set_value(self.best_alpha)
 
 
     def train_dynamics(self):
