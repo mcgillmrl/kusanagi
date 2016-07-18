@@ -10,7 +10,7 @@ def test_random(gp_type='GP',angi=[]):
         #return X[:,0] + X[:,1]**2 + np.exp(-0.5*(np.sum(X**2,1)))
         return np.exp(-0.5*(np.sum((X**2),1)))*np.sin(X.sum(1))
 
-    n_samples = 100
+    n_samples = 200
     n_test = 100
     idims = 4
     odims = 4
@@ -53,7 +53,7 @@ def test_random(gp_type='GP',angi=[]):
     
     gp.set_dataset(Xd,Yd)
     gp.train()
-    #gp.save()
+    gp.save()
 
     ss = convolve2d(np.eye(Xtest.shape[1]),kk,'same')
     avg_time_per_call = 0
@@ -69,8 +69,8 @@ def test_random(gp_type='GP',angi=[]):
         print avg_time_per_call/(i+1.0)
         print '---'
     print_with_stamp('avg_time_per_call %f'%(avg_time_per_call/n_test),'main')
-    if gp.profile:
-        write_profile_files(gp)
+    #if gp.profile:
+    #    write_profile_files(gp)
 
 def write_profile_files(gp):
     from theano import d3viz
@@ -301,4 +301,4 @@ if __name__=='__main__':
     #test_K_means()
     #test_CartpoleDyn()
     #test_angle()
-    test_random('SSGP_UI')
+    test_random('SSGP')

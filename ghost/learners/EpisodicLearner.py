@@ -222,7 +222,6 @@ class EpisodicLearner(object):
         except ValueError:
             print '' 
             print self.policy.get_params(symbolic=False)
-            print self.policy.K[0].eval()
             raise
             #utils.print_with_stamp('%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
             #opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-12, options={'maxiter': 125})

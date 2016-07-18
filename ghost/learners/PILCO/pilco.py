@@ -197,6 +197,7 @@ class PILCO(EpisodicLearner):
             if not isinstance(params,list):
                 params = [params]
             for p in params:
+                print p
                 dretvars.append( theano.tensor.grad(mV_.sum(), p ) ) # we are only interested in the derivative of the sum of expected values
             
             utils.print_with_stamp('Compiling belief state propagation',self.name)

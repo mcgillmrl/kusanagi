@@ -48,15 +48,14 @@ class GP(object):
             self.E = Y_dataset.shape[1]
 
         #symbolic varianbles
-        self.X_ = None; self.Y_ = None; self.loghyp_=None
         self.loghyp = None
         self.X = None; self.Y = None
-        self.K = None; self.iK = None; self.L = None; self.beta = None;
+        self.iK = None; self.L = None; self.beta = None;
         self.nlml = None
 
         # compiled functions
-        self.predict_ = None
-        self.predict_d_ = None
+        self.predict_fn = None
+        self.predict_d_fn = None
 
         # name of this class for printing command line output and saving
         self.name = name
@@ -80,40 +79,34 @@ class GP(object):
         utils.print_with_stamp('Finished initialising GP regressor',self.name)
     
     def set_dataset(self,X_dataset,Y_dataset):
-        #utils.print_with_stamp('Updating GP dataset',self.name)
         # ensure we don't change the number of input and output dimensions ( the number of samples can change)
         assert X_dataset.shape[0] == Y_dataset.shape[0], "X_dataset and Y_dataset must have the same number of rows"
-        if self.X_ is not None:
-            assert self.X_.shape[1] == X_dataset.shape[1]
-        if self.Y_ is not None:
-            assert self.Y_.shape[1] == Y_dataset.shape[1]
+        if self.X is not None:
+            assert self.X.get_value(borrow=True).shape[1] == X_dataset.shape[1]
+        if self.Y is not None:
+            assert self.Y.get_value(borrow=True).shape[1] == Y_dataset.shape[1]
         
-        # first, assign the numpy arrays to class members
-        self.X_ = X_dataset.astype( theano.config.floatX )
-        self.Y_ = Y_dataset.astype( theano.config.floatX )
+        # first, convert numpy arrays to appropriate type
+        X_dataset = X_dataset.astype( theano.config.floatX )
+        Y_dataset = Y_dataset.astype( theano.config.floatX )
         # dims = non_angle_dims + 2*angle_dims
-        self.N = self.X_.shape[0]
+        self.N = X_dataset.shape[0]
         self.D = X_dataset.shape[1]
         self.E = Y_dataset.shape[1]
 
         # now we create symbolic shared variables
         if self.X is None:
-            self.X = S(self.X_,name='%s>X'%(self.name),borrow=True)
+            self.X = S(X_dataset,name='%s>X'%(self.name),borrow=True)
         else:
-            self.X.set_value(self.X_,borrow=True)
+            self.X.set_value(X_dataset,borrow=True)
         if self.Y is None:
-            self.Y = S(self.Y_,name='%s>Y'%(self.name),borrow=True)
+            self.Y = S(Y_dataset,name='%s>Y'%(self.name),borrow=True)
         else:
-            self.Y.set_value(self.Y_,borrow=True)
+            self.Y.set_value(Y_dataset,borrow=True)
 
-        # these are shared variables for the kernel matrix, its cholesky decomposition and K^-1 dot Y
-        self.K = S(np.zeros((self.E,self.N,self.N),dtype=theano.config.floatX), name="%s>K"%(self.name))
-        self.iK = S(np.zeros((self.E,self.N,self.N),dtype=theano.config.floatX), name="%s>iK"%(self.name))
-        self.L = S(np.zeros((self.E,self.N,self.N),dtype=theano.config.floatX), name="%s>L"%(self.name))
-        self.beta = S(np.zeros((self.E,self.N),dtype=theano.config.floatX), name="%s>beta"%(self.name))
-
-        # init log hyperparameters
-        self.init_loghyp()
+        if not self.trained:
+            # init log hyperparameters
+            self.init_loghyp()
 
         # we should be saving, since we updated the trianing dataset
         self.state_changed = True
@@ -125,36 +118,31 @@ class GP(object):
         if self.X is None:
             self.set_dataset(X_dataset,Y_dataset)
         else:
-            self.X_ = np.vstack((self.X_, X_dataset.astype(theano.config.floatX)))
-            self.X.set_value(self.X_,borrow=True)
-            self.Y_ = np.vstack((self.Y_, Y_dataset.astype(theano.config.floatX)))
-            self.Y.set_value(self.Y_,borrow=True)
+            X_ = np.vstack((self.X.get_value(), X_dataset.astype(theano.config.floatX)))
+            self.X.set_value(X_,borrow=True)
+            Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(theano.config.floatX)))
+            self.Y.set_value(Y_,borrow=True)
 
-    def init_loghyp(self,reinit=False):
+    def init_loghyp(self):
         idims = self.D; odims = self.E; 
         # initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
-        if self.loghyp_ is None:
-            reinit = True
-            self.loghyp_ = np.zeros((odims,idims+2))
+        X = self.X.get_value(); Y = self.Y.get_value()
+        loghyp = np.zeros((odims,idims+2))
+        loghyp[:,:idims] = X.std(0,ddof=1)
+        loghyp[:,idims] = Y.std(0,ddof=1)
+        loghyp[:,idims+1] = 0.1*loghyp[:,idims]
+        loghyp = np.log(loghyp)
 
-        if reinit:
-            X_ = self.X_; Y_ = self.Y_
-            self.loghyp_[:,:idims] = X_.std(0,ddof=1)
-            self.loghyp_[:,idims] = Y_.std(0,ddof=1)
-            self.loghyp_[:,idims+1] = 0.1*self.loghyp_[:,idims]
-            self.loghyp_ = np.log(self.loghyp_)
-
-        self.set_loghyp(self.loghyp_)
+        self.set_loghyp(loghyp)
         self.trained = False
 
     def set_loghyp(self, loghyp):
-        loghyp = loghyp.reshape(self.loghyp_.shape).astype(theano.config.floatX)
-        self.loghyp_ = loghyp
         # this creates one theano shared variable for the log hyperparameters
         if self.loghyp is None:
-            self.loghyp = S(self.loghyp_,name='%s>loghyp'%(self.name),borrow=True)
+            self.loghyp = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
         else:
-            self.loghyp.set_value(self.loghyp_,borrow=True)
+            loghyp = loghyp.reshape(self.loghyp.get_value(borrow=True).shape).astype(theano.config.floatX)
+            self.loghyp.set_value(loghyp,borrow=True)
 
     def get_params(self, symbolic=True, all_shared=False):
         if symbolic:
@@ -186,6 +174,13 @@ class GP(object):
         nlml = [[]]*odims
         dnlml = [[]]*odims
         covs = (cov.SEard, cov.Noise)
+        # these are shared variables for the kernel matrix, its cholesky decomposition and K^-1 dot Y
+        if self. iK is None:
+            self.iK = S(np.zeros((self.E,self.N,self.N),dtype=theano.config.floatX), name="%s>iK"%(self.name))
+        if self.L is None:
+            self.L = S(np.zeros((self.E,self.N,self.N),dtype=theano.config.floatX), name="%s>L"%(self.name))
+        if self.beta is None:
+            self.beta = S(np.zeros((self.E,self.N),dtype=theano.config.floatX), name="%s>beta"%(self.name))
         N = self.X.shape[0].astype(theano.config.floatX)
         for i in xrange(odims):
             # initialise the (before compilation) kernel function
@@ -205,15 +200,13 @@ class GP(object):
         
         nlml = T.stack(nlml)
         if cache_vars:
-            K = T.stack(K); K = T.unbroadcast(K,0) if K.broadcastable[0] else K
             iK = T.stack(iK); iK = T.unbroadcast(iK,0) if iK.broadcastable[0] else iK
             L = T.stack(L); L = T.unbroadcast(L,0) if L.broadcastable[0] else L
             beta = T.stack(beta); beta = T.unbroadcast(beta,0) if beta.broadcastable[0] else beta
     
             # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
-            updts =[(self.K,K),(self.iK,iK),(self.L,L),(self.beta,beta)]
+            updts =[(self.iK,iK),(self.L,L),(self.beta,beta)]
         else:
-            self.K = K 
             self.iK = iK 
             self.L = L 
             self.beta = beta
@@ -253,7 +246,7 @@ class GP(object):
         if not derivs:
             # compile prediction
             utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-            self.predict_ = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+            self.predict_fn = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             self.state_changed = True # for saving
         else:
             # compute the derivatives wrt the input vector ( or input mean in the case of uncertain inputs)
@@ -272,7 +265,7 @@ class GP(object):
                     prediction_derivatives.append( T.jacobian( p.flatten(), self.Y ) )
             #prediction_derivatives contains  [p1, p2, ..., pn, dp1/dmx, dp2/dmx, ..., dpn/dmx, dp1/dSx, dp2/dSx, ..., dpn/dSx, dp1/dloghyp, dp2/dloghyp, ..., dpn/loghyp]
             utils.print_with_stamp('Compiling mean and variance of prediction with jacobians',self.name)
-            self.predict_d_ = F(input_vars, prediction_derivatives, name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+            self.predict_d_fn = F(input_vars, prediction_derivatives, name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
             self.state_changed = True # for saving
 
     def predict_symbolic(self,mx,Sx):
@@ -297,13 +290,13 @@ class GP(object):
     def predict(self,mx,Sx = None, derivs=False):
         predict = None
         if not derivs:
-            if self.predict_ is None:
+            if self.predict_fn is None or self.should_recompile:
                 self.init_predict(derivs=derivs)
-            predict = self.predict_
+            predict = self.predict_fn
         else:
-            if self.predict_d_ is None:
+            if self.predict_d_fn is None or self.should_recompile:
                 self.init_predict(derivs=derivs)
-            predict = self.predict_d_
+            predict = self.predict_d_fn
 
         odims = self.E
         idims = self.D
@@ -328,10 +321,11 @@ class GP(object):
         return res
 
     def train(self):
-        if self.nlml is None:
+        if self.nlml is None or self.should_recompile:
             self.init_loss()
+
         utils.print_with_stamp('Current hyperparameters:',self.name)
-        loghyp0 = self.loghyp_.copy()
+        loghyp0 = self.loghyp.get_value(borrow=True)
         print (loghyp0)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
@@ -340,11 +334,11 @@ class GP(object):
         except ValueError:
             opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-12, options={'maxiter': 500})
         print ''
-        loghyp = opt_res.x.reshape(self.loghyp_.shape)
+        loghyp = opt_res.x.reshape(loghyp0.shape)
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
         self.set_loghyp(loghyp)
         utils.print_with_stamp('New hyperparameters:',self.name)
-        print (self.loghyp_)
+        print (self.loghyp.get_value(borrow=True))
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         self.trained = True
 
@@ -368,26 +362,21 @@ class GP(object):
     def set_state(self,state):
         i = utils.integer_generator()
         self.X = state[i.next()]
+        self.N = self.X.get_value(borrow=True).shape[0]
         self.Y = state[i.next()]
         self.loghyp = state[i.next()]
-        self.K = state[i.next()]
+        self.iK = state[i.next()]
         self.L = state[i.next()]
         self.beta = state[i.next()]
-        self.set_dataset(state[i.next()],state[i.next()])
-        self.set_loghyp(state[i.next()])
         self.nlml = state[i.next()]
         self.dnlml = state[i.next()]
-        self.predict_ = state[i.next()]
-        self.predict_d_ = state[i.next()]
+        self.predict_fn = state[i.next()]
+        self.predict_d_fn = state[i.next()]
         self.kernel_func = state[i.next()]
-        try:
-            self.trained = state[i.next()]
-        except:
-            self.trained = True
+        self.trained = state[i.next()]
 
     def get_state(self):
-        # TODO remove unnecessary variables
-        return [self.X,self.Y,self.loghyp,self.K,self.L,self.beta,self.X_,self.Y_,self.loghyp_,self.nlml,self.dnlml,self.predict_,self.predict_d_,self.kernel_func,self.trained]
+        return [self.X,self.Y,self.loghyp,self.iK,self.L,self.beta,self.nlml,self.dnlml,self.predict_fn,self.predict_d_fn,self.kernel_func,self.trained]
 
 class GP_UI(GP):
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'GP_UI', idims=None, odims=None, profile=False, uncertain_inputs=True, hyperparameter_gradients=False):
@@ -452,11 +441,12 @@ class GP_UI(GP):
         
 class SPGP(GP):
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP', idims=None, odims=None, profile=False, n_basis = 100, uncertain_inputs=False, hyperparameter_gradients=False):
-        self.X_sp_ = None # inducing inputs (data)
         self.X_sp = None # inducing inputs (symbolic variable)
         self.nlml_sp = None
         self.dnlml_sp = None
         self.beta_sp = None
+        self.iKmm = None
+        self.iBmm = None
         self.Lmm = None
         self.Amm = None
         self.should_recompile = False
@@ -465,24 +455,26 @@ class SPGP(GP):
         super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def set_state(self,state):
-        i = utils.integer_generator(-7)
+        i = utils.integer_generator(-8)
         self.X_sp = state[i.next()]
-        self.X_sp_ = state[i.next()]
-        self.beta_sp = state[i.next()]
+        self.iKmm = state[i.next()]
+        self.iBmm = state[i.next()]
         self.Lmm = state[i.next()]
         self.Amm = state[i.next()]
+        self.beta_sp = state[i.next()]
         self.nlml_sp = state[i.next()]
         self.dnlml_sp = state[i.next()]
-        super(SPGP,self).set_state(state[:-7])
+        super(SPGP,self).set_state(state[:-8])
         self.should_recompile = False
 
     def get_state(self):
         state = super(SPGP,self).get_state()
         state.append(self.X_sp)
-        state.append(self.X_sp_)
-        state.append(self.beta_sp)
+        state.append(self.iKmm)
+        state.append(self.iBmm)
         state.append(self.Lmm)
         state.append(self.Amm)
+        state.append(self.beta_sp)
         state.append(self.nlml_sp)
         state.append(self.dnlml_sp)
         return state
@@ -491,16 +483,17 @@ class SPGP(GP):
         assert self.N > self.n_basis, "Dataset must have more than n_basis [ %n ] to enable inference with sparse pseudo inputs"%(self.n_basis)
         self.should_recompile = True
         # pick initial cluster centers from dataset
-        self.X_sp_ = utils.kmeanspp(self.X_,self.n_basis).astype(theano.config.floatX)
+        X = self.X.get_value()
+        X_sp_ = utils.kmeanspp(X,self.n_basis).astype(theano.config.floatX)
 
         # perform kmeans to get initial cluster centers
         utils.print_with_stamp('Initialising pseudo inputs',self.name)
-        self.X_sp_, dist = kmeans(self.X_, self.X_sp_, iter=200,thresh=1e-12)
+        X_sp_, dist = kmeans(X, X_sp_, iter=200,thresh=1e-12)
         # initialize symbolic tensor variable if necessary
         if self.X_sp is None:
-            self.X_sp = S(self.X_sp_,name='%s>X_sp'%(self.name),borrow=True)
+            self.X_sp = S(X_sp_,name='%s>X_sp'%(self.name),borrow=True)
         else:
-            self.X_sp.set_value(self.X_sp_,borrow=True)
+            self.X_sp.set_value(X_sp_,borrow=True)
 
     def set_dataset(self,X_dataset,Y_dataset):
         # set the dataset on the parent class
@@ -508,20 +501,12 @@ class SPGP(GP):
         if self.N <= self.n_basis:
             utils.print_with_stamp('Dataset is not large enough for using pseudo inputs. Training full GP.',self.name)
             self.X_sp = None
-            self.X_sp_ = None
             self.nlml_sp = None
             self.dnlml_sp = None
             self.beta_sp = None
             self.Lmm = None
             self.Amm = None
             self.should_recompile = False
-        else:
-            self.Kmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>Kmm"%(self.name))
-            self.iKmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>iKmm"%(self.name))
-            self.Lmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>Lmm"%(self.name))
-            self.Amm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>Amm"%(self.name))
-            self.iBmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>iBmm"%(self.name))
-            self.beta_sp = S(np.zeros((self.E,self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
 
         if self.N > self.n_basis and self.X_sp is None:
             utils.print_with_stamp('Dataset is large enough for using pseudo inputs. You should reinitiialise the training loss function and predictions.',self.name)
@@ -548,6 +533,16 @@ class SPGP(GP):
             beta_sp = [[]]*odims
             nlml_sp = [[]]*odims
             dnlml_sp = [[]]*odims
+            if self.iKmm is None:
+                self.iKmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>iKmm"%(self.name))
+            if self.Lmm is None:
+                self.Lmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>Lmm"%(self.name))
+            if self.Amm is None:
+                self.Amm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>Amm"%(self.name))
+            if self.iBmm is None:
+                self.iBmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>iBmm"%(self.name))
+            if self.beta_sp is None:
+                self.beta_sp = S(np.zeros((self.E,self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
             ridge = 1e-6 if theano.config.floatX == 'float64' else 5e-4
             for i in xrange(odims):
                 X_sp_i = self.X_sp  # TODO allow for different pseudo inputs for each dimension
@@ -584,7 +579,6 @@ class SPGP(GP):
 
             nlml_sp = T.stack(nlml_sp)
             if cache_vars:
-                Kmm = T.stack(Kmm); Kmm = T.unbroadcast(Kmm,0) if Kmm.broadcastable[0] else Kmm
                 iKmm = T.stack(iKmm); iKmm = T.unbroadcast(iKmm,0) if iKmm.broadcastable[0] else iKmm
                 Lmm = T.stack(Lmm); Lmm = T.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
                 Amm = T.stack(Amm); Amm = T.unbroadcast(Amm,0) if Amm.broadcastable[0] else Amm
@@ -592,9 +586,8 @@ class SPGP(GP):
                 beta_sp = T.stack(beta_sp); beta_sp = T.unbroadcast(beta_sp,0) if beta_sp.broadcastable[0] else beta_sp
         
                 # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
-                updts = [(self.Kmm,Kmm),(self.iKmm,iKmm),(self.Lmm,Lmm),(self.Amm,Amm),(self.iBmm,iBmm),(self.beta_sp,beta_sp)]
+                updts = [(self.iKmm,iKmm),(self.Lmm,Lmm),(self.Amm,Amm),(self.iBmm,iBmm),(self.beta_sp,beta_sp)]
             else:
-                self.Kmm = Kmm 
                 self.iKmm = iKmm 
                 self.Lmm = Lmm 
                 self.Amm = Amm 
@@ -604,7 +597,7 @@ class SPGP(GP):
 
 
             # TODO include the log hyperparameters in the optimization
-            # TODO give the optiion for separate inducing inputs for every output dimension
+            # TODO give the option for separate inducing inputs for every output dimension
             dnlml_sp = T.jacobian(nlml_sp.sum(),self.X_sp)
 
             # Compile the theano functions
@@ -616,7 +609,7 @@ class SPGP(GP):
     def predict_symbolic(self,mx,Sx):
         if self.N <= self.n_basis:
             # stick with the full GP
-            return super(SPGP, self).predict_symbolic()
+            return super(SPGP, self).predict_symbolic(mx,Sx)
 
         odims = self.E
 
@@ -638,9 +631,8 @@ class SPGP(GP):
         return M,S,V
 
     def set_X_sp(self, X_sp):
-        X_sp = X_sp.reshape(self.X_sp_.shape).astype(theano.config.floatX)
-        np.copyto(self.X_sp_,X_sp)
-        self.X_sp.set_value(self.X_sp_,borrow=True)
+        X_sp = X_sp.reshape(self.X_sp.get_value(borrow=True).shape).astype(theano.config.floatX)
+        self.X_sp.set_value(X_sp,borrow=True)
     
     def get_params(self, symbolic=True):
         retvars = super(SPGP,self).get_params(symbolic=False)
@@ -660,6 +652,8 @@ class SPGP(GP):
         return res
 
     def train(self):
+        if self.nlml_sp is None or self.should_recompile:
+            self.init_loss()
         # train the full GP
         super(SPGP, self).train()
 
@@ -669,9 +663,9 @@ class SPGP(GP):
                 self.init_loss()
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
             m_loss_sp = utils.MemoizeJac(self.loss_sp)
-            opt_res = minimize(m_loss_sp, self.X_sp_, jac=m_loss_sp.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
+            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
             print ''
-            X_sp = opt_res.x.reshape(self.X_sp_.shape)
+            X_sp = opt_res.x.reshape(self.X_sp.get_value(borrow=True).shape)
             self.set_X_sp(X_sp)
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
         self.trained = True
@@ -768,15 +762,13 @@ class RBFGP(GP_UI):
         return retvars
     
     def set_loghyp(self, loghyp):
-        loghyp = loghyp.reshape(self.loghyp_.shape).astype(theano.config.floatX)
-        
-        self.loghyp_ = loghyp
         # this creates one theano shared variable for the log hyperparameters
         if self.loghyp_full is None:
-            self.loghyp_full = S(self.loghyp_,name='%s>loghyp'%(self.name),borrow=True)
+            self.loghyp_full = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
             self.loghyp = T.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
         else:
-            self.loghyp_full.set_value(self.loghyp_,borrow=True)
+            loghyp = loghyp.reshape(self.loghyp_full.get_value(borrow=True).shape).astype(theano.config.floatX)
+            self.loghyp_full.set_value(loghyp,borrow=True)
 
     def predict_symbolic(self,mx,Sx):
         idims = self.D
@@ -846,10 +838,9 @@ class SSGP(GP):
     ''' Sparse Spectral Gaussian Process Regression'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, hyperparameter_gradients=False):
         self.w = None
-        self.w_ = None
         self.sr = None
-        self.A = None
         self.Lmm = None
+        self.iA = None
         self.beta_ss = None
         self.nlml_ss = None
         self.dnlml_ss = None
@@ -857,26 +848,24 @@ class SSGP(GP):
         super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
 
     def set_state(self,state):
-        i = utils.integer_generator(-8)
+        i = utils.integer_generator(-7)
         self.w = state[i.next()]
-        self.w_ = state[i.next()]
         self.sr = state[i.next()]
         self.beta_ss = state[i.next()]
-        self.A = state[i.next()]
         self.Lmm = state[i.next()]
+        self.iA = state[i.next()]
         self.nlml_ss = state[i.next()]
         self.dnlml_ss = state[i.next()]
-        super(SSGP,self).set_state(state[:-8])
+        super(SSGP,self).set_state(state[:-7])
         self.should_recompile = False
 
     def get_state(self):
         state = super(SSGP,self).get_state()
         state.append(self.w)
-        state.append(self.w_)
         state.append(self.sr)
         state.append(self.beta_ss)
-        state.append(self.A)
         state.append(self.Lmm)
+        state.append(self.iA)
         state.append(self.nlml_ss)
         state.append(self.dnlml_ss)
         return state
@@ -884,10 +873,6 @@ class SSGP(GP):
     def set_dataset(self,X_dataset,Y_dataset):
         # set the dataset on the parent class
         super(SSGP, self).set_dataset(X_dataset,Y_dataset)
-        self.A = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>A"%(self.name))
-        self.iA = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>iA"%(self.name))
-        self.Lmm = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>Lmm"%(self.name))
-        self.beta_ss = S(np.zeros((self.E,2*self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
 
     def init_loss(self,cache_vars=True):
         super(SSGP, self).init_loss()
@@ -900,6 +885,12 @@ class SSGP(GP):
         iA = [[]]*odims
         beta_ss = [[]]*odims
         nlml_ss = [[]]*odims
+        if self.iA is None:
+            self.iA = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>iA"%(self.name))
+        if self.Lmm is None:
+            self.Lmm = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>Lmm"%(self.name))
+        if self.beta_ss is None:
+            self.beta_ss = S(np.zeros((self.E,2*self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
         
         # sample initial unscaled spectral points
         self.set_spectral_samples()
@@ -907,6 +898,7 @@ class SSGP(GP):
         #init variables
         N = self.X.shape[0].astype(theano.config.floatX)
         M = self.sr.shape[1].astype(theano.config.floatX)
+        Mi = 2*self.sr.shape[1]
         sf2 = T.exp(2*self.loghyp[:,idims])
         sf2M = sf2/M
         sn2 = T.exp(2*self.loghyp[:,idims+1])
@@ -915,28 +907,26 @@ class SSGP(GP):
         
         # TODO vectorize these ops
         for i in xrange(odims):
-            Mi = 2*self.sr.shape[1]
-            A[i] = sf2M[i]*phi_f[i].dot(phi_f[i].T) + sn2[i]*T.eye(Mi)
+            sf2M_i = sf2M[i]; phi_f_i = phi_f[i]; sn2_i = sn2[i]
+            A[i] = sf2M_i*phi_f_i.dot(phi_f_i.T) + sn2_i*T.eye(Mi)
             Lmm[i] = cholesky(A[i])
             iA[i] = solve_upper_triangular(Lmm[i].T, solve_lower_triangular(Lmm[i],T.eye(Mi)))
 
             Yi = self.Y[:,i]
-            Yci = solve_lower_triangular(Lmm[i],phi_f[i].dot(Yi))
-            beta_ss[i] = sf2M[i]*solve_upper_triangular(Lmm[i].T,Yci)
+            Yci = solve_lower_triangular(Lmm[i],phi_f_i.dot(Yi))
+            beta_ss[i] = sf2M_i*solve_upper_triangular(Lmm[i].T,Yci)
             
-            nlml_ss[i] = 0.5*( Yi.dot(Yi) - sf2M[i]*Yci.dot(Yci) )/sn2[i] + T.sum(T.log(T.diag(Lmm[i]))) + (0.5*N - M)*T.log(sn2[i]) + 0.5*N*np.log(2*np.pi).astype(theano.config.floatX)
+            nlml_ss[i] = 0.5*( Yi.dot(Yi) - sf2M_i*Yci.dot(Yci) )/sn2_i + T.sum(T.log(T.diag(Lmm[i]))) + (0.5*N - M)*T.log(sn2_i) + 0.5*N*np.log(2*np.pi).astype(theano.config.floatX)
 
         nlml_ss = T.stack(nlml_ss)
         if cache_vars:
-            A = T.stack(A); A = T.unbroadcast(A,0) if A.broadcastable[0] else A
             iA = T.stack(iA); iA = T.unbroadcast(iA,0) if iA.broadcastable[0] else iA
             Lmm = T.stack(Lmm); Lmm = T.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
             beta_ss = T.stack(beta_ss); beta_ss = T.unbroadcast(beta_ss,0) if beta_ss.broadcastable[0] else beta_ss
     
             # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
-            updts = [(self.A,A),(self.iA,iA),(self.Lmm,Lmm),(self.beta_ss,beta_ss)]
+            updts = [(self.iA,iA),(self.Lmm,Lmm),(self.beta_ss,beta_ss)]
         else:
-            self.A = A 
             self.iA = iA 
             self.Lmm = Lmm 
             beta_ss = T.stack(beta_ss); beta_ss = T.unbroadcast(beta_ss,0) if beta_ss.broadcastable[0] else beta_ss
@@ -951,9 +941,9 @@ class SSGP(GP):
         dnlml_wrt_w = T.jacobian(nlml_ss.sum(),self.w)
 
         utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
-        self.nlml_ss = F((),nlml_ss,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        self.nlml_ss = F((),nlml_ss,name='%s>nlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         utils.print_with_stamp('Compiling jacobian of sparse spectral training loss function',self.name)
-        self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
     def set_spectral_samples(self,w=None):
         if w is None:
@@ -961,16 +951,18 @@ class SSGP(GP):
             odims = self.E
             w = np.random.randn(self.n_basis,odims,idims).astype(theano.config.floatX)
         else:
-            w = w.reshape(self.w_.shape).astype(theano.config.floatX)
+            if self.w is not None:
+                w = w.reshape(self.w.get_value(borrow=True).shape).astype(theano.config.floatX)
+            else:
+                w = w.reshape((self.n_basis,odims,idims)).astype(theano.config.floatX)
 
-        if self.w_ is None or self.w_.shape[0] != self.n_basis:
+
+        if self.w is None:
             idims = self.D
-            self.w_ = w
-            self.w = S(self.w_,name='%s>w'%(self.name),borrow=True)
+            self.w = S(w,name='%s>w'%(self.name),borrow=True)
             self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
         else:
-            np.copyto(self.w_,w)
-            self.w.set_value(self.w_,borrow=True)
+            self.w.set_value(w,borrow=True)
     
     def get_params(self, symbolic=True, all_shared=False):
         retvars = super(SSGP,self).get_params(symbolic=False)
@@ -997,12 +989,13 @@ class SSGP(GP):
             X_full = None
             Y_full = None
             n_subsample = 1024
-            if self.X_.shape[0] > n_subsample:
+            X = self.X.get_value()
+            if X.shape[0] > n_subsample:
                 utils.print_with_stamp('Training full gp with random subsample of size %d'%(n_subsample),self.name)
-                idx = np.arange(self.X_.shape[0]); np.random.shuffle(idx); idx= idx[:n_subsample]
-                X_full = self.X_
-                Y_full = self.Y_
-                self.set_dataset(self.X_[idx],self.Y_[idx])
+                idx = np.arange(X.shape[0]); np.random.shuffle(idx); idx= idx[:n_subsample]
+                X_full = X
+                Y_full = self.Y.get_value()
+                self.set_dataset(X_full[idx],Y_full[idx])
 
             super(SSGP, self).train()
 
@@ -1014,12 +1007,12 @@ class SSGP(GP):
         idims = self.D
         odims = self.E
 
-        if self.nlml_ss is None:
+        if self.nlml_ss is None or self.should_recompile:
             self.init_loss()
 
         # initialize spectral samples
         nlml = self.nlml_ss()
-        best_w = self.w_.copy()
+        best_w = self.w.get_value()
 
         # try a couple spectral samples and pick the one with the lowest nlml
         for i in xrange(100):
@@ -1028,14 +1021,14 @@ class SSGP(GP):
             for d in xrange(odims):
                 if np.all(nlml_i[d] < nlml[d]):
                     nlml[d] = nlml_i[d]
-                    best_w[:,d,:] = self.w_[:,d,:].copy()
+                    best_w[:,d,:] = self.w.get_value()[:,d,:]
 
         self.set_spectral_samples( best_w )
 
         # train the pseudo input locations
         utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss())),self.name)
         # wrap loghyp plus sr (save shapes)
-        p0 = [self.loghyp_,self.w_]
+        p0 = [self.loghyp.get_value(),self.w.get_value()]
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = utils.MemoizeJac(self.loss_ss)
         opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
