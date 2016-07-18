@@ -121,7 +121,7 @@ class RandPolicy:
         ret = ((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
         U = len(self.maxU)
         D = m.shape[0]
-        return ret, np.zeros((U,U)), np.zeros((D,U))
+        return ret, np.zeros((U,U)), np.top.zeros((D,U))
 
     def save(self):
         pass # nothing to save
