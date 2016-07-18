@@ -1,7 +1,7 @@
 import theano
 import numpy as np
 import theano.tensor as T
-from theano.tensor.nlinalg import matrix_inverse
+from theano.tensor.nlinalg import matrix_inverse, trace
 from theano.tensor.nlinalg import det
 from utils import print_with_stamp,gTrig2, gTrig_np, gTrig
 
@@ -37,7 +37,7 @@ def quadratic_loss(mx,Sx,params,u=None, use_gTrig = True):
             #R = T.eye(u.shape[0])
         else:
             R = T.constant(params['R'],dtype=mx.dtype)
-        m_cost = T.sum(Sx*Q) + deltaQ.dot(delta)
+        m_cost = trace(Q.dot(Sx)) + deltaQ.dot(delta)
         m_cost = m_cost + T.transpose(u)*R*u
     s_cost = 2*T.sum(SxQ.dot(SxQ)) + 4*deltaQ.dot(Sx).dot(deltaQ.T)
 

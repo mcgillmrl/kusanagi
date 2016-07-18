@@ -1,5 +1,5 @@
 import numpy as np
-from utils import print_with_stamp, gTrig_np, gTrig2, gTrig2_np
+from utils import print_with_stamp, gTrig_np, gTrig2, gTrig2_np, gTrig
 from ghost.learners.EpisodicLearner import EpisodicLearner
 from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.regression.GP import GP_UI
@@ -56,33 +56,41 @@ class PDDP(EpisodicLearner):
         ''' This compiles the rollout function, which applies the policy and predicts the next state 
             of the system using the learned GP dynamics model '''
                 # define the function for a single propagation step
+        # def rollout_single_step(mx,Sx, eval_t = None, u=None, use_gTrig = False):
+        #     D = Sx.shape[1]
+        #     # compute distribution of control signal
+        #     logsn = self.dynamics_model.loghyp[:,-1]
+        #     Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
+        #     u_prev, Su, Cu = self.policy.evaluate(mx, Sx_,symbolic=True, t = eval_t, u=u, use_gTrig = use_gTrig)
+        #     if u is not None:
+        #         u_prev = u
+        #     # compute state control joint distribution
+        #     mxu = theano.tensor.concatenate([mx,u_prev])
+        #     q = Sx.dot(Cu)
+        #     Sxu_up = theano.tensor.concatenate([Sx,q],axis=1)
+        #     Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)     
+        #     Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0)
+
+        #     #  predict the change in state given current state-action
+        #     # C_deltax = inv (Sxu) dot Sxu_deltax
+            
+        #     m_deltax, S_deltax, C_deltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
+
+        #     # compute the successor state distribution
+        #     mx_next = mx + m_deltax
+        #     Sx_deltax = Sxu[:D,:].dot(C_deltax)
+        #     Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
+
+        #     #  get cost:
+        #     #mcost, Scost = self.cost_symbolic(mx_next,Sx_next)
+
+        #     return [mx_next,Sx_next,u_prev]
+
         def rollout_single_step(mx,Sx, eval_t = None, u=None, use_gTrig = False):
-            D = Sx.shape[1]
-            # compute distribution of control signal
-            logsn = self.dynamics_model.loghyp[:,-1]
-            Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
-            u_prev, Su, Cu = self.policy.evaluate(mx, Sx_,symbolic=True, t = eval_t, u=u, use_gTrig = use_gTrig)
-            if u is not None:
-                u_prev = u
-            # compute state control joint distribution
-            #mx, Sx, _ = gTrig2(mx, Sx, self.angle_idims, len(self.mx0))
-            mxu = theano.tensor.concatenate([mx,u_prev])
-            q = Sx.dot(Cu)
-            Sxu_up = theano.tensor.concatenate([Sx,q],axis=1)
-            Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
-            Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0)
-
-            #  predict the change in state given current state-action
-            # C_deltax = inv (Sxu) dot Sxu_deltax
-            m_deltax, S_deltax, C_deltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
-
-            # compute the successor state distribution
+            u_prev, _ , _ = self.policy.evaluate(mx, symbolic=True, t=eval_t, u=u, use_gTrig=use_gTrig)
+            m_deltax = self.plant.dynamics_no_angles(t=eval_t, z= mx, u=u)
             mx_next = mx + m_deltax
-            Sx_deltax = Sxu[:D,:].dot(C_deltax)
-            Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
-
-            #  get cost:
-            #mcost, Scost = self.cost_symbolic(mx_next,Sx_next)
+            Sx_next = theano.tensor.zeros(Sx.shape)
 
             return [mx_next,Sx_next,u_prev]
 
