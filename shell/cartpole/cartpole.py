@@ -5,7 +5,7 @@ from ghost.cost import quadratic_saturating_loss
 from utils import print_with_stamp, gTrig_np, gTrig2
 from matplotlib import pyplot as plt
 
-def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
+def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
     angle_dims = params['angle_dims']
     cw = params['width']
     if type(cw) is not list:
@@ -61,6 +61,34 @@ class Cartpole(ODEPlant):
         dz[1] = (  2*a0 + 3*m*a1*cz + 4*a2 )/ ( a3 )
         dz[2] = -3*( a0*cz + 2*( (M+m)*a1 + a2*cz ) )/( l*a3 ) 
         dz[3] = z[2]
+
+        return dz
+
+    def dynamics_no_angles(self,t,z,u):
+        l = self.params['l']
+        m = self.params['m']
+        M = self.params['M']
+        b = self.params['b']
+        g = self.params['g']
+        f = u if u is not None else np.array([0])
+
+        sz = z[3]; cz = z[4]; cz2 = cz*cz;
+        a0 = m*l*z[2]*z[2]*sz
+        a1 = g*sz
+        a2 = f[0] - b*z[1];
+        a3 = 4*(M+m) - 3*m*cz2
+
+        dz = theano.tensor.zeros((5,))
+        dz0 = z[1]
+        dz1 = (  2*a0 + 3*m*a1*cz + 4*a2 )/ ( a3 )
+        dz2 = -3*( a0*cz + 2*( (M+m)*a1 + a2*cz ) )/( l*a3 ) 
+        dz3 = theano.tensor.sin(z[2])
+        dz4 = theano.tensor.cos(z[2])
+        dz = theano.tensor.set_subtensor(dz[0], dz0)
+        dz = theano.tensor.set_subtensor(dz[1], dz1)
+        dz = theano.tensor.set_subtensor(dz[2], dz2)
+        dz = theano.tensor.set_subtensor(dz[3], dz3)
+        dz = theano.tensor.set_subtensor(dz[4], dz4)
 
         return dz
 

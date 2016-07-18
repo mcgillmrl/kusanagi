@@ -207,7 +207,7 @@ class LocalLinearPolicy(object):
             new_action[new_action<-self.maxU] = self.maxU[new_action<-self.maxU]
             if self.add_noise:
                 new_action = new_action + np.random.multivariate_normal(np.zeros(new_action.shape), 0.001*np.eye(new_action.size))
-        return new_action, 0.01*theano.tensor.eye(U), theano.tensor.zeros((D,U))
+        return new_action, theano.tensor.zeros(U), theano.tensor.zeros((D,U))
 
     def get_params(self, symbolic=False, t=None):
         if symbolic:
@@ -218,7 +218,7 @@ class LocalLinearPolicy(object):
         else:
             return (self.u_nominal.get_value(),self.z_nominal.get_value(),self.A.get_value(),self.b.get_value())
 
-    def set_params(self,Ain = None,Bin = None ,uin = None,zin = None):
+    def set_params(self,Ain = None,Bin = None ,uin = None,zin = None, alpha=None):
         if Ain is not None:
             self.A_= Ain.astype(theano.config.floatX)
             self.A.set_value(self.A_,borrow=True)
@@ -234,6 +234,10 @@ class LocalLinearPolicy(object):
         if zin is not None:
             self.z_= zin.astype(theano.config.floatX)
             self.z_nominal.set_value(self.z_,borrow=True)
+
+        if alpha is not None:
+            self.alpha_= np.array(alpha).astype(theano.config.floatX)
+            self.alpha.set_value(self.alpha_,borrow=True)
 
     def load(self):
         # load the parameters of the policy
