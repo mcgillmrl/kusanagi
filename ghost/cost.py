@@ -37,7 +37,13 @@ def quadratic_loss(mx,Sx,params,u=None, use_gTrig = True):
             #R = T.eye(u.shape[0])
         else:
             R = T.constant(params['R'],dtype=mx.dtype)
-        m_cost = trace(Q.dot(Sx)) + deltaQ.dot(delta)
+        # m_cost = trace(Q.dot(Sx)) + deltaQ.dot(delta)
+        # To whoever did the change in the previous line: 
+        # The following line is equivalent to the trace of the matrix product. 
+        # The trace is the sum of diagonal elements of a matrix, the diagonal elements
+        # of a matrix product of two square matrices of the same dimensionallity correspond 
+        # to the element wise multiplication between the two matrices.
+        m_cost = T.sum(Sx*Q) + deltaQ.dot(delta)  
         m_cost = m_cost + T.transpose(u)*R*u
     s_cost = 2*T.sum(SxQ.dot(SxQ)) + 4*deltaQ.dot(Sx).dot(deltaQ.T)
 
