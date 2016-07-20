@@ -383,7 +383,7 @@ class PDDP(EpisodicLearner):
         else:
             self.dynamics_model.set_dataset(X,Y)
  
-        print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X.shape.eval(),self.dynamics_model.Y.shape.eval()),self.name)
+        print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X.get_value(borrow=True).shape,self.dynamics_model.Y.get_value(borrow=True).shape),self.name)
         self.dynamics_model.train()
         self.dynamics_model.save()
         print_with_stamp('Done training dynamics model',self.name)

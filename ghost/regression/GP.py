@@ -228,6 +228,9 @@ class GP(object):
         self.state_changed = True # for saving
     
     def init_predict(self, derivs=False):
+        if self.nlml is None:
+            self.init_loss()
+
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
         # Note that this handles n_samples inputsa
         # initialize variable for input vector ( input mean in the case of uncertain inputs )
@@ -1072,7 +1075,7 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=2):
+    def predict_symbolic(self,mx,Sx, method=1):
         if method == 1:
             # fast compilation
             return self.predict_symbolic_1(mx,Sx)
@@ -1137,14 +1140,12 @@ class SSGP_UI(SSGP, GP_UI):
         M2 = 0.5*T.sum(beta_ss_r*T.sum(Q*beta_ss_r,-1),-1)
 
         # compute the additional diagonal term for the second moment matrix
-        iA = T.stack([ solve_upper_triangular(self.Lmm[i].T, solve_lower_triangular(self.Lmm[i],T.eye(2*Ms))) for i in xrange(odims) ] )
         sf2Ms = (sf2/Ms.astype(theano.config.floatX))
-        diagm2 = T.diag( sn2*(1 + sf2Ms*T.sum(iA*Q[oidx,oidx],[1,2])) + 1e-9)
+        diagm2 = T.diag( sn2*(1 + sf2Ms*T.sum(self.iA*Q[oidx,oidx],[1,2])) )
         M2 = M2 + diagm2
 
         # compute the predictive covariance
         S = M2 - T.outer(M,M)
-        print '%s %s %s'%(M.dtype,M2.dtype,S.dtype)
         
         return M,S,V
 
@@ -1193,7 +1194,7 @@ class SSGP_UI(SSGP, GP_UI):
                 em =  T.exp(sijSxsij+siSxsj)      # MsxMs
                 ep =  T.exp(sijSxsij-siSxsj)     # MsxMs
                 si = sin_srdotx[i]       # Msx1
-                ci = cos_srdotx[i]       # Msx1   
+                ci = cos_srdotx[i]       # Msx1 
                 sj = sin_srdotx[j]       # Msx1
                 cj = cos_srdotx[j]       # Msx1
                 sicj = T.outer(si,cj)    # MsxMs
@@ -1215,7 +1216,7 @@ class SSGP_UI(SSGP, GP_UI):
 
                 if i == j:
                     # if i==j we need to add the trace term
-                    m2 =  m2 + sn2[i]*(1 + sf2M[i]*T.sum(self.iA[i]*Qij + 1e-9))
+                    m2 =  m2 + sn2[i]*(1 + sf2M[i]*T.sum(self.iA[i]*Qij ))
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2

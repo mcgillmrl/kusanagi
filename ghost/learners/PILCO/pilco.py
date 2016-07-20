@@ -257,7 +257,7 @@ class PILCO(EpisodicLearner):
             self.mx0 = np.array(self.plant.x0).squeeze()
             self.Sx0 = np.array(self.plant.S0).squeeze()
 
-        utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X.shape.eval(),self.dynamics_model.Y.shape.eval()),self.name)
+        utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X.get_value(borrow=True).shape,self.dynamics_model.Y.get_value(borrow=True).shape),self.name)
         if self.dynamics_model.should_recompile:
             # reinitialize log likelihood
             self.dynamics_model.init_loss()
