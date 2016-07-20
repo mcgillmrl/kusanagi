@@ -1075,7 +1075,7 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=1):
+    def predict_symbolic(self,mx,Sx, method=2):
         if method == 1:
             # fast compilation
             return self.predict_symbolic_1(mx,Sx)
@@ -1141,7 +1141,7 @@ class SSGP_UI(SSGP, GP_UI):
 
         # compute the additional diagonal term for the second moment matrix
         sf2Ms = (sf2/Ms.astype(theano.config.floatX))
-        diagm2 = T.diag( sn2*(1 + sf2Ms*T.sum(self.iA*Q[oidx,oidx],[1,2])) )
+        diagm2 = T.diag( sn2*(1.0 + sf2Ms*T.sum(self.iA*Q[oidx,oidx],[1,2])) + 1e-9)
         M2 = M2 + diagm2
 
         # compute the predictive covariance
@@ -1216,7 +1216,7 @@ class SSGP_UI(SSGP, GP_UI):
 
                 if i == j:
                     # if i==j we need to add the trace term
-                    m2 =  m2 + sn2[i]*(1 + sf2M[i]*T.sum(self.iA[i]*Qij ))
+                    m2 =  m2 + sn2[i]*(1.0 + sf2M[i]*T.sum(self.iA[i]*Qij + 1e-9))
                 else:
                     M2[j*odims+i] = m2
                 M2[i*odims+j] = m2
