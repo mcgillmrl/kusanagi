@@ -31,7 +31,7 @@ def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
         loss_params['target'] = targeta
         loss_params['Q'] = Q/c**2
         m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
-        if b is not None:
+        if b is not None and b != 0.0:
             m_cost += b*theano.tensor.sqrt(s_cost) # UCB  exploration term
         M_cost.append(m_cost)
         S_cost.append(s_cost)
