@@ -202,12 +202,13 @@ class LocalLinearPolicy(object):
         if symbolic:
             new_action = theano.tensor.maximum(new_action, -self.maxU)
             new_action = theano.tensor.minimum(new_action, self.maxU)
+            return new_action, theano.tensor.zeros((U,U)), theano.tensor.zeros((D,U))
         else:
             new_action[new_action>self.maxU] = self.maxU[new_action>self.maxU]
             new_action[new_action<-self.maxU] = self.maxU[new_action<-self.maxU]
             if self.add_noise:
                 new_action = new_action + np.random.multivariate_normal(np.zeros(new_action.shape), 0.001*np.eye(new_action.size))
-        return new_action, theano.tensor.zeros(U), theano.tensor.zeros((D,U))
+            return new_action, np.zeros((U,U)), np.zeros((D,U))
 
     def get_params(self, symbolic=False, t=None):
         if symbolic:
