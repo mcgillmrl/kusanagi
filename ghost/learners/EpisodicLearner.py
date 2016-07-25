@@ -15,7 +15,7 @@ from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
 
 class EpisodicLearner(object):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=[0,0]):
         self.name = name
         # initialize plant
         if 'x0' not in params['plant']:
@@ -34,7 +34,7 @@ class EpisodicLearner(object):
         self.viz = viz_class(self.plant) if viz_class is not None else None
         # initialize experience dataset
         self.experience = ExperienceDataset(filename_prefix=self.filename) if experience is None else experience
-        
+        self.learn_from_iteration = learn_from_iteration[0,0]
         # initialize learner state variables
         self.min_method = "L-BFGS-B"
         self.n_episodes = 0
