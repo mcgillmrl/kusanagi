@@ -22,6 +22,7 @@ class ExperienceDataset(object):
                 self.immediate_cost = []
                 self.curr_episode = -1
                 self.state_changed = False
+                self.policy_history = []
 
     def add_sample(self,t,x_t=None,u_t=None,c_t=None):
         curr_episode = self.curr_episode
@@ -67,9 +68,10 @@ class ExperienceDataset(object):
         self.actions = state[i.next()]
         self.immediate_cost = state[i.next()]
         self.curr_episode = state[i.next()]
+        self.policy_history = state[i.next()]
 
     def get_state(self):
-        return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
+        return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode, self.policy_history]
 
     def reset(self):
         utils.print_with_stamp('Resetting experience dataset',self.name)
@@ -79,3 +81,4 @@ class ExperienceDataset(object):
         self.immediate_cost = []
         self.curr_episode = -1
         self.state_changed = False
+        self.policy_history = []

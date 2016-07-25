@@ -48,7 +48,16 @@ class EpisodicLearner(object):
 
         # try loading from file, initialize from scratch otherwise
         try:
-            self.load()   
+            self.load()
+            if learn_from_iteration[0] is not 0 and (learn_from_iteration[0] <= len(self.experience.policy_history)):
+                utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
+                entry_num = sum(learn_from_iteration)
+                self.experience.time_stamps = self.experience.time_stamps[:entry_num]
+                self.experience.states = self.experience.states[:entry_num]
+                self.experience.actions = self.experience.actions[:entry_num]
+                self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
+                self.experience.policy_history = self.experience.immediate_cost[:learn_from_iteration]
+                self.policy = self.experience.policy_history[learn_from_iteration]
         except IOError:
             utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
             if self.cost is not None:
@@ -71,6 +80,7 @@ class EpisodicLearner(object):
     def save(self):
         # save policy and experience separately
         self.policy.save()
+        self.experience.policy_history.append(self.policy)
         self.experience.save()
 
         # save learner state
@@ -162,7 +172,7 @@ class EpisodicLearner(object):
                 c_t = self.cost(x_t, Sx_t)
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
-                # print t,x_t,u_t,c_t[0]
+                print t,x_t,u_t,c_t[0]
             else:
                 # append to experience dataset
                 self.experience.append(t,x_t,u_t,0)

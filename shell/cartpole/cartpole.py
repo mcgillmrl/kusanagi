@@ -57,10 +57,10 @@ class Cartpole(ODEPlant):
         a3 = 4*(M+m) - 3*m*cz2
 
         dz = np.zeros((4,1))
-        dz[0] = z[1]
-        dz[1] = (  2*a0 + 3*m*a1*cz + 4*a2 )/ ( a3 )
-        dz[2] = -3*( a0*cz + 2*( (M+m)*a1 + a2*cz ) )/( l*a3 ) 
-        dz[3] = z[2]
+        dz[0] = z[1]                                                    # x
+        dz[1] = (  2*a0 + 3*m*a1*cz + 4*a2 )/ ( a3 )                    # dx/dt
+        dz[2] = -3*( a0*cz + 2*( (M+m)*a1 + a2*cz ) )/( l*a3 )          # dtheta/dt
+        dz[3] = z[2]                                                    # theta
 
         return dz
 
@@ -77,20 +77,15 @@ class Cartpole(ODEPlant):
         a1 = g*sz
         a2 = f[0] - b*z[1];
         a3 = 4*(M+m) - 3*m*cz2
+                                
+        dz0 = z[1]                                                      # x
+        dz1 = (  2*a0 + 3*m*a1*cz + 4*a2 )/ ( a3 )                      # dx/dt
+        dz2 = -3*( a0*cz + 2*( (M+m)*a1 + a2*cz ) )/( l*a3 )            # dtheta/dt
+        dz3 = cz*z[2]                                   # sin(theta)
+        dz4 = -sz*z[2]                                   # cos(theta)
+        dz = theano.tensor.stack([dz0,dz1,dz2,dz3,dz4])
 
-        dz = theano.tensor.zeros((5,))
-        dz0 = z[1]
-        dz1 = (  2*a0 + 3*m*a1*cz + 4*a2 )/ ( a3 )
-        dz2 = -3*( a0*cz + 2*( (M+m)*a1 + a2*cz ) )/( l*a3 ) 
-        dz3 = theano.tensor.sin(z[2])
-        dz4 = theano.tensor.cos(z[2])
-        dz = theano.tensor.set_subtensor(dz[0], dz0)
-        dz = theano.tensor.set_subtensor(dz[1], dz1)
-        dz = theano.tensor.set_subtensor(dz[2], dz2)
-        dz = theano.tensor.set_subtensor(dz[3], dz3)
-        dz = theano.tensor.set_subtensor(dz[4], dz4)
-
-        return dz
+        return dz*self.dt
 
 class CartpoleDraw(PlantDraw):
     def __init__(self, cartpole_plant, refresh_period=(1.0/24), name='CartpoleDraw'):
@@ -125,8 +120,12 @@ class CartpoleDraw(PlantDraw):
 
         body_x = self.center_x + state[0]
         body_y = self.center_y
-        mass_x = l*np.sin(state[3]) + body_x
-        mass_y = -l*np.cos(state[3]) + body_y
+        if self.plant.angle_dims:
+            mass_x = l*state[3] + body_x
+            mass_y = -l*state[4] + body_y
+        else:
+            mass_x = l*np.sin(state[3]) + body_x
+            mass_y = -l*np.cos(state[3]) + body_y
 
         self.body_rect.set_xy((body_x-0.5*self.body_h,body_y-0.125*self.body_h))
         self.pole_line.set_xdata(np.array([body_x,mass_x]))
