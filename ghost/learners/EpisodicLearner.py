@@ -34,7 +34,7 @@ class EpisodicLearner(object):
         self.viz = viz_class(self.plant) if viz_class is not None else None
         # initialize experience dataset
         self.experience = ExperienceDataset(filename_prefix=self.filename) if experience is None else experience
-        self.learn_from_iteration = learn_from_iteration[0,0]
+        self.learn_from_iteration = learn_from_iteration
         # initialize learner state variables
         self.min_method = "L-BFGS-B"
         self.n_episodes = 0
