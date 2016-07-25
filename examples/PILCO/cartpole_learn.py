@@ -12,13 +12,11 @@ from utils import plot_results
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 
-if __name__ == '__main__':
+def default_params():
     # setup output directory
     #utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
     # setup learner parameters
     # general parameters
-    J = 4                                                                   # number of random initial trials
-    N = 100                                                                 # learning iterations
     learner_params = {}
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
     learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
@@ -53,8 +51,15 @@ if __name__ == '__main__':
     learner_params['dynmodel'] = dynmodel_params
     learner_params['cost'] = cost_params
 
+    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI}
+
+
+if __name__ == '__main__':
+    J = 4                                                                   # number of random initial trials
+    N = 100                                                                 # learning iterations
+    learner_params = default_params()
     # initialize learner
-    learner = PILCO(learner_params, Cartpole, RBFPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#, viz_class=CartpoleDraw)
+    learner = PILCO(**learner_params)#, viz_class=CartpoleDraw)
     #learner = PILCO(learner_params, Cartpole, NNPolicy, cartpole_loss, dynmodel_class=NN)#, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
 

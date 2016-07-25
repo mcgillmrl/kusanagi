@@ -151,8 +151,11 @@ class GP(object):
             retvars = [ self.loghyp.get_value() ]
         return retvars
 
-    def get_all_shared_vars(self):
-        return [attr for attr in self.__dict__.values() if isinstance(attr,T.sharedvar.SharedVariable)]
+    def get_all_shared_vars(self, as_dict=False):
+        if as_dict:
+            return [(attr_name,self.__dict__[attr_name]) for attr_name in self.__dict__.keys() if isinstance(self.__dict__[attr_name],T.sharedvar.SharedVariable)]
+        else:
+            return [attr for attr in self.__dict__.values() if isinstance(attr,T.sharedvar.SharedVariable)]
 
     def set_params(self, params):
         loghyp = params[0]
@@ -363,6 +366,7 @@ class GP(object):
             self.state_changed = False
 
     def set_state(self,state):
+        # TODO get_all_shared_vars(as_dict=True) instead of individually going through all shared variables
         i = utils.integer_generator()
         self.X = state[i.next()]
         self.N = self.X.get_value(borrow=True).shape[0]

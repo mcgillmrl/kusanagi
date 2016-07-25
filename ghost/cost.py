@@ -3,6 +3,7 @@ import numpy as np
 import theano.tensor as T
 from theano.tensor.nlinalg import matrix_inverse, trace
 from theano.tensor.nlinalg import det
+from theano.sandbox.linalg import psd
 from utils import print_with_stamp,gTrig2, gTrig_np, gTrig
 
 def linear_loss(mx,Sx,params,absolute=True):
@@ -11,7 +12,7 @@ def linear_loss(mx,Sx,params,absolute=True):
     target = T.constant(params['target'],dtype=mx.dtype)
     delta = mx-target
     SxQ = Sx.dot(Q)
-    m_cost = Q.T.dot(delta)
+    m_cost = Q.T.dot(delta) 
     s_cost = Q.T.dot(Sx).dot(Q)
 
     return m_cost, s_cost
