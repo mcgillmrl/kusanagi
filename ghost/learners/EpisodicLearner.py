@@ -50,7 +50,9 @@ class EpisodicLearner(object):
         try:
             self.load()
             if learn_from_iteration[0] is not -1:
-                if (learn_from_iteration[0]+1 <= len(self.experience.policy_history)):
+                if not hasattr(experience, 'policy_history'):
+                    pass
+                elif (learn_from_iteration[0]+1 <= len(self.experience.policy_history)):
                     utils.print_with_stamp('WARNING! You are attempting to load from an iteration that does not exist! Press space to instead continue from last iteration')
                 else:
                     utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))

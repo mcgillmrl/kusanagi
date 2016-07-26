@@ -68,7 +68,10 @@ class ExperienceDataset(object):
         self.actions = state[i.next()]
         self.immediate_cost = state[i.next()]
         self.curr_episode = state[i.next()]
-        self.policy_history = state[i.next()]
+        try:
+            self.policy_history = state[i.next()]
+        except IndexError:
+            pass
 
     def get_state(self):
         return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode, self.policy_history]
