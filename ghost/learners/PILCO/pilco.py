@@ -12,7 +12,7 @@ from ghost.learners.EpisodicLearner import *
 from ghost.regression.GP import GP_UI, SPGP_UI, SSGP_UI
 
 class PILCO(EpisodicLearner):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', wrap_angles=False, use_scan=True, filename_prefix=None, learn_from_iteration=[0,0]):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', wrap_angles=False, use_scan=True, filename_prefix=None, learn_from_iteration=[0,0], task_name = None):
         self.use_scan = use_scan
         self.dynamics_model = None
         self.wrap_angles = wrap_angles
@@ -22,7 +22,9 @@ class PILCO(EpisodicLearner):
         self.Sx0 = np.array(params['S0']).squeeze()
         self.angle_idims = params['angle_dims']
         self.maxU = params['policy']['maxU']
-
+        if task_name is not None:
+            utils.print_with_stamp("CHANGING DIR")
+            os.environ['KUSANAGI_RUN_OUTPUT'] = os.path.join(utils.get_output_dir(),task_name)
         # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
         dyn_idims = len(self.mx0) + len(self.angle_idims) + len(self.maxU)
         # output dimensions are state dims

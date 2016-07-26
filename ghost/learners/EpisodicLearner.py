@@ -15,8 +15,11 @@ from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
 
 class EpisodicLearner(object):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=[-1,-1]):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=[-1,-1], task_name = None):
         self.name = name
+        if task_name is not None:
+            utils.print_with_stamp("CHANGING DIR")
+            os.environ['KUSANAGI_RUN_OUTPUT'] = os.path.join(utils.get_output_dir(),task_name)
         # initialize plant
         if 'x0' not in params['plant']:
             params['plant']['x0'] = params['x0']
@@ -52,8 +55,9 @@ class EpisodicLearner(object):
             if learn_from_iteration[0] is not -1:
                 if not hasattr(self.experience, 'policy_history'):
                     pass
-                elif (learn_from_iteration[0]+1 <= len(self.experience.policy_history)):
+                elif (learn_from_iteration[0]+1 >= len(self.experience.policy_history)):
                     utils.print_with_stamp('WARNING! You are attempting to load from an iteration that does not exist! Press space to instead continue from last iteration')
+                    raw_input()
                 else:
                     utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
                     entry_num = sum(learn_from_iteration)
@@ -61,8 +65,10 @@ class EpisodicLearner(object):
                     self.experience.states = self.experience.states[:entry_num]
                     self.experience.actions = self.experience.actions[:entry_num]
                     self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
-                    self.policy = self.policy.set_state(self.experience.policy_history[learn_from_iteration])
-                    self.experience.policy_history = self.experience.immediate_cost[:learn_from_iteration+1]
+                    if learn_from_iteration[0] is not 0:
+                        self.policy = self.policy.set_state(self.experience.policy_history[learn_from_iteration-1])
+                        self.experience.policy_history = self.experience.policy_history[:learn_from_iteration]
+                    self.learning_iteration = self.learn_from_iteration[0] + 1
         except IOError:
             utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
             if self.cost is not None:

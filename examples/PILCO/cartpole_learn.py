@@ -71,8 +71,8 @@ if __name__ == '__main__':
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
     else:
-        learner.plant.reset_state()
-        learner.apply_controller()
+        # learner.plant.reset_state()
+        # learner.apply_controller()
         
         # plot results
         learner.init_rollout(derivs=False)
