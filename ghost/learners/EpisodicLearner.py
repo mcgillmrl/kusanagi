@@ -49,15 +49,18 @@ class EpisodicLearner(object):
         # try loading from file, initialize from scratch otherwise
         try:
             self.load()
-            if learn_from_iteration[0] is not -1 and (learn_from_iteration[0] <= len(self.experience.policy_history)):
-                utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
-                entry_num = sum(learn_from_iteration)
-                self.experience.time_stamps = self.experience.time_stamps[:entry_num]
-                self.experience.states = self.experience.states[:entry_num]
-                self.experience.actions = self.experience.actions[:entry_num]
-                self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
-                self.policy = self.policy.set_state(self.experience.policy_history[learn_from_iteration])
-                self.experience.policy_history = self.experience.immediate_cost[:learn_from_iteration+1]
+            if learn_from_iteration[0] is not -1:
+                if (learn_from_iteration[0]+1 <= len(self.experience.policy_history)):
+                    utils.print_with_stamp('WARNING! You are attempting to load from an iteration that does not exist! Press space to instead continue from last iteration')
+                else:
+                    utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
+                    entry_num = sum(learn_from_iteration)
+                    self.experience.time_stamps = self.experience.time_stamps[:entry_num]
+                    self.experience.states = self.experience.states[:entry_num]
+                    self.experience.actions = self.experience.actions[:entry_num]
+                    self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
+                    self.policy = self.policy.set_state(self.experience.policy_history[learn_from_iteration])
+                    self.experience.policy_history = self.experience.immediate_cost[:learn_from_iteration+1]
         except IOError:
             utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
             if self.cost is not None:
