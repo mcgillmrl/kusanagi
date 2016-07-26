@@ -15,7 +15,7 @@ from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
 
 class EpisodicLearner(object):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=[0,0]):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=[-1,-1]):
         self.name = name
         # initialize plant
         if 'x0' not in params['plant']:
@@ -49,15 +49,15 @@ class EpisodicLearner(object):
         # try loading from file, initialize from scratch otherwise
         try:
             self.load()
-            if learn_from_iteration[0] is not 0 and (learn_from_iteration[0] <= len(self.experience.policy_history)):
+            if learn_from_iteration[0] is not -1 and (learn_from_iteration[0] <= len(self.experience.policy_history)):
                 utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
                 entry_num = sum(learn_from_iteration)
                 self.experience.time_stamps = self.experience.time_stamps[:entry_num]
                 self.experience.states = self.experience.states[:entry_num]
                 self.experience.actions = self.experience.actions[:entry_num]
                 self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
-                self.experience.policy_history = self.experience.immediate_cost[:learn_from_iteration]
-                self.policy = self.experience.policy_history[learn_from_iteration]
+                self.policy = self.policy.set_state(self.experience.policy_history[learn_from_iteration])
+                self.experience.policy_history = self.experience.immediate_cost[:learn_from_iteration+1]
         except IOError:
             utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
             if self.cost is not None:
@@ -80,7 +80,7 @@ class EpisodicLearner(object):
     def save(self):
         # save policy and experience separately
         self.policy.save()
-        self.experience.policy_history.append(self.policy)
+        self.experience.policy_history.append(self.policy.get_state())
         self.experience.save()
 
         # save learner state
