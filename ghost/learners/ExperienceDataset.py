@@ -74,7 +74,10 @@ class ExperienceDataset(object):
             pass
 
     def get_state(self):
-        return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode, self.policy_history]
+        if hasattr(self, 'policy_history'):
+            return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode, self.policy_history]
+        else:
+            return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
 
     def reset(self):
         utils.print_with_stamp('Resetting experience dataset',self.name)

@@ -80,6 +80,7 @@ if __name__ == '__main__':
 
     # learning loop
     for i in xrange(N):
+    	learner.save()
         # train the dynamics models given the collected data
         learner.train_dynamics()
 
