@@ -13,16 +13,16 @@ np.set_printoptions(linewidth=500, precision=17, suppress=True)
 def test_func1(X):
     return 100*np.exp(-0.5*(np.sum((X**2),1)))*np.sin(X.sum(1))
 
-def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50,rand_seed=None):
+def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, training_noise=0.01,rand_seed=None):
     if rand_seed is not None:
         np.random.seed(rand_seed)
     #  ================== train dataset ==================
     # sample training points
-    x_train = 5*(np.random.rand(n_train,idims) - 0.5)
+    x_train = 7.5*(np.random.rand(n_train,idims) - 0.5)
     # generate the output at the training points
     y_train = np.empty((n_train,odims))
     for i in xrange(odims):
-        y_train[:,i] =  (i+1)*f(x_train) + 0.01*(np.random.rand(n_train)-0.5)
+        y_train[:,i] =  (i+1)*f(x_train) + training_noise*(np.random.rand(n_train)-0.5)
     x_train = gTrig_np(x_train, angi)
     
     #  ================== test  dataset ==================
@@ -30,11 +30,11 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50,ran
     kk = 0.01*convolve2d(np.array([[1,2,3,2,1]]),np.array([[1,2,3,2,1]]).T)/9.0;
     s_test = convolve2d(np.eye(idims),kk,'same')
     s_test = np.tile(s_test,(n_test,1)).reshape(n_test,idims,idims)
-    x_test = 5*(np.random.rand(n_test,idims) - 0.5)
+    x_test = 15*(np.random.rand(n_test,idims) - 0.5)
     # generate the output at the test points
     y_test = np.empty((n_test,odims))
     for i in xrange(odims):
-        y_test[:,i] =  (i+1)*f(x_test) + 0.01*(np.random.rand(n_test)-0.5)
+        y_test[:,i] =  (i+1)*f(x_test)
     if len(angi)>0:
         x_test,s_test = gTrig2_np(x_test,s_test, angi, idims)
 
@@ -68,6 +68,7 @@ if __name__=='__main__':
     parser.add_argument('--n_test', nargs='?', type=int, help='Number of testing samples. Default: 50', default=50)
     parser.add_argument('--idims', nargs='?', type=int, help='Input dimensions. Default: 4', default=4)
     parser.add_argument('--odims', nargs='?', type=int, help='Output dimensions. Default: 2', default=2)
+    parser.add_argument('--noise', nargs='?', type=float, help='Measurement noise of training targets. Default: 0.01', default=0.01)
     args = parser.parse_args()
 
     idims = args.idims
@@ -75,7 +76,7 @@ if __name__=='__main__':
     n_train = args.n_train
     n_test = args.n_test
     utils.print_with_stamp("Building test dataset",'main')
-    train_dataset,test_dataset = build_dataset(idims=idims,odims=odims,n_train=n_train,n_test=n_test, rand_seed=31337)
+    train_dataset,test_dataset = build_dataset(idims=idims,odims=odims,n_train=n_train,n_test=n_test, training_noise=args.noise, rand_seed=31337)
     utils.print_with_stamp("Building regressor",'main')
     gp = build_GP(idims,odims,gp_type=args.gp_type,profile=theano.config.profile)
     gp.set_dataset(train_dataset[0],train_dataset[1])

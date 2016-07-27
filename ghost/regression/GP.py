@@ -48,7 +48,7 @@ class GP(object):
             self.E = Y_dataset.shape[1]
 
         #symbolic varianbles
-        self.loghyp = None
+        self.loghyp = None, self.logsn2 = None
         self.X = None; self.Y = None
         self.iK = None; self.L = None; self.beta = None;
         self.nlml = None
@@ -119,9 +119,8 @@ class GP(object):
             self.set_dataset(X_dataset,Y_dataset)
         else:
             X_ = np.vstack((self.X.get_value(), X_dataset.astype(theano.config.floatX)))
-            self.X.set_value(X_,borrow=True)
             Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(theano.config.floatX)))
-            self.Y.set_value(Y_,borrow=True)
+            self.set_dataset(X_,Y_)
 
     def init_loghyp(self):
         idims = self.D; odims = self.E; 
@@ -140,6 +139,7 @@ class GP(object):
         # this creates one theano shared variable for the log hyperparameters
         if self.loghyp is None:
             self.loghyp = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
+            self.logsn2 = 2*self.loghyp[:,-1]
         else:
             loghyp = loghyp.reshape(self.loghyp.get_value(borrow=True).shape).astype(theano.config.floatX)
             self.loghyp.set_value(loghyp,borrow=True)
@@ -230,7 +230,7 @@ class GP(object):
         self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         self.state_changed = True # for saving
     
-    def init_predict(self, derivs=False):
+    def init_predict(self):
         if self.nlml is None:
             self.init_loss()
 
@@ -249,30 +249,10 @@ class GP(object):
             if o is not None:
                 prediction.append(o)
         
-        if not derivs:
-            # compile prediction
-            utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-            self.predict_fn = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-            self.state_changed = True # for saving
-        else:
-            # compute the derivatives wrt the input vector ( or input mean in the case of uncertain inputs)
-            prediction_derivatives = list(prediction)
-            for p in prediction:
-                prediction_derivatives.append( T.jacobian( p.flatten(), mx ).flatten(2) )
-            if self.uncertain_inputs:
-                # compute the derivatives wrt the input covariance
-                for p in prediction:
-                    prediction_derivatives.append( T.jacobian( p.flatten(), Sx ).flatten(2) )
-            if self.hyperparameter_gradients:
-                # compute the derivatives wrt the hyperparameters
-                for p in prediction:
-                    prediction_derivatives.append( T.jacobian( p.flatten(), self.loghyp ) )
-                    prediction_derivatives.append( T.jacobian( p.flatten(), self.X ) )
-                    prediction_derivatives.append( T.jacobian( p.flatten(), self.Y ) )
-            #prediction_derivatives contains  [p1, p2, ..., pn, dp1/dmx, dp2/dmx, ..., dpn/dmx, dp1/dSx, dp2/dSx, ..., dpn/dSx, dp1/dloghyp, dp2/dloghyp, ..., dpn/loghyp]
-            utils.print_with_stamp('Compiling mean and variance of prediction with jacobians',self.name)
-            self.predict_d_fn = F(input_vars, prediction_derivatives, name='%s>predict_d_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-            self.state_changed = True # for saving
+        # compile prediction
+        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
+        self.predict_fn = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+        self.state_changed = True # for saving
 
     def predict_symbolic(self,mx,Sx):
         odims = self.E
@@ -293,16 +273,11 @@ class GP(object):
 
         return M,S,V
     
-    def predict(self,mx,Sx = None, derivs=False):
+    def predict(self,mx,Sx = None):
         predict = None
-        if not derivs:
-            if self.predict_fn is None or self.should_recompile:
-                self.init_predict(derivs=derivs)
-            predict = self.predict_fn
-        else:
-            if self.predict_d_fn is None or self.should_recompile:
-                self.init_predict(derivs=derivs)
-            predict = self.predict_d_fn
+        if self.predict_fn is None or self.should_recompile:
+            self.init_predict()
+        predict = self.predict_fn
 
         odims = self.E
         idims = self.D
@@ -778,6 +753,7 @@ class RBFGP(GP_UI):
         if self.loghyp_full is None:
             self.loghyp_full = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
             self.loghyp = T.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
+            self.logsn2 = 2*self.loghyp[:,-1]
         else:
             loghyp = loghyp.reshape(self.loghyp_full.get_value(borrow=True).shape).astype(theano.config.floatX)
             self.loghyp_full.set_value(loghyp,borrow=True)

@@ -39,8 +39,6 @@ def default_params():
     policy_params['maxU'] = [10]
     # dynamics model
     dynmodel_params = {}
-    #dynmodel_params['n_basis'] = 100
-    #dynmodel_params['hidden_dims'] = [50,50,50]
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
@@ -61,8 +59,10 @@ if __name__ == '__main__':
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
+    #learner_params['dynmodel_class'] = NN
+    #learner_params['params']['dynmodel']['hidden_dims'] = [100,100]
+    #learner_params['params']['dynmodel']['n_basis'] = 100
     learner = PILCO(**learner_params)
-    #learner = PILCO(learner_params, Cartpole, NNPolicy, cartpole_loss, dynmodel_class=NN)#, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data
@@ -76,7 +76,7 @@ if __name__ == '__main__':
         
         # plot results
         learner.init_rollout(derivs=False)
-        #plot_results(learner)
+        plot_results(learner)
 
     # learning loop
     for i in xrange(N):
@@ -91,7 +91,7 @@ if __name__ == '__main__':
         learner.apply_controller()
 
         # plot results
-        #plot_results(learner)
+        plot_results(learner)
 
         # save latest state of the learner
         learner.save()

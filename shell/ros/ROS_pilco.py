@@ -37,8 +37,8 @@ class PILCO(EpisodicLearner):
             mxa,Sxa,Ca = gTrig2(mx,Sx,self.angle_idims,self.mx0.size)
 
             # compute distribution of control signal
-            logsn = self.dynamics_model.loghyp[:,-1]
-            Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(2*logsn))# noisy state measurement
+            logsn2 = self.dynamics_model.logsn2
+            Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(logsn2))# noisy state measurement
             mxa_,Sxa_,Ca = gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
             mu, Su, Cu = self.policy.model.predict_symbolic(mxa_, Sxa_)
             
