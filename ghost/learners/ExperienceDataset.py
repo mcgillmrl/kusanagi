@@ -23,6 +23,7 @@ class ExperienceDataset(object):
                 self.curr_episode = -1
                 self.state_changed = False
                 self.policy_history = []
+                self.episode_labels = []
 
     def add_sample(self,t,x_t=None,u_t=None,c_t=None):
         curr_episode = self.curr_episode
@@ -32,13 +33,18 @@ class ExperienceDataset(object):
         self.immediate_cost[curr_episode].append(c_t)
         self.state_changed = True
 
-    def new_episode(self):
+    def new_episode(self, random = False, learning_iteration = -1):
         self.time_stamps.append([])
         self.states.append([])
         self.actions.append([])
         self.immediate_cost.append([])
         self.curr_episode += 1
         self.state_changed = True
+        if hasattr(self, 'episode_labels'):
+            if random:
+                self.episode_labels.append("RANDOM")
+            else:
+                self.episode_labels.append(learning_iteration)
 
     def n_samples(self):
         ''' Returns the total number of samples in this dataset '''
@@ -68,14 +74,13 @@ class ExperienceDataset(object):
         self.actions = state[i.next()]
         self.immediate_cost = state[i.next()]
         self.curr_episode = state[i.next()]
-        try:
+        if hasattr(self, 'policy_history') and hasattr(self, 'episode_labels'):
             self.policy_history = state[i.next()]
-        except IndexError:
-            pass
+            self.episode_labels = state[i.next()]
 
     def get_state(self):
-        if hasattr(self, 'policy_history'):
-            return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode, self.policy_history]
+        if hasattr(self, 'policy_history') and hasattr(self, 'episode_labels'):
+            return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode, self.policy_history, self.episode_labels]
         else:
             return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
 

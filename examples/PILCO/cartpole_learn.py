@@ -53,7 +53,7 @@ def default_params():
     learner_params['dynmodel'] = dynmodel_params
     learner_params['cost'] = cost_params
 
-    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI}
+    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI, 'viz_class' : CartpoleDraw}
 
 
 if __name__ == '__main__':
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
-    learner = PILCO(**learner_params)#, viz_class=CartpoleDraw)
+    learner = PILCO(**learner_params)
     #learner = PILCO(learner_params, Cartpole, NNPolicy, cartpole_loss, dynmodel_class=NN)#, viz_class=CartpoleDraw)
     atexit.register(learner.stop)
 
@@ -71,12 +71,12 @@ if __name__ == '__main__':
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
     else:
-        # learner.plant.reset_state()
-        # learner.apply_controller()
+        learner.plant.reset_state()
+        learner.apply_controller()
         
         # plot results
         learner.init_rollout(derivs=False)
-        plot_results(learner)
+        #plot_results(learner)
 
     # learning loop
     for i in xrange(N):
@@ -91,7 +91,7 @@ if __name__ == '__main__':
         learner.apply_controller()
 
         # plot results
-        plot_results(learner)
+        #plot_results(learner)
 
         # save latest state of the learner
         learner.save()

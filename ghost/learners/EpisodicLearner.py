@@ -15,7 +15,7 @@ from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
 
 class EpisodicLearner(object):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=[-1,-1], task_name = None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=-1, task_name = None):
         self.name = name
         if task_name is not None:
             utils.print_with_stamp("CHANGING DIR")
@@ -52,7 +52,7 @@ class EpisodicLearner(object):
         # try loading from file, initialize from scratch otherwise
         try:
             self.load()
-            if learn_from_iteration[0] is not -1:
+            if learn_from_iteration[0] != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
                 if not hasattr(self.experience, 'policy_history'):
                     pass
                 elif (learn_from_iteration[0]+1 >= len(self.experience.policy_history)):
@@ -60,15 +60,20 @@ class EpisodicLearner(object):
                     raw_input()
                 else:
                     utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
-                    entry_num = sum(learn_from_iteration)
+                    entry_num = 0
+                    while experience.episode_labels[entry_num] != self.learn_from_iteration:
+                        entry_num += 1
+                    while experience.episode_labels[entry_num] == self.learn_from_iteration:
+                        entry_num += 1
                     self.experience.time_stamps = self.experience.time_stamps[:entry_num]
                     self.experience.states = self.experience.states[:entry_num]
                     self.experience.actions = self.experience.actions[:entry_num]
                     self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
+                    self.experience.curr_episode = entry_num-1
                     if learn_from_iteration[0] is not 0:
-                        self.policy = self.policy.set_state(self.experience.policy_history[learn_from_iteration-1])
+                        self.policy.set_params(self.experience.policy_history[learn_from_iteration-1])
                         self.experience.policy_history = self.experience.policy_history[:learn_from_iteration]
-                    self.learning_iteration = self.learn_from_iteration[0] + 1
+                    self.learning_iteration = self.learn_from_iteration + 1
         except IOError:
             utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
             if self.cost is not None:
@@ -92,7 +97,7 @@ class EpisodicLearner(object):
         # save policy and experience separately
         self.policy.save()
         if hasattr(self.experience, 'policy_history'):
-            self.experience.policy_history.append(self.policy.get_state())
+            self.experience.policy_history.append(self.policy.get_params(symbolic=False))
         self.experience.save()
 
         # save learner state
@@ -124,7 +129,7 @@ class EpisodicLearner(object):
         self.n_evals = state[i.next()]
 
     def get_state(self):
-        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.cost_symbolic,self.H,self.discount,self.learning_iteration,self.n_evals]
+        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.cost_symbolic,self.H,self.discount,self.learning_iteration,self.n_eval]
 
     def init_cost(self,cost):
         self.cost_symbolic = cost
@@ -152,7 +157,7 @@ class EpisodicLearner(object):
             policy = self.policy
 
         # mark the start of the episode
-        self.experience.new_episode()
+        self.experience.new_episode(random = random_controls, learning_iteration = self.learning_iteration)
 
         # start robot
         if self.async_plant:

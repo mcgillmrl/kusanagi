@@ -12,7 +12,7 @@ from ghost.learners.EpisodicLearner import *
 from ghost.regression.GP import GP_UI, SPGP_UI, SSGP_UI
 
 class PILCO(EpisodicLearner):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', wrap_angles=False, use_scan=True, filename_prefix=None, learn_from_iteration=[0,0], task_name = None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', wrap_angles=False, use_scan=True, filename_prefix=None, learn_from_iteration=-1, task_name = None):
         self.use_scan = use_scan
         self.dynamics_model = None
         self.wrap_angles = wrap_angles

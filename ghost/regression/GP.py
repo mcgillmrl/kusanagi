@@ -381,9 +381,14 @@ class GP(object):
         self.predict_d_fn = state[i.next()]
         self.kernel_func = state[i.next()]
         self.trained = state[i.next()]
+        if hasattr(self, 'policy_history'):
+            self.state[i.next()]
 
     def get_state(self):
-        return [self.X,self.Y,self.loghyp,self.iK,self.L,self.beta,self.nlml,self.dnlml,self.predict_fn,self.predict_d_fn,self.kernel_func,self.trained]
+        if hasattr(self, 'policy_history'):
+            return [self.X,self.Y,self.loghyp,self.iK,self.L,self.beta,self.nlml,self.dnlml,self.predict_fn,self.predict_d_fn,self.kernel_func,self.trained, self.policy_history]
+        else:
+            return [self.X,self.Y,self.loghyp,self.iK,self.L,self.beta,self.nlml,self.dnlml,self.predict_fn,self.predict_d_fn,self.kernel_func,self.trained]
 
 class GP_UI(GP):
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'GP_UI', idims=None, odims=None, profile=False, uncertain_inputs=True, hyperparameter_gradients=False):
