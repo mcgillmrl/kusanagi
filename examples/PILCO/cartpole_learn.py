@@ -51,7 +51,7 @@ def default_params():
     learner_params['dynmodel'] = dynmodel_params
     learner_params['cost'] = cost_params
 
-    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI, 'viz_class' : CartpoleDraw}
+    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI}#, 'viz_class' : CartpoleDraw}
 
 
 if __name__ == '__main__':
@@ -60,7 +60,8 @@ if __name__ == '__main__':
     learner_params = default_params()
     # initialize learner
     #learner_params['dynmodel_class'] = NN
-    #learner_params['params']['dynmodel']['hidden_dims'] = [100,100]
+    #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
+    #learner_params['use_scan'] = False
     #learner_params['params']['dynmodel']['n_basis'] = 100
     learner = PILCO(**learner_params)
     atexit.register(learner.stop)

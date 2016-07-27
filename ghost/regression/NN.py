@@ -6,20 +6,20 @@ import time
 import utils
 
 class NN(object):
-    def __init__(self,idims, hidden_dims, odims, name='NN', profile=False):
+    def __init__(self,idims, hidden_dims, odims, uncertain_inputs=True, name='NN', profile=False):
         ''' Constructs a Bayessian Neural Network regressor.
         '''
         self.D = idims
         self.hidden_dims = hidden_dims
         self.E = odims
         self.name=name
-        self.uncertain_inputs = False
+        self.uncertain_inputs = uncertain_inputs
         self.should_recompile = False
 
         self.logsn2 = theano.shared(np.array(np.log(1e-3),dtype=theano.config.floatX))
         self.lscale2 = 10
 
-        self.learning_params = {'iters': 1000, 'batch_size': 100}
+        self.learning_params = {'iters': 10000, 'batch_size': 200}
         self.network = None
         self.loss_fn = None
         self.train_fn = None
@@ -28,8 +28,8 @@ class NN(object):
         self.drop_input = None
         self.drop_hidden = 0.1
         self.drop_output = 0.1
-        self.dropout_samples = 200
-        self.n_particles = 10
+        self.dropout_samples = 50 
+        self.n_particles = 20
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
 
         self.X = None; self.Y = None
@@ -64,7 +64,7 @@ class NN(object):
         else:
             self.Y.set_value(Y_dataset,borrow=True)
 
-        self.lscale2 = 0.01*self.X.get_value(borrow=True).var(0).sum()
+        self.lscale2 = 0.001*self.X.get_value(borrow=True).var(0).sum()
         self.logsn2.set_value(np.log(0.01*self.Y.get_value(borrow=True).var(0).sum()).astype(theano.config.floatX))
 
     def append_dataset(self,X_dataset,Y_dataset):
@@ -175,11 +175,11 @@ class NN(object):
             self.z_std = self.m_rng.normal((self.n_particles,self.D))
 
             # transform to multivariate normal
-            Lx = theano.tensor.slinalg.cholesky(Sx + 1e-6*theano.tensor.eye(self.D))
-            x = mx + Lx.dot(self.z_std)
+            Lx = theano.tensor.slinalg.cholesky(Sx + 1e-16*theano.tensor.eye(Sx.shape[0]))
+            x = mx + self.z_std.dot(Lx.T)
         else:
-            x = mx
-        
+            x = mx[None,:]
+
         if dropout_samples:
             def sample_network(x_):
                 # sample from gaussian
@@ -190,19 +190,20 @@ class NN(object):
                                                 non_sequences=[x],
                                                 n_steps=dropout_samples, 
                                                 allow_gc=False)
-            x = x.flatten(2)
-            y = y.flatten(2)
+
+            x = x.transpose(2,0,1).flatten(2).T
+            y = y.transpose(2,0,1).flatten(2).T
         else:
             dropout_samples = 1.0
             y = lasagne.layers.get_output(self.network, x, deterministic=deterministic)
 
-        # emprical mean
+        # empirical mean
         M = y.mean(axis=0)
         # empirical covariance
-        S = theano.tensor.diag(theano.tensor.exp(self.logsn2)*theano.tensor.ones((self.E,))) + y.T.dot(y)/dropout_samples - theano.tensor.outer(M,M)
+        S = theano.tensor.diag(theano.tensor.exp(self.logsn2)*theano.tensor.ones((self.E,))) + y.T.dot(y)/y.shape[0] - theano.tensor.outer(M,M)
         # Sx^-1 times empirical input output covariance
         if Sx is not None:
-            C = x.T.dot(y)/dropout_samples - theano.tensor.outer(mx,M)
+            C = x.T.dot(y)/y.shape[0] - theano.tensor.outer(mx,M)
             C = theano.tensor.slinalg.solve_lower_triangular(Lx,C)
             C = theano.tensor.slinalg.solve_upper_triangular(Lx.T,C)
         else:

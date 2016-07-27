@@ -48,7 +48,7 @@ class GP(object):
             self.E = Y_dataset.shape[1]
 
         #symbolic varianbles
-        self.loghyp = None, self.logsn2 = None
+        self.loghyp = None; self.logsn2 = None
         self.X = None; self.Y = None
         self.iK = None; self.L = None; self.beta = None;
         self.nlml = None
