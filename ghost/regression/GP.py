@@ -143,6 +143,8 @@ class GP(object):
         else:
             loghyp = loghyp.reshape(self.loghyp.get_value(borrow=True).shape).astype(theano.config.floatX)
             self.loghyp.set_value(loghyp,borrow=True)
+            if self.logsn2 is None:
+                self.logsn2 = 2*self.loghyp[:,-1]
 
     def get_params(self, symbolic=True, all_shared=False):
         if symbolic:
