@@ -107,14 +107,26 @@ class PILCO(EpisodicLearner):
     def rollout_single_step(self,mx,Sx):
         D=mx.shape[0]
 
+        mx = theano.printing.Print('mx\n')(mx)
+        Sx = theano.printing.Print('Sx\n')(Sx)
+
         # convert angles from input distribution to its complex representation
         mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,self.mx0.size)
+        mxa = theano.printing.Print('mxa\n')(mxa)
+        Sxa = theano.printing.Print('Sxa\n')(Sxa)
+        Ca = theano.printing.Print('Ca\n')(Ca)
 
         # compute distribution of control signal
         logsn2 = self.dynamics_model.logsn2
         Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(logsn2)*theano.tensor.ones((D,)))# noisy state measurement
         mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
+        mxa_ = theano.printing.Print('mxa_\n')(mxa_)
+        Sxa_ = theano.printing.Print('Sxa_\n')(Sxa_)
+        Ca_ = theano.printing.Print('Ca_\n')(Ca_)
         mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
+        mu = theano.printing.Print('mu\n')(mu)
+        Su = theano.printing.Print('Su\n')(Su)
+        Cu = theano.printing.Print('Cu\n')(Cu)
         
         # compute state control joint distribution
         n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
@@ -124,6 +136,8 @@ class PILCO(EpisodicLearner):
         Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
         Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
 
+        mxu = theano.printing.Print('mxu\n')(mxu)
+        Sxu = theano.printing.Print('Sxu\n')(Sxu)
         # state control covariance without angle dimensions
         if Ca is not None:
             na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
@@ -132,14 +146,20 @@ class PILCO(EpisodicLearner):
         else:
             Sxu_ = Sxu[:D,:] # [D] x [D+U]
 
+        Sxu_ = theano.printing.Print('Sxu_\n')(Sxu_)
         #  predict the change in state given current state-action
         # C_deltax = inv (Sxu) dot Sxu_deltax
         m_deltax, S_deltax, C_deltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
+        m_deltax = theano.printing.Print('m_deltax')(m_deltax)
+        S_deltax = theano.printing.Print('S_deltax')(S_deltax)
+        C_deltax = theano.printing.Print('C_deltax')(C_deltax)
 
         # compute the successor state distribution
         mx_next = mx + m_deltax
         Sx_deltax = Sxu_.dot(C_deltax)
         Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
+        mx_next = theano.printing.Print('mx_next')(mx_next)
+        Sx_next = theano.printing.Print('Sx_next')(Sx_next)
 
         #  get cost:
         mcost, Scost = self.cost_symbolic(mx_next,Sx_next)
@@ -316,6 +336,10 @@ class PILCO(EpisodicLearner):
             # rollout for H_steps and save the intermediate results
             retvars = []
             for i in xrange(H_steps):
+                print self.mx.get_value(borrow=True)
+                print self.Sx.get_value(borrow=True)
+                print np.linalg.cholesky(np.array(self.Sx.get_value()))
+
                 retvars.append(self.rollout_fn())
             
             # organize the return values in the appropriate format

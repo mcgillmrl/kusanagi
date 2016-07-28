@@ -28,7 +28,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
         np.random.seed(rand_seed)
     #  ================== train dataset ==================
     # sample training points
-    x_train = 7.5*(np.random.rand(n_train,idims) - 0.5)
+    x_train = 15*(np.random.rand(n_train,idims) - 0.5)
     # generate the output at the training points
     y_train = np.empty((n_train,odims))
     for i in xrange(odims):
@@ -40,7 +40,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     kk = input_noise*convolve2d(np.array([[1,2,3,2,1]]),np.array([[1,2,3,2,1]]).T)/9.0;
     s_test = convolve2d(np.eye(idims),kk,'same')
     s_test = np.tile(s_test,(n_test,1)).reshape(n_test,idims,idims)
-    x_test = 20*(np.random.rand(n_test,idims) - 0.5)
+    x_test = 60*(np.random.rand(n_test,idims) - 0.5)
     # generate the output at the test points
     y_test = np.empty((n_test,odims))
     for i in xrange(odims):
@@ -57,7 +57,7 @@ def write_profile_files(gp):
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--n_train', nargs='?', type=int, help='Number of training samples. Default: 500.', default=500)
-    parser.add_argument('--n_test', nargs='?', type=int, help='Number of testing samples. Default: 200', default=200)
+    parser.add_argument('--n_test', nargs='?', type=int, help='Number of testing samples. Default: 500', default=500)
     parser.add_argument('--idims', nargs='?', type=int, help='Input dimensions. Default: 4', default=4)
     parser.add_argument('--odims', nargs='?', type=int, help='Output dimensions. Default: 2', default=2)
     parser.add_argument('--noise1', nargs='?', type=float, help='Measurement noise of training targets. Default: 0.01', default=0.01)

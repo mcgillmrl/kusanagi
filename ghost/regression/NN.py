@@ -15,8 +15,9 @@ class NN(object):
         self.name=name
         self.uncertain_inputs = uncertain_inputs
         self.should_recompile = False
-
-        self.logsn2 = theano.shared(np.array(np.log(1e-3),dtype=theano.config.floatX))
+        
+        ls2 = np.ones((self.E,))*np.log(1e-3)
+        self.logsn2 = theano.shared(np.array(ls2,dtype=theano.config.floatX))
         self.lscale2 = 10
 
         self.learning_params = {'iters': 10000, 'batch_size': 200}
@@ -28,14 +29,23 @@ class NN(object):
         self.drop_input = None
         self.drop_hidden = 0.1
         self.drop_output = 0.1
-        self.dropout_samples = 60 
-        self.n_particles = 30
+        self.dropout_samples = 50 
+        self.n_particles = 10
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
 
         self.X = None; self.Y = None
 
         self.profile = profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
+    
+    def get_all_shared_vars(self, as_dict=False):
+        if as_dict:
+            # TODO get all the params from the lasagne neural net model
+            return [(attr_name,self.__dict__[attr_name]) for attr_name in self.__dict__.keys() if isinstance(self.__dict__[attr_name],theano.tensor.sharedvar.SharedVariable)]
+        else:
+            v= [attr for attr in self.__dict__.values() if isinstance(attr,theano.tensor.sharedvar.SharedVariable)]
+            v.extend(lasagne.layers.get_all_params(self.network))
+            return v
     
     def set_dataset(self,X_dataset,Y_dataset):
         # ensure we don't change the number of input and output dimensions ( the number of samples can change)
@@ -65,7 +75,7 @@ class NN(object):
             self.Y.set_value(Y_dataset,borrow=True)
 
         self.lscale2 = 0.001*self.X.get_value(borrow=True).var(0).sum()
-        self.logsn2.set_value(np.log(0.01*self.Y.get_value(borrow=True).var(0).sum()).astype(theano.config.floatX))
+        self.logsn2.set_value(np.log(0.001*self.Y.get_value(borrow=True).var(0)).astype(theano.config.floatX))
 
     def append_dataset(self,X_dataset,Y_dataset):
         if self.X is None:
@@ -119,13 +129,16 @@ class NN(object):
         # evaluate the output in mini_batches
         train_inputs = theano.tensor.matrix('%s>train_inputs'%(self.name))
         train_targets = theano.tensor.matrix('%s>train_targets'%(self.name))
-        l2_weight = theano.tensor.scalar('%s>l2_weight'%(self.name))
         train_predictions = lasagne.layers.get_output(self.network, train_inputs, deterministic=False)
 
         # build the dropout loss function ( See Gal and Gharamani 2015)
-        loss = theano.tensor.mean(lasagne.objectives.squared_error(train_predictions,train_targets))
+        #loss = theano.tensor.mean(lasagne.objectives.squared_error(train_predictions,train_targets))
+        delta_y = train_predictions-train_targets
+        N,E = train_targets.shape
+        error = ((delta_y*theano.tensor.exp(-0.5*self.logsn2))**2).sum(1)
         l2_penalty = lasagne.regularization.regularize_network_params(self.network, lasagne.regularization.l2)
-        loss = 0.5*theano.tensor.exp(-self.logsn2)*loss + l2_weight*l2_penalty + 0.5*self.logsn2*train_targets.shape[1]
+        l2_weight = self.lscale2*(1-self.drop_hidden)/N
+        loss = 0.5*error.mean() + l2_weight*l2_penalty + 0.5*self.logsn2.sum()
 
         # build the updates dictionary ( sets the optimization algorithm for the network parameters)
         params = lasagne.layers.get_all_params(self.network, trainable=True)
@@ -135,8 +148,8 @@ class NN(object):
         
         # compile the training function
         utils.print_with_stamp('Compiling training and  loss functions',self.name)
-        self.train_fn = theano.function([train_inputs,train_targets,l2_weight],loss,updates=updates,allow_input_downcast=True)
-        self.loss_fn = theano.function([train_inputs,train_targets,l2_weight],loss,allow_input_downcast=True)
+        self.train_fn = theano.function([train_inputs,train_targets],loss,updates=updates,allow_input_downcast=True)
+        self.loss_fn = theano.function([train_inputs,train_targets],loss,allow_input_downcast=True)
 
     def init_predict(self):
         mx = theano.tensor.vector('mx')
@@ -177,7 +190,7 @@ class NN(object):
             self.z_std = self.m_rng.normal((self.n_particles,self.D))
 
             # transform to multivariate normal
-            Lx = theano.tensor.slinalg.cholesky(Sx + 1e-16*theano.tensor.eye(Sx.shape[0]))
+            Lx = theano.tensor.slinalg.cholesky(Sx + 1e-9*theano.tensor.eye(Sx.shape[0]))
             x = mx + self.z_std.dot(Lx.T)
         else:
             x = mx[None,:]
@@ -238,14 +251,12 @@ class NN(object):
 
         # go through the dataset
         batch_size = min(self.learning_params['batch_size'],self.N)
-        self.regularization_weight = self.lscale2*(1-self.drop_hidden)/(2*batch_size)
-        utils.print_with_stamp('L2 regularization weight: %s'%(str(self.regularization_weight)),self.name)
         for i in xrange(self.learning_params['iters']):
             start_time = time.time()
             for x,y in utils.iterate_minibatches(self.X.get_value(borrow=True), self.Y.get_value(borrow=True), batch_size, shuffle=True):
-                ret = self.train_fn(x,y,self.regularization_weight)
+                ret = self.train_fn(x,y)
             elapsed_time = time.time() - start_time
-            utils.print_with_stamp('iter: %d, loss: %E, elapsed: %E, sigma2: %E    '%(i,ret,elapsed_time, np.exp(self.logsn2.get_value())),self.name,True)
+            utils.print_with_stamp('iter: %d, loss: %E, elapsed: %E, sigma2: %s    '%(i,ret,elapsed_time, np.exp(self.logsn2.get_value())),self.name,True)
         print ''
 
     def load(self):
