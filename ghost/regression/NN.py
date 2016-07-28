@@ -168,6 +168,8 @@ class NN(object):
     def predict_symbolic(self,mx,Sx=None, reinit_network=False, deterministic=False, rescale=True, dropout_samples=None):
         if self.network is None or reinit_network:
             self.build_network()
+        if dropout_samples is None:
+            dropout_samples = self.dropout_samples
 
         if Sx is not None:
             # generate random samples from input (assuming gaussian distributed inputs)
@@ -194,7 +196,6 @@ class NN(object):
             x = x.transpose(2,0,1).flatten(2).T
             y = y.transpose(2,0,1).flatten(2).T
         else:
-            dropout_samples = 1.0
             y = lasagne.layers.get_output(self.network, x, deterministic=deterministic)
 
         # empirical mean
