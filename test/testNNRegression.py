@@ -131,5 +131,4 @@ if __name__=='__main__':
 
         plt.plot(Xts,Ypred)
         plt.show()
-        print_with_stamp('avg_time_per_call %f'%(avg_time_per_call/n_test),'main')
 

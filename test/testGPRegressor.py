@@ -10,8 +10,15 @@ from theano.printing import pydotprint
 
 np.set_printoptions(linewidth=500, precision=17, suppress=True)
 
-def test_func1(X):
-    return 100*np.exp(-0.5*(np.sum((X**2),1)))*np.sin(X.sum(1))
+def test_func1(X,ftype=1):
+    if ftype==1:
+        ret = np.exp(-0.05*(np.sum((X**2),1)))*np.sin(2.5*X.sum(1))
+    else:
+        ret=np.zeros((X.shape[0]))
+        ret[X.max(1)>0]=1
+        ret -= 0.5
+        ret = (ret + 0.1*np.sin(2.5*X.sum(1)))
+    return ret
 
 def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, input_noise=0.01, output_noise=0.01,rand_seed=None):
     if rand_seed is not None:
@@ -91,8 +98,10 @@ if __name__=='__main__':
     test_Y = test_dataset[1]
     errors = []
     probs = []
+    preds = []
     for i in xrange(n_test):
         ret = gp.predict(test_mX[i], test_sX[i])
+        preds.append(ret)
         print '============%04d============'%(i)
         print 'Test Point:\n%s'%(test_mX[i])
         print 'Ground Truth:\n%s'%(test_Y[i])
@@ -110,4 +119,32 @@ if __name__=='__main__':
     print 'Min/Max/Mean Prediction Error:\t %f / %f / %f'%(errors.min(),errors.max(),errors.mean())
     print 'Min/Max/Mean Log Probablity:\t %f / %f / %f'%(probs.min(),probs.max(),probs.mean())
 
+
+    if idims==1 and odims==1:
+        # plot regression result
+        idx = np.argsort(train_dataset[0][:,0])
+        Xtr = train_dataset[0][idx]
+        Ytr = train_dataset[1][idx]
+        
+        idx = np.argsort(test_dataset[0][:,0])
+        Xts = test_dataset[0][idx]
+        SXts = test_dataset[2][idx]
+        Yts = test_dataset[1][idx]
+
+        plt.figure()
+        plt.scatter(Xtr,Ytr)
+        plt.plot(Xts,Yts)
+        
+        Ypred,Yvar,Yio = zip(*preds)
+        Ypred = np.concatenate(Ypred,axis=0)[idx]
+        Yvar = np.concatenate(Yvar,axis=0)[idx]
+        alpha = 0.5
+        for i in xrange(4):
+            alpha = alpha/2.0
+            lower_bound = Ypred - i*np.sqrt(Yvar).squeeze()
+            upper_bound = Ypred + i*np.sqrt(Yvar).squeeze()
+            plt.fill_between(Xts.squeeze(), lower_bound, upper_bound, alpha=alpha)
+
+        plt.plot(Xts,Ypred)
+        plt.show()
 
