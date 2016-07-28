@@ -28,8 +28,8 @@ class NN(object):
         self.drop_input = None
         self.drop_hidden = 0.1
         self.drop_output = 0.1
-        self.dropout_samples = 50 
-        self.n_particles = 20
+        self.dropout_samples = 60 
+        self.n_particles = 30
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
 
         self.X = None; self.Y = None
