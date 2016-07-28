@@ -143,8 +143,6 @@ class GP(object):
         else:
             loghyp = loghyp.reshape(self.loghyp.get_value(borrow=True).shape).astype(theano.config.floatX)
             self.loghyp.set_value(loghyp,borrow=True)
-            if self.logsn2 is None:
-                self.logsn2 = 2*self.loghyp[:,-1]
 
     def get_params(self, symbolic=True, all_shared=False):
         if symbolic:
@@ -349,6 +347,7 @@ class GP(object):
         self.N = self.X.get_value(borrow=True).shape[0]
         self.Y = state[i.next()]
         self.loghyp = state[i.next()]
+        self.logsn2 = 2*self.loghyp[:,-1]
         self.iK = state[i.next()]
         self.L = state[i.next()]
         self.beta = state[i.next()]
@@ -358,8 +357,6 @@ class GP(object):
         self.predict_d_fn = state[i.next()]
         self.kernel_func = state[i.next()]
         self.trained = state[i.next()]
-        if self.logsn2 is None:
-            self.logsn2 = 2*self.loghyp[:,-1]
 
     def get_state(self):
         return [self.X,self.Y,self.loghyp,self.iK,self.L,self.beta,self.nlml,self.dnlml,self.predict_fn,self.predict_d_fn,self.kernel_func,self.trained]
