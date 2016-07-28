@@ -333,7 +333,7 @@ def plot_results(learner,H=None):
     S0 = learner.plant.S0
     if H is None:
         H = learner.H
-    H_steps = np.ceil(H/dt)
+    H_steps =int( np.ceil(H/dt))
     # plot last run cost vs predicted cost
     plt.figure('Cost of last run and Predicted cost')
     plt.gca().clear()
