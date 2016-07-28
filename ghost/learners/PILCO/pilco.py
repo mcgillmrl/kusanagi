@@ -72,7 +72,7 @@ class PILCO(EpisodicLearner):
 
     def save_rollout(self):
         ''' Saves the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
-        sys.setrecursionlimit(100000)
+        sys.setrecursionlimit(100000000000)
         path = os.path.join(utils.get_output_dir(),self.filename+'_rollout.zip')
         with open(path,'wb') as f:
             utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
@@ -154,6 +154,7 @@ class PILCO(EpisodicLearner):
             self.init_rollout_scan(derivs)
         else:
             self.init_rollout_step(derivs)
+        #self.save_rollout()
 
     def init_rollout_scan(self, derivs=False):
         ''' This method compiles the rollout function using a Theano scan loop'''

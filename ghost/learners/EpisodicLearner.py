@@ -43,7 +43,7 @@ class EpisodicLearner(object):
         self.n_episodes = 0
         self.angle_idims = params['angle_dims'] if 'angle_dims' in params else []
         self.H = params['H'] if 'H' in params else 10.0
-        self.discount = params['discount'] if 'discout' in params else 1
+        self.discount = params['discount'] if 'discount' in params else 1
         self.max_evals = params['max_evals'] if 'max_evals' in params else 150
         self.async_plant = async_plant
         self.learning_iteration = 0;
@@ -52,10 +52,10 @@ class EpisodicLearner(object):
         # try loading from file, initialize from scratch otherwise
         try:
             self.load()
-            if learn_from_iteration[0] != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
+            if learn_from_iteration != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
                 if not hasattr(self.experience, 'policy_history'):
                     pass
-                elif (learn_from_iteration[0]+1 >= len(self.experience.policy_history)):
+                elif (learn_from_iteration+1 >= len(self.experience.policy_history)):
                     utils.print_with_stamp('WARNING! You are attempting to load from an iteration that does not exist! Press space to instead continue from last iteration')
                     raw_input()
                 else:
@@ -70,7 +70,7 @@ class EpisodicLearner(object):
                     self.experience.actions = self.experience.actions[:entry_num]
                     self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
                     self.experience.curr_episode = entry_num-1
-                    if learn_from_iteration[0] is not 0:
+                    if learn_from_iteration is not 0:
                         self.policy.set_params(self.experience.policy_history[learn_from_iteration-1])
                         self.experience.policy_history = self.experience.policy_history[:learn_from_iteration]
                     self.learning_iteration = self.learn_from_iteration + 1
@@ -129,7 +129,7 @@ class EpisodicLearner(object):
         self.n_evals = state[i.next()]
 
     def get_state(self):
-        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.cost_symbolic,self.H,self.discount,self.learning_iteration,self.n_eval]
+        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.cost_symbolic,self.H,self.discount,self.learning_iteration,self.n_evals]
 
     def init_cost(self,cost):
         self.cost_symbolic = cost
