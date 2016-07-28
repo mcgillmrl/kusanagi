@@ -358,6 +358,8 @@ class GP(object):
         self.predict_d_fn = state[i.next()]
         self.kernel_func = state[i.next()]
         self.trained = state[i.next()]
+        if self.logsn2 is None:
+            self.logsn2 = 2*self.loghyp[:,-1]
 
     def get_state(self):
         return [self.X,self.Y,self.loghyp,self.iK,self.L,self.beta,self.nlml,self.dnlml,self.predict_fn,self.predict_d_fn,self.kernel_func,self.trained]
