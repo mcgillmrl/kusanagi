@@ -10,7 +10,7 @@ from theano.printing import pydotprint
 
 np.set_printoptions(linewidth=500, precision=17, suppress=True)
 
-def test_func1(X,ftype=1):
+def test_func1(X,ftype=2):
     if ftype==1:
         ret = np.exp(-0.05*(np.sum((X**2),1)))*np.sin(2.5*X.sum(1))
     else:
@@ -25,7 +25,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
         np.random.seed(rand_seed)
     #  ================== train dataset ==================
     # sample training points
-    x_train = 7.5*(np.random.rand(n_train,idims) - 0.5)
+    x_train = 15*(np.random.rand(n_train,idims) - 0.5)
     # generate the output at the training points
     y_train = np.empty((n_train,odims))
     for i in xrange(odims):
@@ -37,7 +37,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     kk = input_noise*convolve2d(np.array([[1,2,3,2,1]]),np.array([[1,2,3,2,1]]).T)/9.0;
     s_test = convolve2d(np.eye(idims),kk,'same')
     s_test = np.tile(s_test,(n_test,1)).reshape(n_test,idims,idims)
-    x_test = 15*(np.random.rand(n_test,idims) - 0.5)
+    x_test = 60*(np.random.rand(n_test,idims) - 0.5)
     # generate the output at the test points
     y_test = np.empty((n_test,odims))
     for i in xrange(odims):
@@ -99,8 +99,11 @@ if __name__=='__main__':
     errors = []
     probs = []
     preds = []
+    times = []
     for i in xrange(n_test):
+        start_time = time()
         ret = gp.predict(test_mX[i], test_sX[i])
+        times.append(time()-start_time)
         preds.append(ret)
         print '============%04d============'%(i)
         print 'Test Point:\n%s'%(test_mX[i])
@@ -115,9 +118,11 @@ if __name__=='__main__':
 
     errors = np.array(errors)
     probs = np.array(probs)
+    times = np.array(times)
     print '============================='
     print 'Min/Max/Mean Prediction Error:\t %f / %f / %f'%(errors.min(),errors.max(),errors.mean())
     print 'Min/Max/Mean Log Probablity:\t %f / %f / %f'%(probs.min(),probs.max(),probs.mean())
+    print 'Min/Max/Mean Time per eval:\t %f / %f / %f'%(times.min(),times.max(),times.mean())
 
 
     if idims==1 and odims==1:

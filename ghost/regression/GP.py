@@ -31,6 +31,7 @@ class GP(object):
         self.uncertain_inputs = uncertain_inputs
         self.hyperparameter_gradients = hyperparameter_gradients
         self.snr_penalty = snr_penalty
+        self.covs = (cov.SEard, cov.Noise)
         
         # dimension related variables
         if X_dataset is None:
@@ -51,6 +52,7 @@ class GP(object):
         self.loghyp = None; self.logsn2 = None
         self.X = None; self.Y = None
         self.iK = None; self.L = None; self.beta = None;
+        self.kernel_func = None
         self.nlml = None
 
         # compiled functions
@@ -169,14 +171,6 @@ class GP(object):
         idims = self.D
         odims = self.E
 
-        self.kernel_func = [[]]*odims
-        K = [[]]*odims
-        iK = [[]]*odims
-        L = [[]]*odims
-        beta = [[]]*odims
-        nlml = [[]]*odims
-        dnlml = [[]]*odims
-        covs = (cov.SEard, cov.Noise)
         # these are shared variables for the kernel matrix, its cholesky decomposition and K^-1 dot Y
         if self. iK is None:
             self.iK = S(np.zeros((self.E,self.N,self.N),dtype=theano.config.floatX), name="%s>iK"%(self.name))
@@ -185,28 +179,32 @@ class GP(object):
         if self.beta is None:
             self.beta = S(np.zeros((self.E,self.N),dtype=theano.config.floatX), name="%s>beta"%(self.name))
         N = self.X.shape[0].astype(theano.config.floatX)
-        for i in xrange(odims):
+        
+        def log_marginal_likelihood(Y,loghyp,X,EyeN):
             # initialise the (before compilation) kernel function
-            loghyps = (self.loghyp[i,:idims+1],self.loghyp[i,idims+1])
-            self.kernel_func[i] = partial(cov.Sum, loghyps, covs)
+            loghyps = (loghyp[:idims+1],loghyp[idims+1])
+            kernel_func = partial(cov.Sum, loghyps, self.covs)
 
             # We initialise the kernel matrices (one for each output dimension)
-            K[i] = self.kernel_func[i](self.X)
-            L[i] = cholesky(K[i])
-            iK[i] = solve_upper_triangular(L[i].T, solve_lower_triangular(L[i],T.eye(self.X.shape[0])))
-            Yc = solve_lower_triangular(L[i],self.Y[:,i])
-            beta[i] = solve_upper_triangular(L[i].T,Yc)
+            K = kernel_func(X)
+            L = cholesky(K)
+            iK = solve_upper_triangular(L.T, solve_lower_triangular(L,EyeN))
+            Yc = solve_lower_triangular(L,Y)
+            beta = solve_upper_triangular(L.T,Yc)
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
-            nlml[i] = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(L[i]))) + N*T.log(2*np.pi) )
+            nlml = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(L))) + N*T.log(2*np.pi) )
+
+            return nlml,iK,L,beta
         
-        nlml = T.stack(nlml)
-        if cache_vars:
-            iK = T.stack(iK); iK = T.unbroadcast(iK,0) if iK.broadcastable[0] else iK
-            L = T.stack(L); L = T.unbroadcast(L,0) if L.broadcastable[0] else L
-            beta = T.stack(beta); beta = T.unbroadcast(beta,0) if beta.broadcastable[0] else beta
+        (nlml,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,T.eye(self.X.shape[0])], allow_gc=False)
+
+        iK = T.unbroadcast(iK,0) if iK.broadcastable[0] else iK
+        L = T.unbroadcast(L,0) if L.broadcastable[0] else L
+        beta = T.unbroadcast(beta,0) if beta.broadcastable[0] else beta
     
+        if cache_vars:
             # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
             updts =[(self.iK,iK),(self.L,L),(self.beta,beta)]
         else:
@@ -255,20 +253,29 @@ class GP(object):
         self.state_changed = True # for saving
 
     def predict_symbolic(self,mx,Sx):
+        idims = self.D
         odims = self.E
 
         # compute the mean and variance for each output dimension
         mean = [[]]*odims
         variance = [[]]*odims
-        for i in xrange(odims):
-            k = self.kernel_func[i](mx[None,:],self.X)
-            mean[i] = k.dot(self.beta[i])
-            kc = solve_lower_triangular(self.L[i],k.flatten())
-            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False) - kc.dot(kc)  #TODO verify this computation
+        
+        def predict_odim(L,beta,loghyp,X,mx):
+            loghyps = (loghyp[:idims+1],loghyp[idims+1])
+            kernel_func = partial(cov.Sum, loghyps, self.covs)
+
+            k = kernel_func(mx[None,:],X)
+            mean = k.dot(beta)
+            kc = solve_lower_triangular(L,k.flatten())
+            variance = kernel_func(mx[None,:],all_pairs=False) - kc.dot(kc)
+
+            return mean, variance
+        
+        (M,S), updts = theano.scan(fn=predict_odim, sequences=[self.L,self.beta,self.loghyp], non_sequences=[self.X,mx], allow_gc = False)
 
         # reshape output variables
-        M = T.stack(mean).T.flatten()
-        S = T.diag(T.stack(variance).T.flatten())
+        M = M.flatten()
+        S = T.diag(S.flatten())
         V = T.zeros((self.D,self.E))
 
         return M,S,V
@@ -306,7 +313,7 @@ class GP(object):
             self.init_loss()
 
         utils.print_with_stamp('Current hyperparameters:',self.name)
-        loghyp0 = self.loghyp.get_value(borrow=True)
+        loghyp0 = self.loghyp.eval()
         print (loghyp0)
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
@@ -319,7 +326,7 @@ class GP(object):
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
         self.set_loghyp(loghyp)
         utils.print_with_stamp('New hyperparameters:',self.name)
-        print (self.loghyp.get_value(borrow=True))
+        print (self.loghyp.eval())
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         self.trained = True
 
@@ -400,25 +407,31 @@ class GP_UI(GP):
         Lambda = iL**2
         R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
-        M2 = [[]]*(odims**2) # second moment
-        N = self.X.shape[0]
-        for i in xrange(odims):
-            for j in xrange(i+1):
-                # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                Rij = R[i,j]
-                n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
-                Q = T.exp( n2 )/T.sqrt(det(Rij))
-                # Eq 2.55
-                m2 = matrix_dot(self.beta[i], Q, self.beta[j])
-                if i == j:
-                    m2 =  m2 - T.sum(self.iK[i]*Q) + sf2[i]
-                else:
-                    M2[j*odims+i] = m2
-                M2[i*odims+j] = m2
+        
+        M2 = T.zeros((self.E,self.E))
+        # initialize indices
+        indices = [ T.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
-        M2 = T.stack(M2).T
-        S = M2.reshape((odims,odims))
-        S = S - T.outer(M,M)
+        def second_moments(i,j,M2,beta,iK,sf2,R,logk_c,logk_r,z_,Sx):
+            # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
+            Rij = R[i,j]
+            n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+            Q = T.exp( n2 )/T.sqrt(det(Rij))
+            # Eq 2.55
+            m2 = matrix_dot(beta[i], Q, beta[j])
+            
+            m2 = theano.ifelse.ifelse(T.eq(i,j), m2 - T.sum(iK[i]*Q) + sf2[i], m2)
+            M2 = T.set_subtensor(M2[i,j], m2)
+            M2 = theano.ifelse.ifelse(T.eq(i,j), M2 , T.set_subtensor(M2[j,i], m2))
+            return M2
+
+        M2_,updts = theano.scan(fn=second_moments, 
+                               sequences=indices,
+                               outputs_info=[M2],
+                               non_sequences=[self.beta,self.iK,sf2,R,logk_c,logk_r,z_,Sx],
+                               allow_gc=False)
+        M2 = M2_[-1]
+        S = M2 - T.outer(M,M)
 
         return M,S,V
         
@@ -507,15 +520,8 @@ class SPGP(GP):
             self.should_recompile = False
             odims = self.E
             idims = self.D
-            # initialize the training loss function of the sparse FITC approximation
-            Kmm = [[]]*odims
-            iKmm = [[]]*odims
-            Lmm = [[]]*odims
-            Amm = [[]]*odims
-            iBmm = [[]]*odims
-            beta_sp = [[]]*odims
-            nlml_sp = [[]]*odims
-            dnlml_sp = [[]]*odims
+            
+            # initialize shared variables
             if self.iKmm is None:
                 self.iKmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>iKmm"%(self.name))
             if self.Lmm is None:
@@ -526,20 +532,26 @@ class SPGP(GP):
                 self.iBmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>iBmm"%(self.name))
             if self.beta_sp is None:
                 self.beta_sp = S(np.zeros((self.E,self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
-            ridge = 1e-6 if theano.config.floatX == 'float64' else 5e-4
-            for i in xrange(odims):
-                X_sp_i = self.X_sp  # TODO allow for different pseudo inputs for each dimension
-                ll = T.exp(self.loghyp[i,:idims])
-                sf2 = T.exp(2*self.loghyp[i,idims])
-                sn2 = T.exp(2*self.loghyp[i,idims+1])
-                N = self.X.shape[0].astype(theano.config.floatX)
-                M = X_sp_i.shape[0].astype(theano.config.floatX)
 
-                Kmm[i] = self.kernel_func[i](X_sp_i) + ridge*T.eye(self.X_sp.shape[0])
-                Kmn = self.kernel_func[i](X_sp_i, self.X)
-                Lmm[i] = cholesky(Kmm[i])
-                iKmm[i] = solve_upper_triangular(Lmm[i].T, solve_lower_triangular(Lmm[i],T.eye(self.n_basis)))
-                Lmn = solve_lower_triangular(Lmm[i],Kmn)
+            # initialize the training loss function of the sparse FITC approximation
+            def log_marginal_likelihood(Y,loghyp,X,X_sp,EyeM):
+                # TODO allow for different pseudo inputs for each dimension
+                # initialise the (before compilation) kernel function
+                loghyps = (loghyp[:idims+1],loghyp[idims+1])
+                kernel_func = partial(cov.Sum, loghyps, self.covs)
+
+                ll = T.exp(loghyp[:idims])
+                sf2 = T.exp(2*loghyp[idims])
+                sn2 = T.exp(2*loghyp[idims+1])
+                N = X.shape[0].astype(theano.config.floatX)
+                M = X_sp.shape[0].astype(theano.config.floatX)
+
+                ridge = 1e-6 if theano.config.floatX == 'float64' else 5e-4
+                Kmm = kernel_func(X_sp) + ridge*EyeM
+                Kmn = kernel_func(X_sp, X)
+                Lmm = cholesky(Kmm)
+                iKmm = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm,EyeM))
+                Lmn  = solve_lower_triangular(Lmm,Kmn)
                 diagQnn =  T.diag(Lmn.T.dot(Lmn))
 
                 # Gamma = diag(Knn - Qnn) + sn2*I
@@ -548,26 +560,29 @@ class SPGP(GP):
 
                 # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
                 Kmn_ = Kmn*T.sqrt(Gamma_inv)                    # Kmn_*Gamma^-.5
-                Yi = self.Y[:,i]*(T.sqrt(Gamma_inv))            # Gamma^-.5* Y
-                Bmm = Kmm[i] + (Kmn_).dot(Kmn_.T)                  # Kmm + Kmn * Gamma^-1 * Knm
-                Amm[i] = cholesky(Bmm)
-                iBmm[i] = solve_upper_triangular(Amm[i].T, solve_lower_triangular(Amm[i],T.eye(self.n_basis)))
+                Yi = Y*(T.sqrt(Gamma_inv))                      # Gamma^-.5* Y
+                Bmm = Kmm + (Kmn_).dot(Kmn_.T)                  # Kmm + Kmn * Gamma^-1 * Knm
+                Amm = cholesky(Bmm)
+                iBmm = solve_upper_triangular(Amm.T, solve_lower_triangular(Amm,EyeM))
 
-                Yci = solve_lower_triangular(Amm[i],Kmn_.dot(Yi) )
-                beta_sp[i] = solve_upper_triangular(Amm[i].T,Yci)
+                Yci = solve_lower_triangular(Amm,Kmn_.dot(Yi) )
+                beta_sp = solve_upper_triangular(Amm.T,Yci)
 
-                log_det_K_sp = T.sum(T.log(Gamma)) - 2*T.sum(T.log(T.diag(Lmm[i]))) + 2*T.sum(T.log(T.diag(Amm[i])))
+                log_det_K_sp = T.sum(T.log(Gamma)) - 2*T.sum(T.log(T.diag(Lmm))) + 2*T.sum(T.log(T.diag(Amm)))
 
-                nlml_sp[i] = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) + log_det_K_sp + N*np.log(2*np.pi).astype(theano.config.floatX) )
+                nlml_sp = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) + log_det_K_sp + N*np.log(2*np.pi).astype(theano.config.floatX) )
 
-            nlml_sp = T.stack(nlml_sp)
+                return nlml_sp, iKmm, Lmm, Amm, iBmm, beta_sp
+            
+            (nlml_sp, iKmm, Lmm, Amm, iBmm, beta_sp),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,self.X_sp,T.eye(self.X_sp.shape[0])],allow_gc=False)
+            
+            iKmm = T.unbroadcast(iKmm,0) if iKmm.broadcastable[0] else iKmm
+            Lmm = T.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
+            Amm = T.unbroadcast(Amm,0) if Amm.broadcastable[0] else Amm
+            iBmm = T.unbroadcast(iBmm,0) if iBmm.broadcastable[0] else iBmm
+            beta_sp = T.unbroadcast(beta_sp,0) if beta_sp.broadcastable[0] else beta_sp
+    
             if cache_vars:
-                iKmm = T.stack(iKmm); iKmm = T.unbroadcast(iKmm,0) if iKmm.broadcastable[0] else iKmm
-                Lmm = T.stack(Lmm); Lmm = T.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
-                Amm = T.stack(Amm); Amm = T.unbroadcast(Amm,0) if Amm.broadcastable[0] else Amm
-                iBmm = T.stack(iBmm); iBmm = T.unbroadcast(iBmm,0) if iBmm.broadcastable[0] else iBmm
-                beta_sp = T.stack(beta_sp); beta_sp = T.unbroadcast(beta_sp,0) if beta_sp.broadcastable[0] else beta_sp
-        
                 # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
                 updts = [(self.iKmm,iKmm),(self.Lmm,Lmm),(self.Amm,Amm),(self.iBmm,iBmm),(self.beta_sp,beta_sp)]
             else:
@@ -594,21 +609,29 @@ class SPGP(GP):
             # stick with the full GP
             return super(SPGP, self).predict_symbolic(mx,Sx)
 
+        idims = self.D
         odims = self.E
 
         # compute the mean and variance for each output dimension
         mean = [[]]*odims
         variance = [[]]*odims
-        for i in xrange(odims):
-            k = self.kernel_func[i](mx[None,:],self.X_sp).flatten()
-            mean[i] = k.dot(self.beta_sp[i])
-            kL = solve_lower_triangular(self.Lmm[i],k)
-            kA = solve_lower_triangular(self.Amm[i],k)
-            variance[i] = self.kernel_func[i](mx[None,:],all_pairs=False) - kL.dot(kL) -  kA.dot(kA)
+        def predict_odim(Lmm,Amm,beta_sp,loghyp,X_sp,mx):
+            loghyps = (loghyp[:idims+1],loghyp[idims+1])
+            kernel_func = partial(cov.Sum, loghyps, self.covs)
+            
+            k = kernel_func(mx[None,:],X_sp).flatten()
+            mean = k.dot(beta_sp)
+            kL = solve_lower_triangular(Lmm,k)
+            kA = solve_lower_triangular(Amm,k)
+            variance = kernel_func(mx[None,:],all_pairs=False) - kL.dot(kL) -  kA.dot(kA)
 
-        # reshape the prediction output variables
-        M = T.stack(mean).T.flatten()
-        S = T.diag(T.stack(variance).T.flatten())
+            return mean, variance
+        
+        (M,S), updts = theano.scan(fn=predict_odim, sequences=[self.Lmm,self.Amm,self.beta_sp,self.loghyp], non_sequences=[self.X_sp,mx],allow_gc=False)
+
+        # reshape output variables
+        M = M.flatten()
+        S = T.diag(S.flatten())
         V = T.zeros((self.D,self.E))
 
         return M,S,V
@@ -696,25 +719,31 @@ class SPGP_UI(SPGP,GP_UI):
         Lambda = iL**2
         R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
-        M2 = [[]]*(odims**2) # second moment
-        N = self.X.shape[0]
-        for i in xrange(odims):
-            for j in xrange(i+1):
-                # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                Rij = R[i,j]
-                n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
-                Q = T.exp( n2 )/T.sqrt(det(Rij))
-                # Eq 2.55
-                m2 = matrix_dot(self.beta_sp[i], Q, self.beta_sp[j])
-                if i == j:
-                    m2 =  m2 - T.sum((self.iKmm[i] - self.iBmm[i])*Q) + sf2[i]
-                else:
-                    M2[j*odims+i] = m2.flatten()
-                M2[i*odims+j] = m2.flatten()
+        
+        M2 = T.zeros((self.E,self.E))
+        # initialize indices
+        indices = [ T.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
-        M2 = T.stack(M2).T
-        S = M2.reshape((odims,odims))
-        S = S - T.outer(M,M)
+        def second_moments(i,j,M2,beta,iK,sf2,R,logk_c,logk_r,z_,Sx):
+            # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
+            Rij = R[i,j]
+            n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+            Q = T.exp( n2 )/T.sqrt(det(Rij))
+            # Eq 2.55
+            m2 = matrix_dot(beta[i], Q, beta[j])
+            
+            m2 = theano.ifelse.ifelse(T.eq(i,j), m2 - T.sum(iK[i]*Q) + sf2[i], m2)
+            M2 = T.set_subtensor(M2[i,j], m2)
+            M2 = theano.ifelse.ifelse(T.eq(i,j), M2 , T.set_subtensor(M2[j,i], m2))
+            return M2
+
+        M2_,updts = theano.scan(fn=second_moments, 
+                               sequences=indices,
+                               outputs_info=[M2],
+                               non_sequences=[self.beta_sp,(self.iKmm - self.iBmm),sf2,R,logk_c,logk_r,z_,Sx],
+                               allow_gc=False)
+        M2 = M2_[-1]
+        S = M2 - T.outer(M,M)
 
         return M,S,V
 
@@ -789,25 +818,45 @@ class RBFGP(GP_UI):
         Lambda = iL**2
         R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
-        M2 = [[]]*(odims**2) # second moment
-        N = self.X.shape[0]
-        for i in xrange(odims):
-            for j in xrange(i+1):
+        
+        if self.E == 1:
+            # for some reason, compiling the policy gradients breaks when the output dimension of this class is one
+            #  TODO: do the same in the other classes that compute second_moments
+            # with a scan loop,
+            # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
+            Rij = R[0,0]
+            n2 = logk_c[0] + logk_r[0] + utils.maha(z_[0],-z_[0],0.5*matrix_inverse(Rij).dot(Sx))
+            Q = T.exp( n2 )/T.sqrt(det(Rij))
+            # Eq 2.55
+            m2 = matrix_dot(self.beta[0],Q,self.beta[0].T)
+            m2 = m2 + 1e-6
+            M2 = T.stack([m2])
+        else:
+            M2 = T.zeros((self.E,self.E))
+            # initialize indices
+            indices = [ T.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
+
+            def second_moments(i,j,M2,beta,R,logk_c,logk_r,z_,Sx):
                 # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
                 Rij = R[i,j]
                 n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
                 Q = T.exp( n2 )/T.sqrt(det(Rij))
                 # Eq 2.55
-                m2 = matrix_dot(self.beta[i],Q,self.beta[j].T)
-                if i == j:
-                    m2 = m2 + 1e-6
-                else:
-                    M2[j*odims+i] = m2
-                M2[i*odims+j] = m2
+                m2 = matrix_dot(beta[i], Q, beta[j])
+                
+                m2 = theano.ifelse.ifelse(T.eq(i,j), m2 + 1e-6 , m2)
+                M2 = T.set_subtensor(M2[i,j], m2)
+                M2 = theano.ifelse.ifelse(T.eq(i,j), M2 , T.set_subtensor(M2[j,i], m2))
+                return M2
 
-        M2 = T.stack(M2).T
-        S = M2.reshape((odims,odims))
-        S = S - T.outer(M,M)
+            M2_,updts = theano.scan(fn=second_moments, 
+                                sequences=indices,
+                                outputs_info=[M2],
+                                non_sequences=[self.beta,R,logk_c,logk_r,z_,Sx],
+                                allow_gc=False)
+            M2 = M2_[-1]
+
+        S = M2 - T.outer(M,M)
 
         # apply saturating function to the output if available
         if self.sat_func is not None:
@@ -1056,7 +1105,7 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=1):
+    def predict_symbolic(self,mx,Sx, method=2):
         if method == 1:
             # fast compilation
             return self.predict_symbolic_1(mx,Sx)
@@ -1162,49 +1211,52 @@ class SSGP_UI(SSGP, GP_UI):
         beta_ss_r = self.beta_ss.dimshuffle(0,'x',1)
         V = matrix_inverse(Sx).dot(T.sum( c*beta_ss_r, 2 ).T - T.outer(mx,M))
         
-        # TODO vectorize this operation
         srdotSxdotsr_c = srdotSxdotsr.dimshuffle(0,1,'x')
         srdotSxdotsr_r = srdotSxdotsr.dimshuffle(0,'x',1)
-        M2 = [[]]*(odims**2) # second moment
-        for i in xrange(odims):
-            # predictive covariance
-            for j in xrange(i+1):
-                # compute the second moments of the spectral feature vectors
-                siSxsj = srdotSx[i].dot(self.sr[j].T) #Ms x Ms
-                sijSxsij = -0.5*(srdotSxdotsr_c[i] + srdotSxdotsr_r[j]) 
-                em =  T.exp(sijSxsij+siSxsj)      # MsxMs
-                ep =  T.exp(sijSxsij-siSxsj)     # MsxMs
-                si = sin_srdotx[i]       # Msx1
-                ci = cos_srdotx[i]       # Msx1 
-                sj = sin_srdotx[j]       # Msx1
-                cj = cos_srdotx[j]       # Msx1
-                sicj = T.outer(si,cj)    # MsxMs
-                cisj = T.outer(ci,sj)    # MsxMs
-                sisj = T.outer(si,sj)    # MsxMs
-                cicj = T.outer(ci,cj)    # MsxMs
-                sm = (sicj-cisj)*em
-                sp = (sicj+cisj)*ep
-                cm = (sisj+cicj)*em
-                cp = (cicj-sisj)*ep
-                
-                # Populate the second moment matrix of the feature vector
-                Qij_up = T.concatenate([cm-cp,sm+sp],axis=1)
-                Qij_lo = T.concatenate([sp-sm,cm+cp],axis=1)
-                Qij = T.concatenate([Qij_up,Qij_lo],axis=0)
+        M2 = T.zeros((self.E,self.E))
+        # initialize indices
+        indices = [ T.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
-                # Compute the second moment of the output
-                m2 = matrix_dot(self.beta_ss[i], 0.5*Qij, self.beta_ss[j].T)
+        def second_moments(i,j,M2,beta,iA,sn2,sf2M,sr,srdotSx,srdotSxdotsr_c,srdotSxdotsr_r,sin_srdotx,cos_srdotx):
+            # compute the second moments of the spectral feature vectors
+            siSxsj = srdotSx[i].dot(sr[j].T) #Ms x Ms
+            sijSxsij = -0.5*(srdotSxdotsr_c[i] + srdotSxdotsr_r[j]) 
+            em =  T.exp(sijSxsij+siSxsj)      # MsxMs
+            ep =  T.exp(sijSxsij-siSxsj)     # MsxMs
+            si = sin_srdotx[i]       # Msx1
+            ci = cos_srdotx[i]       # Msx1 
+            sj = sin_srdotx[j]       # Msx1
+            cj = cos_srdotx[j]       # Msx1
+            sicj = T.outer(si,cj)    # MsxMs
+            cisj = T.outer(ci,sj)    # MsxMs
+            sisj = T.outer(si,sj)    # MsxMs
+            cicj = T.outer(ci,cj)    # MsxMs
+            sm = (sicj-cisj)*em
+            sp = (sicj+cisj)*ep
+            cm = (sisj+cicj)*em
+            cp = (cicj-sisj)*ep
+            
+            # Populate the second moment matrix of the feature vector
+            Q_up = T.concatenate([cm-cp,sm+sp],axis=1)
+            Q_lo = T.concatenate([sp-sm,cm+cp],axis=1)
+            Q = T.concatenate([Q_up,Q_lo],axis=0)
 
-                if i == j:
-                    # if i==j we need to add the trace term
-                    m2 =  m2 + sn2[i]*(1.0 + sf2M[i]*T.sum(self.iA[i]*Qij + 1e-9))
-                else:
-                    M2[j*odims+i] = m2
-                M2[i*odims+j] = m2
+            # Compute the second moment of the output
+            m2 = 0.5*matrix_dot(beta[i], Q, beta[j].T)
+            
+            m2 = theano.ifelse.ifelse(T.eq(i,j), m2 + sn2[i]*(1.0 + sf2M[i]*T.sum(self.iA[i]*Q + 1e-9)), m2)
+            M2 = T.set_subtensor(M2[i,j], m2)
+            M2 = theano.ifelse.ifelse(T.eq(i,j), M2 , T.set_subtensor(M2[j,i], m2))
 
-        M2 = T.stack(M2)
-        S = M2.reshape((odims,odims))
-        S = S - T.outer(M,M)
+            return M2
+
+        M2_,updts = theano.scan(fn=second_moments, 
+                               sequences=indices,
+                               outputs_info=[M2],
+                               non_sequences=[self.beta_ss,self.iA,sn2,sf2M,self.sr,srdotSx,srdotSxdotsr_c,srdotSxdotsr_r,sin_srdotx,cos_srdotx],
+                               allow_gc=False)
+        M2 = M2_[-1]
+        S = M2 - T.outer(M,M)
 
         return M,S,V
 
