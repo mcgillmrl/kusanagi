@@ -20,7 +20,7 @@ class NN(object):
         self.logsn2 = theano.shared(np.array(ls2,dtype=theano.config.floatX))
         self.lscale2 = 10
 
-        self.learning_params = {'iters': 10000, 'batch_size': 200}
+        self.learning_params = {'iters': 20000, 'batch_size': 500}
         self.network = None
         self.loss_fn = None
         self.train_fn = None
