@@ -1,3 +1,4 @@
+import lasagne
 import numpy as np
 import os
 import sys
@@ -5,17 +6,23 @@ import theano
 import time
 import utils
 
-from theano.misc.pkl_utils import dump as t_dump, load as t_load
-
-from scipy.optimize import minimize, basinhopping
-from matplotlib import pyplot as plt
 from functools import partial
+from matplotlib import pyplot as plt
+from scipy.optimize import minimize, basinhopping
+from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
 from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
 
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
-STOCHASTIC_MIN_METHODS = ['sgd', 'nesterov', 'adagrad', 'adam', 'adadelta']
+STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
+                          'MOMENTUM': lasagne.updates.momentum,
+                          'NESTEROV': lasagne.updates.nesterov_momentum,
+                          'NESTEROV_MOMENTUM': lasagne.updates.nesterov_momentum,
+                          'ADAGRAD': lasagne.updates.adagrad,
+                          'RMSPROP': lasagne.updates.rmsprop,
+                          'ADADELTA': lasagne.updates.adadelta,
+                          'ADAM': lasagne.updates.adam}
 
 class EpisodicLearner(object):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=-1, task_name = None):
@@ -48,7 +55,7 @@ class EpisodicLearner(object):
         self.discount = params['discount'] if 'discount' in params else 1
         self.max_evals = params['max_evals'] if 'max_evals' in params else 120
         self.conv_thr = params['conv_thr'] if 'conv_thr' in params else 1e-12
-        self.min_method = params['min_method'] if 'min_method' in params else "L-BFGS-B"
+        self.min_method = params['min_method'] if 'min_method' in params else "ADAM"
         self.async_plant = async_plant
         self.learning_iteration = 0;
         self.n_evals = 0
@@ -244,18 +251,19 @@ class EpisodicLearner(object):
         self.n_evals=0
         utils.print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)
 
+        v0 = self.value()
+        utils.print_with_stamp('Initial value estimate [%f]'%(v0),self.name) 
+        p0 = self.policy.get_params(symbolic=False)
+        self.best_p = [v0,p0]
+        min_method = self.min_method.upper()
         # deterministic gradients
-        if self.min_method.upper() in DETERMINISTIC_MIN_METHODS:
-            v0 = self.value()
-            utils.print_with_stamp('Initial value estimate [%f]'%(v0),self.name) 
-            p0 = self.policy.get_params(symbolic=False)
+        if min_method in DETERMINISTIC_MIN_METHODS:
             parameter_shapes = [p.shape for p in p0]
             m_loss = utils.MemoizeJac(self.loss)
-            self.best_p = [v0,p0]
         
             # setup alternative minimization methods (in case the one selected fails)
             successful = None
-            min_methods = [self.min_method.upper()]
+            min_methods = [min_method]
             for i in xrange(len(DETERMINISTIC_MIN_METHODS)): 
                 if DETERMINISTIC_MIN_METHODS[i] not in min_methods: 
                     min_methods.append(DETERMINISTIC_MIN_METHODS[i])
@@ -264,7 +272,12 @@ class EpisodicLearner(object):
             for i in range(len(min_methods)):
                 try:
                     utils.print_with_stamp("Using %s optimizer"%(min_methods[i]),self.name)
-                    opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=min_methods[i], tol=self.conv_thr, options={'maxiter': self.max_evals})
+                    opt_res = minimize(m_loss, utils.wrap_params(p0),
+                                       jac=m_loss.derivative, 
+                                       args=parameter_shapes, 
+                                       method=min_methods[i], 
+                                       tol=self.conv_thr, 
+                                       options={'maxiter': self.max_evals})
                     # break the loop since we succeeded
                     self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
                     break
@@ -277,9 +290,29 @@ class EpisodicLearner(object):
             #self.policy_gradients.profile.print_summary()
             utils.print_with_stamp('Done training. New value [%f]'%(self.value()),self.name)
         # stochastic gradients
-        elif self.min_method in STOCHASTIC_MIN_METHODS:
-            # get the value as a symbolic expression
-            pass
+        elif min_method in STOCHASTIC_MIN_METHODS.keys():
+            utils.print_with_stamp("Using %s optimizer"%(min_method),self.name)
+            # compile optimizer f not available
+            if not hasattr(self,'train_fn'):
+                # get the value as a symbolic expression
+                v = self.get_policy_value()
+                # get the updates using the desired minimization method
+                utils.print_with_stamp("Compiling optimizer",self.name)
+                min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
+                p = self.policy.get_params(symbolic=True)
+                updates = min_method_updt(v,p)
+                self.train_fn = theano.function([],v,updates=updates)
+
+            # training loop   
+            for i in xrange(self.max_evals):
+                # evaluate current policy and update parameters
+                v = self.train_fn()
+                p = self.policy.get_params(symbolic=False)
+                if v<self.best_p[0]:
+                    self.best_p = [v,p]
+                self.n_evals+=1
+                utils.print_with_stamp('Current value: %s, Total evaluations: %d    '%(str(v),self.n_evals),
+                                        self.name,True)
         else:
             error_str = 'Unknown minimization method %s' % (self.min_method)
             utils.print_with_stamp(error_str,self.name)

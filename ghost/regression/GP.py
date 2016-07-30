@@ -24,7 +24,7 @@ class GP(object):
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
 
         # GP options
-        self.min_method = "l-bfgs-b"
+        self.min_method = "L-BFGS-B"
         self.state_changed = False
         self.should_recompile = False
         self.trained = False

@@ -18,17 +18,17 @@ class PILCO(EpisodicLearner):
         self.wrap_angles = wrap_angles
         self.rollout_fn=None
         self.policy_gradient_fn=None
-        self.mx0 = np.array(params['x0']).squeeze()
-        self.Sx0 = np.array(params['S0']).squeeze()
         self.angle_idims = params['angle_dims']
         self.maxU = params['policy']['maxU']
         if task_name is not None:
             utils.print_with_stamp("CHANGING DIR")
             os.environ['KUSANAGI_RUN_OUTPUT'] = os.path.join(utils.get_output_dir(),task_name)
         # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
-        dyn_idims = len(self.mx0) + len(self.angle_idims) + len(self.maxU)
+        x0 = np.array(params['x0'],dtype=theano.config.floatX).squeeze()
+        S0 = np.array(params['S0'],dtype=theano.config.floatX).squeeze()
+        dyn_idims = len(x0) + len(self.angle_idims) + len(self.maxU)
         # output dimensions are state dims
-        dyn_odims = len(self.mx0)
+        dyn_odims = len(x0)
         # initialize dynamics model (TODO pass this as argument to constructor)
         if 'dynmodel' not in params:
             params['dynmodel'] = {}
@@ -41,6 +41,14 @@ class PILCO(EpisodicLearner):
         # initialise parent class
         filename_prefix = name+'_'+self.dynamics_model.name if filename_prefix is None else filename_prefix
         super(PILCO, self).__init__(params, plant_class, policy_class, cost_func,viz_class, experience, async_plant, name, filename_prefix,learn_from_iteration)
+        
+        # create shared variables for rollout input parameters
+        self.mx0 = theano.shared(x0)
+        self.Sx0 = theano.shared(S0)
+        H_steps = int(np.ceil(self.H/self.plant.dt))
+        self.H_steps =theano.shared( H_steps )
+        self.gamma0 = theano.shared( np.array(self.discount,dtype=theano.config.floatX) )
+
     
     def save(self):
         ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
@@ -113,15 +121,16 @@ class PILCO(EpisodicLearner):
             the next state. The immediate cost is returned as a distribution Normal(mcost,Scost),
             since the state is uncertain.
         '''
-        D=mx.shape[0]
+        D = mx.shape[0]
+        D_ = self.mx0.get_value().size
 
         # convert angles from input distribution to its complex representation
-        mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,self.mx0.size)
+        mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,D_)
 
         # compute distribution of control signal
         logsn2 = self.dynamics_model.logsn2
         Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(logsn2)*theano.tensor.ones((D,)))# noisy state measurement
-        mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,self.mx0.size)
+        mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
         mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
         
         # compute state control joint distribution
@@ -134,7 +143,7 @@ class PILCO(EpisodicLearner):
 
         # state control covariance without angle dimensions
         if Ca is not None:
-            na_dims = list(set(range(self.mx0.size)).difference(self.angle_idims))
+            na_dims = list(set(range(D_)).difference(self.angle_idims))
             Sx_xa = theano.tensor.concatenate([Sx[:,na_dims],Sx.dot(Ca)],axis=1)  # [D] x [Da] 
             Sxu_ =  theano.tensor.concatenate([Sx_xa,Sx_xa.dot(Cu)],axis=1) # [D] x [Da+U]
         else:
@@ -154,7 +163,7 @@ class PILCO(EpisodicLearner):
 
         return [mcost,Scost,mx_next,Sx_next]
 
-    def rollout_(self, mx0, Sx0, H, gamma):
+    def get_rollout(self, mx0, Sx0, H, gamma0):
         ''' Given some initial state distribution Normal(mx0,Sx0), and a prediction horizon H 
         (number of timesteps), returns the predicted state distribution and discounted cost for
         every timestep. The discounted cost is returned as a distribution, since the state
@@ -177,7 +186,7 @@ class PILCO(EpisodicLearner):
 
         # create the nodes that return the result from scan
         rollout_output, updts = theano.scan(fn=rollout_single_step, 
-                                            outputs_info=[mv0,Sv0,mx0,Sx0,gamma], 
+                                            outputs_info=[mv0,Sv0,mx0,Sx0,gamma0], 
                                             non_sequences=shared_vars,
                                             n_steps=H, 
                                             strict=True,
@@ -200,7 +209,17 @@ class PILCO(EpisodicLearner):
 
         return mean_costs, var_costs, mean_states, cov_states
 
-    def policy_gradients_(self, expected_accumulated_cost, params):
+    def get_policy_value(self, mx0 = None, Sx0 = None, H = None, gamma0 = None, should_save_to_disk=False):
+        ''' Returns a symbolic expression (theano tensor variable) for the value of the current policy '''
+        mx0 = self.mx0 if mx0 is None else mx0
+        Sx0 = self.Sx0 if Sx0 is None else Sx0
+        H = self.H_steps if H is None else H
+        gamma0 = self.gamma0 if gamma0 is None else gamma0
+
+        mc_,Sc_,mx_,Sx_ = self.get_rollout(mx0,Sx0,H,gamma0)
+        return mc_.sum()
+
+    def get_policy_gradients(self, expected_accumulated_cost, params):
         ''' Creates the variables representing the policy gradients (theano tensor variables) of
         the provided expected_accumulated_cost, with respect to the policy parameters'''
 
@@ -216,32 +235,34 @@ class PILCO(EpisodicLearner):
             p_grads.append( dJdp ) 
         return p_grads
 
-    def compile_rollout(self, mx0 = theano.tensor.vector('mx'), 
-                              Sx0 = theano.tensor.matrix('Sx'), 
-                              H = theano.tensor.iscalar('H'), 
-                              gamma = theano.tensor.scalar('gamma'),
-                              should_save_to_disk=False):
+    def compile_rollout(self, mx0 = None, Sx0 = None, H = None, gamma0 = None, should_save_to_disk=False):
         ''' Compiles a theano function graph that compute the predicted states and discounted costs for a given
         inital state and prediction horizon.'''
-        mc_,Sc_,mx_,Sx_ = self.rollout_(mx0,Sx0,H,gamma)
+        mx0 = self.mx0 if mx0 is None else mx0
+        Sx0 = self.Sx0 if Sx0 is None else Sx0
+        H = self.H_steps if H is None else H
+        gamma0 = self.gamma0 if gamma0 is None else gamma0
+
+        mc_,Sc_,mx_,Sx_ = self.get_rollout(mx0,Sx0,H,gamma0)
 
         utils.print_with_stamp('Compiling belief state propagation',self.name)
-        self.rollout_fn = theano.function([mx0,Sx0,H,gamma], 
+        self.rollout_fn = theano.function([], 
                                           [mc_,Sc_,mx_,Sx_], 
                                           allow_input_downcast=True, 
                                           name='%s>rollout_fn'%(self.name))
         if should_save_to_disk:
             self.save_rollout()
 
-    def compile_policy_gradients(self, mx0 = theano.tensor.vector('mx'), 
-                                       Sx0 = theano.tensor.matrix('Sx'), 
-                                       H = theano.tensor.iscalar('H'), 
-                                       gamma = theano.tensor.scalar('gamma'),
-                                       should_save_to_disk=False):
+    def compile_policy_gradients(self, mx0 = None, Sx0 = None, H = None, gamma0 = None, should_save_to_disk=False):
         ''' Compiles a theano function graph that computes the gradients of the expected accumulated a given
         initial state and prediction horizon. The function will return the value of the policy, followed by 
         the policy gradients.'''
-        mc_,Sc_,mx_,Sx_ = self.rollout_(mx0,Sx0,H,gamma)
+        mx0 = self.mx0 if mx0 is None else mx0
+        Sx0 = self.Sx0 if Sx0 is None else Sx0
+        H = self.H_steps if H is None else H
+        gamma0 = self.gamma0 if gamma0 is None else gamma0
+        
+        mc_,Sc_,mx_,Sx_ = self.get_rollout(mx0,Sx0,H,gamma0)
         expected_accumulated_cost = mc_.sum()
         expected_accumulated_cost.name = 'J'
 
@@ -249,15 +270,15 @@ class PILCO(EpisodicLearner):
         p = self.policy.get_params(symbolic=True)
         # the policy gradients will have the same shape as the policy parameters (i.e. this returns a list
         # of theano tensor variables with the same dtype and ndim as the parameters in p )
-        dJdp = self.policy_gradients_(expected_accumulated_cost,p)
+        dJdp = self.get_policy_gradients(expected_accumulated_cost,p)
         retvars = [expected_accumulated_cost]
         retvars.extend(dJdp)
 
         utils.print_with_stamp('Compiling policy gradients',self.name)
-        self.policy_gradient_fn = theano.function([mx0,Sx0,H,gamma],
+        self.policy_gradient_fn = theano.function([],
                                                    retvars, 
                                                    allow_input_downcast=True, 
-                                                   name="%s>policy_gradients_fn"%(self.name))
+                                                   name="%s>policy_gradient_fn"%(self.name))
         if should_save_to_disk:
             self.save_rollout()
 
@@ -265,13 +286,29 @@ class PILCO(EpisodicLearner):
         ''' Function that ensures the compiled rollout function is initialised before we can call it'''
         if self.rollout_fn is None:
             self.compile_rollout()
-        return self.rollout_fn(mx0,Sx0,H_steps,discount)
+
+        # update shared vars
+        self.mx0.set_value(mx0)
+        self.Sx0.set_value(Sx0)
+        self.H_steps.set_value(H_steps)
+        self.gamma0.set_value( np.array(discount,dtype=theano.config.floatX) )
+
+        # call theano function
+        return self.rollout_fn()
 
     def policy_gradient(self, mx0, Sx0, H_steps, discount):
         ''' Function that ensures the compiled policy gradients function is initialised before we can call it'''
         if self.policy_gradient_fn is None:
             self.compile_policy_gradients()
-        return self.policy_gradient_fn(mx0,Sx0,H_steps,discount)
+
+        # update shared vars
+        self.mx0.set_value(mx0)
+        self.Sx0.set_value(Sx0)
+        self.H_steps.set_value(H_steps)
+        self.gamma0.set_value( np.array(discount,dtype=theano.config.floatX) )
+
+        # call theano function
+        return self.policy_gradient_fn()
 
     def train_dynamics(self):
         ''' Trains a dynamics model using the current experience dataset '''
@@ -307,17 +344,19 @@ class PILCO(EpisodicLearner):
             # get distribution of initial states
             x0 = np.array(x0)
             if n_episodes > 1:
-                self.mx0 = x0.mean(0)[None,:]
-                self.Sx0 = np.cov(x0.T)[None,:,:]
+                self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
+                self.Sx0.set_value(np.cov(x0.T).astype(theano.config.floatX))
             else:
-                self.mx0 = x0[None,:]
-                self.Sx0 = 1e-2*np.eye(self.mx0.size)[None,:,:]
+                self.mx0.set_value(x0.astype(theano.config.floatX))
+                self.Sx0.set_value(1e-2*np.eye(x0.size).astype(theano.config.floatX))
 
             # append data to the dynamics model
             self.dynamics_model.append_dataset(X,Y)
         else:
-            self.mx0 = np.array(self.plant.x0).squeeze()
-            self.Sx0 = np.array(self.plant.S0).squeeze()
+            x0 = np.array(self.plant.x0, dtype=theano.config.floatX).squeeze()
+            S0 = np.array(self.plant.S0, dtype=theano.config.floatX).squeeze()
+            self.mx0.set_value(x0)
+            self.Sx0.set_value(S0)
 
         utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X.get_value(borrow=True).shape,self.dynamics_model.Y.get_value(borrow=True).shape),self.name)
         if self.dynamics_model.should_recompile:
@@ -329,7 +368,7 @@ class PILCO(EpisodicLearner):
         utils.print_with_stamp('Done training dynamics model',self.name)
 
     def value(self,return_grads=False):
-        '''Returns the value of the current policy by computing long term predictions using a learned dynamics model. If derivs is True, it will also return the policy gradients'''
+        '''Returns the value of the current policy by computing long term predictions using a learned dynamics model. If return_grads is True, it will also return the policy gradients'''
 
         # we will perform a rollout with a horizon that is as long as the longest run, but at most self.H
         max_steps = max([len(episode_states) for episode_states in self.experience.states])
@@ -341,9 +380,9 @@ class PILCO(EpisodicLearner):
         if self.dynamics_model.N < 1:
             return np.zeros((H_steps,)),np.ones((H_steps,))
 
-        # setp initial state
-        mx = np.array(self.plant.x0).squeeze()
-        Sx = np.array(self.plant.S0).squeeze()
+        # setup initial state
+        mx = np.array(self.plant.x0, dtype=theano.config.floatX).squeeze()
+        Sx = np.array(self.plant.S0, dtype=theano.config.floatX).squeeze()
         
         if return_grads:
             pg = self.policy_gradient(mx,Sx,H_steps,self.discount)

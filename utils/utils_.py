@@ -329,8 +329,8 @@ def update_errorbar(errobj, x, y, y_error):
 
 def plot_results(learner,H=None):
     dt = learner.plant.dt
-    x0 = learner.plant.x0
-    S0 = learner.plant.S0
+    x0 = np.array(learner.plant.x0)
+    S0 = np.array(learner.plant.S0)
     if H is None:
         H = learner.H
     H_steps =int( np.ceil(H/dt))
@@ -347,7 +347,7 @@ def plot_results(learner,H=None):
     predicted_means = np.array(rollout_[2])
     predicted_vars = np.array(rollout_[3])
     
-    for d in xrange(learner.mx0.size):
+    for d in xrange(x0.size):
         plt.figure('Last run vs Predicted rollout %d'%(d))
         plt.gca().clear()
         plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
