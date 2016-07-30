@@ -24,7 +24,7 @@ class GP(object):
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
 
         # GP options
-        self.min_method = "L-BFGS-B"
+        self.min_method = "l-bfgs-b"
         self.state_changed = False
         self.should_recompile = False
         self.trained = False
@@ -318,9 +318,9 @@ class GP(object):
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
         try:
-            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 500})
         except ValueError:
-            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-12, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-9, options={'maxiter': 500})
         print ''
         loghyp = opt_res.x.reshape(loghyp0.shape)
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
@@ -484,7 +484,7 @@ class SPGP(GP):
 
         # perform kmeans to get initial cluster centers
         utils.print_with_stamp('Initialising pseudo inputs',self.name)
-        X_sp_, dist = kmeans(X, X_sp_, iter=200,thresh=1e-12)
+        X_sp_, dist = kmeans(X, X_sp_, iter=200,thresh=1e-9)
         # initialize symbolic tensor variable if necessary
         if self.X_sp is None:
             self.X_sp = S(X_sp_,name='%s>X_sp'%(self.name),borrow=True)
@@ -669,7 +669,7 @@ class SPGP(GP):
                 self.init_loss()
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
             m_loss_sp = utils.MemoizeJac(self.loss_sp)
-            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
+            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
             print ''
             X_sp = opt_res.x.reshape(self.X_sp.get_value(borrow=True).shape)
             self.set_X_sp(X_sp)
@@ -1064,7 +1064,7 @@ class SSGP(GP):
         p0 = [self.loghyp.get_value(),self.w.get_value()]
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = utils.MemoizeJac(self.loss_ss)
-        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-12, options={'maxiter': 1000})
+        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
         print ''
         loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)

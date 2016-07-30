@@ -14,12 +14,15 @@ from functools import partial
 from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
 
+DETERMINISTIC_MIN_METHODS = ['l-bfgs-b', 'bfgs', 'tnc', 'slsqp', 'cg']
+STOCHASTIC_MIN_METHODS = ['sgd', 'nesterov', 'adagrad', 'adam', 'adadelta']
+
 class EpisodicLearner(object):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=-1, task_name = None):
         self.name = name
         if task_name is not None:
-            utils.print_with_stamp("CHANGING DIR")
             os.environ['KUSANAGI_RUN_OUTPUT'] = os.path.join(utils.get_output_dir(),task_name)
+            utils.print_with_stamp("Changed KUSANAGI_RUN_OUTPUT to %s"%(os.environ['KUSANAGI_RUN_OUTPUT']))
         # initialize plant
         if 'x0' not in params['plant']:
             params['plant']['x0'] = params['x0']
@@ -43,7 +46,7 @@ class EpisodicLearner(object):
         self.angle_idims = params['angle_dims'] if 'angle_dims' in params else []
         self.H = params['H'] if 'H' in params else 10.0
         self.discount = params['discount'] if 'discount' in params else 1
-        self.max_evals = params['max_evals'] if 'max_evals' in params else 150
+        self.max_evals = params['max_evals'] if 'max_evals' in params else 100
         self.conv_thr = params['conv_thr'] if 'conv_thr' in params else 1e-12
         self.min_method = params['min_method'] if 'min_method' in params else "L-BFGS-B"
         self.async_plant = async_plant
@@ -77,8 +80,7 @@ class EpisodicLearner(object):
                     self.learning_iteration = self.learn_from_iteration + 1
         except IOError:
             utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
-            if self.cost is not None:
-                self.init_cost(self.cost)
+            self.init_cost()
         self.state_changed = False
 
     def load(self):
@@ -123,21 +125,22 @@ class EpisodicLearner(object):
         self.angle_idims = state[i.next()]
         self.async_plant = state[i.next()]
         self.cost = state[i.next()]
-        self.cost_symbolic = state[i.next()]
         self.H = state[i.next()]
         self.discount = state[i.next()]
         self.learning_iteration = state[i.next()]
         self.n_evals = state[i.next()]
 
     def get_state(self):
-        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.cost_symbolic,self.H,self.discount,self.learning_iteration,self.n_evals]
+        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.H,self.discount,self.learning_iteration,self.n_evals]
 
-    def init_cost(self,cost):
-        self.cost_symbolic = cost
-        utils.print_with_stamp('Compiling cost function',self.name)
-        mx = theano.tensor.vector('mx')
-        Sx = theano.tensor.matrix('Sx')
-        self.cost = theano.function((mx,Sx),self.cost_symbolic(mx,Sx), allow_input_downcast=True)
+    def init_cost(self):
+        if self.cost:
+            utils.print_with_stamp('Compiling cost function',self.name)
+            mx = theano.tensor.vector('mx')
+            Sx = theano.tensor.matrix('Sx')
+            self.evaluate_cost = theano.function((mx,Sx),self.cost(mx,Sx), allow_input_downcast=True)
+        else:
+            utils.print_with_stamp('No cost function provided',self.name)
 
     def apply_controller(self,H=None,random_controls=False):
         '''
@@ -185,9 +188,9 @@ class EpisodicLearner(object):
             u_t = policy.evaluate(x_t_)[0].flatten()
             #  send command to robot:
             self.plant.apply_control(u_t)
-            if self.cost is not None:
+            if self.evaluate_cost is not None:
                 #  get cost:
-                c_t = self.cost(x_t, Sx_t)
+                c_t = self.evaluate_cost(x_t, Sx_t)
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
                 #print t,x_t,u_t,c_t[0]
@@ -216,8 +219,8 @@ class EpisodicLearner(object):
         # add last state to experience
         x_t_ = utils.gTrig_np(x_t[None,:], self.angle_idims).flatten()
         u_t = np.zeros_like(u_t)
-        if self.cost is not None:
-            c_t = self.cost(x_t, Sx_t)
+        if self.evaluate_cost is not None:
+            c_t = self.evaluate_cost(x_t, Sx_t)
             self.experience.add_sample(t,x_t,u_t,c_t)
             #print t,x_t,u_t,c_t[0]
         else:
@@ -239,34 +242,63 @@ class EpisodicLearner(object):
         # optimize value wrt to the policy parameters
         self.learning_iteration+=1
         self.n_evals=0
-        utils.print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)# Starting value [%f]'%(self.value(derivs=False)),self.name)
-        utils.print_with_stamp('Initial value estimate [%f]'%(self.value(derivs=True))[0],self.name) 
-        p0 = self.policy.get_params(symbolic=False)
-        parameter_shapes = [p.shape for p in p0]
-        m_loss = utils.MemoizeJac(self.loss)
-        try:
-            opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=self.conv_thr, options={'maxiter': self.max_evals})
-        except ValueError:
-            print '' 
-            print self.policy.get_params(symbolic=False)
-            raise
-            #utils.print_with_stamp('%s failed after %d evaluations. Switching to CG'%(self.min_method,self.n_evals),self.name)
-            #opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method='CG', tol=1e-12, options={'maxiter': 125})
+        utils.print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)
 
-        self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
-        print '' 
-        #self.policy_gradients.profile.print_summary()
-        utils.print_with_stamp('Done training. New value [%f]'%(self.value(derivs=False)),self.name)
+        # deterministic gradients
+        if self.min_method.lower() in DETERMINISTIC_MIN_METHODS:
+            v0 = self.value()
+            utils.print_with_stamp('Initial value estimate [%f]'%(v0),self.name) 
+            p0 = self.policy.get_params(symbolic=False)
+            parameter_shapes = [p.shape for p in p0]
+            m_loss = utils.MemoizeJac(self.loss)
+            self.best_p = [v0,p0]
+        
+            # setup alternative minimization methods (in case the one selected fails)
+            successful = None
+            min_methods = [self.min_method.lower()]
+            for i in xrange(len(DETERMINISTIC_MIN_METHODS)): 
+                if DETERMINISTIC_MIN_METHODS[i] not in min_methods: 
+                    min_methods.append(DETERMINISTIC_MIN_METHODS[i])
+
+            # keep on trying to optimize with all the methods, until one succeds, or we go through all of them
+            for i in range(len(min_methods)):
+                try:
+                    opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=min_method[i], tol=self.conv_thr, options={'maxiter': self.max_evals})
+                    # break the loop since we succeeded
+                    break
+                except ValueError:
+                    utils.print_with_stamp("Optimization using %s failed"%(min_methods[i]),self.name)
+                    if i < len(min_methods)-1:
+                        utils.print_with_stamp("Retrying with %s"%(min_methods[i+1]),self.name)
+                    p0 = self.best_p[1]
+
+            self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
+            print '' 
+            #self.policy_gradients.profile.print_summary()
+            utils.print_with_stamp('Done training. New value [%f]'%(self.value()),self.name)
+        # stochastic gradients
+        elif self.min_method in STOCHASTIC_MIN_METHODS:
+            # get the value as a symbolic expression
+            self
+        else:
+            error_str = 'Unknown minimization method %s' % (self.min_method)
+            utils.print_with_stamp(error_str,self.name)
+            raise ValueError(error_str)
+
         self.state_changed = True
 
     def loss(self, policy_parameters, parameter_shapes):
+        p = utils.unwrap_params(policy_parameters, parameter_shapes)
         # set policy parameters
-        self.policy.set_params( utils.unwrap_params(policy_parameters, parameter_shapes) )
+        self.policy.set_params( p )
 
         # compute value + derivatives
-        v,dv = self.value(derivs=True)
+        v,dv = self.value(True)
         dv = utils.wrap_params(dv)
         v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
+        if v<self.best_p[0]:
+            self.best_p[0] = [v,p]
+
         self.n_evals+=1
         utils.print_with_stamp('Current value: %s, Total evaluations: %d    '%(str(v),self.n_evals),self.name,True)
         return v,dv

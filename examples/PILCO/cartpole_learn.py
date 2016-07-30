@@ -76,7 +76,6 @@ if __name__ == '__main__':
         learner.apply_controller()
         
         # plot results
-        learner.init_rollout(derivs=False)
         plot_results(learner)
 
     # learning loop

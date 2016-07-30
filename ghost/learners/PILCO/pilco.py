@@ -48,9 +48,10 @@ class PILCO(EpisodicLearner):
         self.dynamics_model.save()
 
     def load(self):
-        ''' Loads the state of the learner, including the parameters of the policy and the dynamics model'''
+        ''' Loads the state of the learner, including the parameters of the policy and the dynamics model, and the compiled rollout functions'''
         super(PILCO,self).load()
         self.dynamics_model.load()
+        self.load_rollout()
     
     def set_state(self,state):
         ''' In addition to the EpisodicLearner state variables, saves the values of self.wrap_angles, self.next_episode, self.mx0 and self.Sx0'''
@@ -104,7 +105,14 @@ class PILCO(EpisodicLearner):
             self.policy_gradient_fn = t_vars[3]
 
     # define the function for a single propagation step
-    def rollout_single_step(self,mx,Sx):
+    def propagate_state(self,mx,Sx):
+        ''' Given the input variables mx (theano.tensor.vector) and Sx (theano.tensor.matrix),
+            representing the mean and variance of the system's state x, this function returns
+            the next state distribution, and the mean and variance of the immediate cost. This
+            is done by 1) evaluating the current policy 2) using the dynamics model to estimate 
+            the next state. The immediate cost is returned as a distribution Normal(mcost,Scost),
+            since the state is uncertain.
+        '''
         D=mx.shape[0]
 
         # convert angles from input distribution to its complex representation
@@ -142,210 +150,128 @@ class PILCO(EpisodicLearner):
         Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
         #  get cost:
-        mcost, Scost = self.cost_symbolic(mx_next,Sx_next)
+        mcost, Scost = self.cost(mx_next,Sx_next)
 
         return [mcost,Scost,mx_next,Sx_next]
 
-    def init_rollout(self, derivs=False):
-        ''' This compiles the rollout function, which applies the policy and predicts the next state 
-            of the system using the learn GP dynamics model. If loading from disk, this should be called ONLY
-            after calls to self.dynamics_model.load() and self.policy.load(). (See load_rollout for details)'''
-        if self.use_scan:
-            self.init_rollout_scan(derivs)
-        else:
-            self.init_rollout_step(derivs)
-        #self.save_rollout()
-
-    def init_rollout_scan(self, derivs=False):
-        ''' This method compiles the rollout function using a Theano scan loop'''
-        loaded_from_disk = True
-        try:
-            self.load_rollout()
-            # if after loading from disk, the function we want does not exist
-            if (self.rollout is None and not derivs) or (self.policy_gradient is None and derivs):
-                self.init_rollout(derivs=derivs)
-                loaded_from_disk = False
-        except IOError:
-            utils.print_with_stamp('Initialising rollout [ Could not open %s_rollout.zip ]'%(self.filename),self.name)
-            loaded_from_disk = False
-
-        if loaded_from_disk:
-            return
-
-        # define input variables
+    def rollout_(self, mx0, Sx0, H, gamma):
+        ''' Given some initial state distribution Normal(mx0,Sx0), and a prediction horizon H 
+        (number of timesteps), returns the predicted state distribution and discounted cost for
+        every timestep. The discounted cost is returned as a distribution, since the state
+        is uncertain.'''
         utils.print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
-        mx = theano.tensor.vector('mx')
-        Sx = theano.tensor.matrix('Sx')
-        H = theano.tensor.iscalar('H')
-        gamma = theano.tensor.scalar('gamma')
 
-        # this will generate the list of value and state distributions for each time step
-        def get_discounted_reward(mv,Sv,mx,Sx,gamma,*args):
-            mv_next, Sv_next, mx_next, Sx_next = self.rollout_single_step(mx,Sx)
+        # this defines the loop where the state is propaagated
+        def rollout_single_step(mv,Sv,mx,Sx,gamma,*args):
+            mv_next, Sv_next, mx_next, Sx_next = self.propagate_state(mx,Sx)
             return gamma*mv_next,(gamma**2)*Sv_next, mx_next, Sx_next, gamma*gamma
         
-        # this are the initial values for the value and its variance
-        mv0, Sv0 = self.cost_symbolic(mx,Sx)
+        # this are the initial distribution of the cost
+        mv0, Sv0 = self.cost(mx0,Sx0)
 
-        # these are the shared variables that will be used in the graph, we need to let theano know about these
-        # to reduce compilation times
+        # these are the shared variables that will be used in the graph.
+        # we need to pass them as non_sequences here (see: http://deeplearning.net/software/theano/library/scan.html)
         shared_vars = []
         shared_vars.extend(self.dynamics_model.get_all_shared_vars())
         shared_vars.extend(self.policy.get_all_shared_vars())
-        (mV_,SV_,mx_,Sx_,gamma_), updts = theano.scan(fn=get_discounted_reward, 
-                                                      outputs_info=[mv0,Sv0,mx,Sx,gamma], 
-                                                      non_sequences=shared_vars,
-                                                      n_steps=H, 
-                                                      strict=True,
-                                                      allow_gc=False,
-                                                      name="%s>discounted_rewards_scan"%(self.name))
-        mV_ = theano.tensor.concatenate([mv0.dimshuffle('x'), mV_])
-        SV_ = theano.tensor.concatenate([Sv0.dimshuffle('x'), SV_])
-        mx_ = theano.tensor.concatenate([mx.dimshuffle('x',0), mx_])
-        Sx_ = theano.tensor.concatenate([Sx.dimshuffle('x',0,1), Sx_])
 
-            
-        utils.print_with_stamp('Compiling belief state propagation',self.name)
-        self.rollout_fn = theano.function([mx,Sx,H,gamma], (mV_,SV_,mx_,Sx_), allow_input_downcast=True, updates=updts, name='%s>rollout_fn'%(self.name))
-        if derivs :
-            utils.print_with_stamp('Computing symbolic expression for policy gradients',self.name)
-            dretvars = [mV_.sum()]
-            params = self.policy.get_params(symbolic=True)
-            if not isinstance(params,list):
-                params = [params]
-            for p in params:
-                dretvars.append( theano.tensor.grad(mV_.sum(), p ) ) # we are only interested in the derivative of the sum of expected values
-            
-            utils.print_with_stamp('Compiling policy gradients',self.name)
-            self.policy_gradient_fn = theano.function([mx,Sx,H,gamma], dretvars, allow_input_downcast=True, updates=updts, name="%s>policy_gradients_fn"%(self.name))#,mode=NanGuardMode(nan_is_error=True,inf_is_error=True,big_is_error=False))
+        # create the nodes that return the result from scan
+        rollout_output, updts = theano.scan(fn=rollout_single_step, 
+                                            outputs_info=[mv0,Sv0,mx0,Sx0,gamma], 
+                                            non_sequences=shared_vars,
+                                            n_steps=H, 
+                                            strict=True,
+                                            allow_gc=False,
+                                            name="%s>rollout_scan"%(self.name))
+
+        mean_costs,var_costs,mean_states,cov_states,gamma_ = rollout_output
+
+        # prepend the initial cost distribution
+        mean_costs = theano.tensor.concatenate([mv0.dimshuffle('x'), mean_costs])
+        var_costs = theano.tensor.concatenate([Sv0.dimshuffle('x'), var_costs])
+        # prepend the initial state distribution
+        mean_states = theano.tensor.concatenate([mx0.dimshuffle('x',0), mean_states])
+        cov_states = theano.tensor.concatenate([Sx0.dimshuffle('x',0,1), cov_states])
+
+        mean_costs.name = 'mc_list'
+        var_costs.name = 'Sc_list'
+        mean_states.name = 'mx_list'
+        cov_states.name = 'Sx_list'
+
+        return mean_costs, var_costs, mean_states, cov_states
+
+    def policy_gradients_(self, expected_accumulated_cost, params):
+        ''' Creates the variables representing the policy gradients (theano tensor variables) of
+        the provided expected_accumulated_cost, with respect to the policy parameters'''
+
+        utils.print_with_stamp('Computing symbolic expression for policy gradients',self.name)
         
-        utils.print_with_stamp('Done compiling.',self.name)
-        #self.save_rollout()
+        # go through all the parameters and compute the corresponding gradients
+        if not isinstance(params,list):
+            params = [params]
+        p_grads = []
+        for p in params:
+            dJdp = theano.tensor.grad(expected_accumulated_cost, p )
+            dJdp.name = 'dJd%s'%(p.name)
+            p_grads.append( dJdp ) 
+        return p_grads
 
-    def init_rollout_step(self, dervis=False):
-        ''' This compiles the rollout function, which applies the policy and predicts the next state 
-            of the system using the learn GP dynamics model. This version avoids using the theano scan'''
-        # define shared state variables
-        self.mx = theano.shared(np.array(self.mx0).flatten(), name="mx")
-        self.Sx = theano.shared(np.array(self.Sx0).squeeze(), name="Sx")
-        self.gamma = theano.shared(np.array(self.discount,dtype=theano.config.floatX),'gamma')
-        self.mV = theano.shared(np.array(0.0,theano.config.floatX),'mV')
-        
-        # define shared variables for storing the gradients
-        D = self.mx.get_value().size
-        params = self.policy.get_params(symbolic=False)
-        n_params = len(params)
-        self.dmdp = [ theano.shared(np.zeros((D,params[i].size),dtype=theano.config.floatX), name="dMdp%d"%(i)) for i in xrange(len(params))]
-        self.dsdp = [ theano.shared(np.zeros((D*D,params[i].size),dtype=theano.config.floatX), name="dMdp%d"%(i)) for i in xrange(len(params))]
-        self.dcdp = [ theano.shared(np.zeros((params[i].shape),dtype=theano.config.floatX), name="dcdp%d"%(i)) for i in xrange(len(params))]
-
-        # create function for clearing/reinitializing shared variables
-        mx0 = theano.tensor.vector('mx0')
-        Sx0 = theano.tensor.matrix('Sx0')
-        discount0 = theano.tensor.scalar('discount0')
-        init_updates = [(self.mx,mx0), (self.Sx,Sx0), (self.mV, self.cost_symbolic(mx0,Sx0)[0]), (self.gamma, discount0)]
-        zero_val = np.array(0.0,dtype=theano.config.floatX)
-        for i in xrange(n_params):
-            init_updates.append( (self.dcdp[i], self.dcdp[i].fill(zero_val)) )
-            init_updates.append( (self.dmdp[i], self.dmdp[i].fill(zero_val)) )
-            init_updates.append( (self.dsdp[i], self.dsdp[i].fill(zero_val)) )
-        self.reset_rollout = theano.function([mx0,Sx0,discount0],[],updates=init_updates)
-
-        utils.print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
-        # apply rollout
-        mc_t, Sc_t, mx_next, Sx_next = self.rollout_single_step(self.mx,self.Sx)
-
-        # partial derivatives of next state wrt previous state
-        dMdm_t = theano.tensor.jacobian(mx_next,self.mx).flatten(2)
-        dMds_t = theano.tensor.jacobian(mx_next,self.Sx).flatten(2)
-        dSdm_t = theano.tensor.jacobian(Sx_next.flatten(),self.mx).flatten(2)
-        dSds_t = theano.tensor.jacobian(Sx_next.flatten(),self.Sx).flatten(2)
-        dcdM_t = theano.tensor.grad(mc_t,mx_next).flatten()[None,:]
-        dcdS_t = theano.tensor.grad(mc_t,Sx_next).flatten()[None,:]
-        
-        params_t = self.policy.get_params(symbolic=True)
-        dMdp_t = [[]]*n_params
-        dSdp_t = [[]]*n_params
-        dcdp_t = [[]]*n_params
-        for i in xrange(n_params):
-            # partial derivative of next state wrt policy params
-            dMdp_t[i] = theano.tensor.jacobian(mx_next,params_t[i]).flatten(2)
-            dSdp_t[i] = theano.tensor.jacobian(Sx_next.flatten(),params_t[i]).flatten(2)
-
-            #   total derivative of next state wrt policy params
-            dMdp_t[i]  = dMdm_t.dot(self.dmdp[i]) + dMds_t.dot(self.dsdp[i]) + dMdp_t[i]
-            dSdp_t[i]  = dSdm_t.dot(self.dmdp[i]) + dSds_t.dot(self.dsdp[i]) + dSdp_t[i]
-
-            dcdp_t[i] = (dcdM_t.dot(dMdp_t[i]) + dcdS_t.dot(dSdp_t[i])).reshape(params_t[i].shape)
-
-        gamma_next= self.gamma*self.gamma
-
-        # update shared variables
-        updates = []
-        updates.append((self.mx, mx_next))                           # update the rolled out state mean
-        updates.append((self.Sx, Sx_next))                           # update the rolled out state covariance
-        updates.append((self.gamma, gamma_next))                     # update the discount factor
-        updates.append((self.mV, self.mV + gamma_next*mc_t))         # update the expected value of the long term cost V
+    def compile_rollout(self, mx0 = theano.tensor.vector('mx'), 
+                              Sx0 = theano.tensor.matrix('Sx'), 
+                              H = theano.tensor.iscalar('H'), 
+                              gamma = theano.tensor.scalar('gamma'),
+                              should_save_to_disk=False):
+        ''' Compiles a theano function graph that compute the predicted states and discounted costs for a given
+        inital state and prediction horizon.'''
+        mc_,Sc_,mx_,Sx_ = self.rollout_(mx0,Sx0,H,gamma)
 
         utils.print_with_stamp('Compiling belief state propagation',self.name)
-        self.rollout_fn = theano.function([], [mc_t, Sc_t, mx_next, Sx_next], allow_input_downcast=True, updates=updates)
+        self.rollout_fn = theano.function([mx0,Sx0,H,gamma], 
+                                          [mc_,Sc_,mx_,Sx_], 
+                                          allow_input_downcast=True, 
+                                          name='%s>rollout_fn'%(self.name))
+        if should_save_to_disk:
+            self.save_rollout()
 
-        for i in xrange(n_params):
-            updates.append((self.dcdp[i], self.dcdp[i] + gamma_next*dcdp_t[i]))    # update the derivative of E{V} wrt the parameters
-            updates.append((self.dmdp[i], dMdp_t[i]))              # update the derivative of E{V} wrt the parameters
-            updates.append((self.dsdp[i], dSdp_t[i]))              # update the derivative of E{V} wrt the parameters
+    def compile_policy_gradients(self, mx0 = theano.tensor.vector('mx'), 
+                                       Sx0 = theano.tensor.matrix('Sx'), 
+                                       H = theano.tensor.iscalar('H'), 
+                                       gamma = theano.tensor.scalar('gamma'),
+                                       should_save_to_disk=False):
+        ''' Compiles a theano function graph that computes the gradients of the expected accumulated a given
+        initial state and prediction horizon. The function will return the value of the policy, followed by 
+        the policy gradients.'''
+        mc_,Sc_,mx_,Sx_ = self.rollout_(mx0,Sx0,H,gamma)
+        expected_accumulated_cost = mc_.sum()
+        expected_accumulated_cost.name = 'J'
+
+        # get the policy parameters (as theano tensor variables)
+        p = self.policy.get_params(symbolic=True)
+        # the policy gradients will have the same shape as the policy parameters (i.e. this returns a list
+        # of theano tensor variables with the same dtype and ndim as the parameters in p )
+        dJdp = self.policy_gradients_(expected_accumulated_cost,p)
+        retvars = [expected_accumulated_cost]
+        retvars.extend(dJdp)
 
         utils.print_with_stamp('Compiling policy gradients',self.name)
-        self.policy_gradient_fn = theano.function([], [], allow_input_downcast=True, updates=updates)
-        
-        utils.print_with_stamp('Done compiling.',self.name)
+        self.policy_gradient_fn = theano.function([mx0,Sx0,H,gamma],
+                                                   retvars, 
+                                                   allow_input_downcast=True, 
+                                                   name="%s>policy_gradients_fn"%(self.name))
+        if should_save_to_disk:
+            self.save_rollout()
 
-    def rollout(self, mx0, Sx0, H_steps, discount):
+    def rollout(self, mx0, Sx0, H_steps, discount, symbolic=False):
+        ''' Function that ensures the compiled rollout function is initialised before we can call it'''
         if self.rollout_fn is None:
-            # compile the belef state propagation
-            self.init_rollout(derivs=False)
-
-        if self.use_scan:
-            # the rollout loop is performed inside rollout_fn
-            return self.rollout_fn(mx0,Sx0,H_steps,discount)
-        else:
-            # reset shared vars
-            self.reset_rollout(mx0,Sx0,discount)
-
-            # rollout for H_steps and save the intermediate results
-            retvars = []
-            for i in xrange(H_steps):
-                retvars.append(self.rollout_fn())
-            
-            # organize the return values in the appropriate format
-            retvars = map(np.array, zip(*retvars))
-
-            return retvars
+            self.compile_rollout()
+        return self.rollout_fn(mx0,Sx0,H_steps,discount)
 
     def policy_gradient(self, mx0, Sx0, H_steps, discount):
+        ''' Function that ensures the compiled policy gradients function is initialised before we can call it'''
         if self.policy_gradient_fn is None:
-            # compile the belef state propagation
-            self.init_rollout(derivs=True)
-
-        if self.use_scan:
-            # the rollout loop is performed inside policy_gradient_fn
-            return self.policy_gradient_fn(mx0,Sx0,H_steps,discount)
-        else:
-            # reset shared vars
-            self.reset_rollout(mx0,Sx0,discount)
-
-            # rollout for H_steps and save the intermediate results
-            for i in xrange(H_steps):
-                self.policy_gradient_fn()
-           
-            # organize the return values in the appropriate format
-            retvars = [self.mV.get_value()]
-            params = self.policy.get_params(symbolic=False)
-            n_params = len(params)
-            for i in xrange(n_params):
-                retvars.append(self.dcdp[i].get_value())
-
-            return retvars
+            self.compile_policy_gradients()
+        return self.policy_gradient_fn(mx0,Sx0,H_steps,discount)
 
     def train_dynamics(self):
         ''' Trains a dynamics model using the current experience dataset '''
@@ -397,15 +323,14 @@ class PILCO(EpisodicLearner):
         if self.dynamics_model.should_recompile:
             # reinitialize log likelihood
             self.dynamics_model.init_loss()
-            if self.rollout is not None:
-                # reinitialize rollot and policy gradients
-                self.init_rollout(derivs=True)
+            self.should_recompile = True
  
         self.dynamics_model.train()
         utils.print_with_stamp('Done training dynamics model',self.name)
 
-    def value(self, derivs=False):
+    def value(self,return_grads=False):
         '''Returns the value of the current policy by computing long term predictions using a learned dynamics model. If derivs is True, it will also return the policy gradients'''
+
         # we will perform a rollout with a horizon that is as long as the longest run, but at most self.H
         max_steps = max([len(episode_states) for episode_states in self.experience.states])
         H_steps = int(np.ceil(self.H/self.plant.dt))
@@ -420,11 +345,12 @@ class PILCO(EpisodicLearner):
         mx = np.array(self.plant.x0).squeeze()
         Sx = np.array(self.plant.S0).squeeze()
         
-        if not derivs:
-            # self.H is the number of steps to rollout ( finite horizon )
+        if return_grads:
+            pg = self.policy_gradient(mx,Sx,H_steps,self.discount)
+            # first return argument is the value of the policy, second are the gradients wrt the policy params
+            ret = [pg[0]]
+            ret.append(pg[1:])
+            return ret
+        else:
             ret = self.rollout(mx,Sx,H_steps,self.discount)
             return ret[0].sum()
-        else:
-            ret = self.policy_gradient(mx,Sx,H_steps,self.discount)
-            # first return argument is the value of the policy, second are the gradients wrt the policy params
-            return [ret[0], ret[1:]]

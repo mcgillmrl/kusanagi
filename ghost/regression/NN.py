@@ -6,7 +6,7 @@ import time
 import utils
 
 class NN(object):
-    def __init__(self,idims, hidden_dims, odims, uncertain_inputs=True, name='NN', profile=False):
+    def __init__(self,idims, odims, hidden_dims=[128,128], uncertain_inputs=True, name='NN', profile=False):
         ''' Constructs a Bayessian Neural Network regressor.
         '''
         self.D = idims
