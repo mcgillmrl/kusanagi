@@ -14,7 +14,7 @@ from functools import partial
 from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
 
-DETERMINISTIC_MIN_METHODS = ['l-bfgs-b', 'bfgs', 'tnc', 'slsqp', 'cg']
+DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 STOCHASTIC_MIN_METHODS = ['sgd', 'nesterov', 'adagrad', 'adam', 'adadelta']
 
 class EpisodicLearner(object):
@@ -46,7 +46,7 @@ class EpisodicLearner(object):
         self.angle_idims = params['angle_dims'] if 'angle_dims' in params else []
         self.H = params['H'] if 'H' in params else 10.0
         self.discount = params['discount'] if 'discount' in params else 1
-        self.max_evals = params['max_evals'] if 'max_evals' in params else 100
+        self.max_evals = params['max_evals'] if 'max_evals' in params else 120
         self.conv_thr = params['conv_thr'] if 'conv_thr' in params else 1e-12
         self.min_method = params['min_method'] if 'min_method' in params else "L-BFGS-B"
         self.async_plant = async_plant
@@ -245,7 +245,7 @@ class EpisodicLearner(object):
         utils.print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)
 
         # deterministic gradients
-        if self.min_method.lower() in DETERMINISTIC_MIN_METHODS:
+        if self.min_method.upper() in DETERMINISTIC_MIN_METHODS:
             v0 = self.value()
             utils.print_with_stamp('Initial value estimate [%f]'%(v0),self.name) 
             p0 = self.policy.get_params(symbolic=False)
@@ -255,7 +255,7 @@ class EpisodicLearner(object):
         
             # setup alternative minimization methods (in case the one selected fails)
             successful = None
-            min_methods = [self.min_method.lower()]
+            min_methods = [self.min_method.upper()]
             for i in xrange(len(DETERMINISTIC_MIN_METHODS)): 
                 if DETERMINISTIC_MIN_METHODS[i] not in min_methods: 
                     min_methods.append(DETERMINISTIC_MIN_METHODS[i])
@@ -263,23 +263,23 @@ class EpisodicLearner(object):
             # keep on trying to optimize with all the methods, until one succeds, or we go through all of them
             for i in range(len(min_methods)):
                 try:
-                    opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=min_method[i], tol=self.conv_thr, options={'maxiter': self.max_evals})
+                    utils.print_with_stamp("Using %s optimizer"%(min_methods[i]),self.name)
+                    opt_res = minimize(m_loss, utils.wrap_params(p0), jac=m_loss.derivative, args=parameter_shapes, method=min_methods[i], tol=self.conv_thr, options={'maxiter': self.max_evals})
                     # break the loop since we succeeded
+                    self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
                     break
                 except ValueError:
                     utils.print_with_stamp("Optimization using %s failed"%(min_methods[i]),self.name)
-                    if i < len(min_methods)-1:
-                        utils.print_with_stamp("Retrying with %s"%(min_methods[i+1]),self.name)
-                    p0 = self.best_p[1]
+                    v0,p0 = self.best_p
+                    self.policy.set_params(p0)
 
-            self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
             print '' 
             #self.policy_gradients.profile.print_summary()
             utils.print_with_stamp('Done training. New value [%f]'%(self.value()),self.name)
         # stochastic gradients
         elif self.min_method in STOCHASTIC_MIN_METHODS:
             # get the value as a symbolic expression
-            self
+            pass
         else:
             error_str = 'Unknown minimization method %s' % (self.min_method)
             utils.print_with_stamp(error_str,self.name)
@@ -297,7 +297,7 @@ class EpisodicLearner(object):
         dv = utils.wrap_params(dv)
         v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
         if v<self.best_p[0]:
-            self.best_p[0] = [v,p]
+            self.best_p = [v,p]
 
         self.n_evals+=1
         utils.print_with_stamp('Current value: %s, Total evaluations: %d    '%(str(v),self.n_evals),self.name,True)
