@@ -225,15 +225,8 @@ class PILCO(EpisodicLearner):
 
         utils.print_with_stamp('Computing symbolic expression for policy gradients',self.name)
         
-        # go through all the parameters and compute the corresponding gradients
-        if not isinstance(params,list):
-            params = [params]
-        p_grads = []
-        for p in params:
-            dJdp = theano.tensor.grad(expected_accumulated_cost, p )
-            dJdp.name = 'dJd%s'%(p.name)
-            p_grads.append( dJdp ) 
-        return p_grads
+        dJdp = theano.tensor.grad(expected_accumulated_cost, params )
+        return dJdp
 
     def compile_rollout(self, mx0 = None, Sx0 = None, H = None, gamma0 = None, should_save_to_disk=False):
         ''' Compiles a theano function graph that compute the predicted states and discounted costs for a given
@@ -271,6 +264,7 @@ class PILCO(EpisodicLearner):
         # the policy gradients will have the same shape as the policy parameters (i.e. this returns a list
         # of theano tensor variables with the same dtype and ndim as the parameters in p )
         dJdp = self.get_policy_gradients(expected_accumulated_cost,p)
+        print dJdp
         retvars = [expected_accumulated_cost]
         retvars.extend(dJdp)
 

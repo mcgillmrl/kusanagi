@@ -53,9 +53,10 @@ class EpisodicLearner(object):
         self.angle_idims = params['angle_dims'] if 'angle_dims' in params else []
         self.H = params['H'] if 'H' in params else 10.0
         self.discount = params['discount'] if 'discount' in params else 1
-        self.max_evals = params['max_evals'] if 'max_evals' in params else 120
+        self.max_evals = params['max_evals'] if 'max_evals' in params else 200
         self.conv_thr = params['conv_thr'] if 'conv_thr' in params else 1e-12
-        self.min_method = params['min_method'] if 'min_method' in params else "ADAM"
+        self.learning_rate = params['learning_rate'] if 'learning_rate' in params else 1.0
+        self.min_method = params['min_method'] if 'min_method' in params else "L-BFGS-B"
         self.async_plant = async_plant
         self.learning_iteration = 0;
         self.n_evals = 0
@@ -286,9 +287,6 @@ class EpisodicLearner(object):
                     v0,p0 = self.best_p
                     self.policy.set_params(p0)
 
-            print '' 
-            #self.policy_gradients.profile.print_summary()
-            utils.print_with_stamp('Done training. New value [%f]'%(self.value()),self.name)
         # stochastic gradients
         elif min_method in STOCHASTIC_MIN_METHODS.keys():
             utils.print_with_stamp("Using %s optimizer"%(min_method),self.name)
@@ -300,7 +298,7 @@ class EpisodicLearner(object):
                 utils.print_with_stamp("Compiling optimizer",self.name)
                 min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
                 p = self.policy.get_params(symbolic=True)
-                updates = min_method_updt(v,p)
+                updates = min_method_updt(v,p,learning_rate=self.learning_rate)
                 self.train_fn = theano.function([],v,updates=updates)
 
             # training loop   
@@ -317,7 +315,12 @@ class EpisodicLearner(object):
             error_str = 'Unknown minimization method %s' % (self.min_method)
             utils.print_with_stamp(error_str,self.name)
             raise ValueError(error_str)
+        
+        print '' 
 
+        v,p = self.best_p
+        self.policy.set_params(p)
+        utils.print_with_stamp('Done training. New value [%f]'%(v),self.name)
         self.state_changed = True
 
     def loss(self, policy_parameters, parameter_shapes):
