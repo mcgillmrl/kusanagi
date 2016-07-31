@@ -21,8 +21,8 @@ class PILCO(EpisodicLearner):
         self.angle_idims = params['angle_dims']
         self.maxU = params['policy']['maxU']
         if task_name is not None:
-            utils.print_with_stamp("CHANGING DIR")
             os.environ['KUSANAGI_RUN_OUTPUT'] = os.path.join(utils.get_output_dir(),task_name)
+            utils.print_with_stamp("Changed KUSANAGI_RUN_OUTPUT to %s"%(os.environ['KUSANAGI_RUN_OUTPUT']))
         # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
         x0 = np.array(params['x0'],dtype=theano.config.floatX).squeeze()
         S0 = np.array(params['S0'],dtype=theano.config.floatX).squeeze()
@@ -243,6 +243,7 @@ class PILCO(EpisodicLearner):
                                           [mc_,Sc_,mx_,Sx_], 
                                           allow_input_downcast=True, 
                                           name='%s>rollout_fn'%(self.name))
+        utils.print_with_stamp("Done compiling.",self.name)
         if should_save_to_disk:
             self.save_rollout()
 
@@ -272,6 +273,7 @@ class PILCO(EpisodicLearner):
                                                    retvars, 
                                                    allow_input_downcast=True, 
                                                    name="%s>policy_gradient_fn"%(self.name))
+        utils.print_with_stamp("Done compiling.",self.name)
         if should_save_to_disk:
             self.save_rollout()
 

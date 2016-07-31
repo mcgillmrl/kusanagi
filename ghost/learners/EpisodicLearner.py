@@ -52,8 +52,8 @@ class EpisodicLearner(object):
         self.n_episodes = 0
         self.angle_idims = params['angle_dims'] if 'angle_dims' in params else []
         self.H = params['H'] if 'H' in params else 10.0
-        self.discount = params['discount'] if 'discount' in params else 1
-        self.max_evals = params['max_evals'] if 'max_evals' in params else 200
+        self.discount = params['discount'] if 'discount' in params else 1.0
+        self.max_evals = params['max_evals'] if 'max_evals' in params else 150
         self.conv_thr = params['conv_thr'] if 'conv_thr' in params else 1e-12
         self.learning_rate = params['learning_rate'] if 'learning_rate' in params else 1.0
         self.min_method = params['min_method'] if 'min_method' in params else "L-BFGS-B"
@@ -300,6 +300,7 @@ class EpisodicLearner(object):
                 p = self.policy.get_params(symbolic=True)
                 updates = min_method_updt(v,p,learning_rate=self.learning_rate)
                 self.train_fn = theano.function([],v,updates=updates)
+                utils.print_with_stamp("Done compiling.",self.name)
 
             # training loop   
             for i in xrange(self.max_evals):

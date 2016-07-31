@@ -970,13 +970,12 @@ class SSGP(GP):
             nlml_ss += self.snr_penalty(self.loghyp)
 
         # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml_wrt_lh = T.jacobian(nlml_ss.sum(),self.loghyp)
-        dnlml_wrt_w = T.jacobian(nlml_ss.sum(),self.w)
+        dnlml_ss = T.jacobian(nlml_ss.sum(),[self.loghyp,self.w])
 
         utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
         self.nlml_ss = F((),nlml_ss,name='%s>nlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         utils.print_with_stamp('Compiling jacobian of sparse spectral training loss function',self.name)
-        self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        self.dnlml_ss = F((),(nlml_ss,dnlml_ss[0],dnlml_ss[1]),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
     def set_spectral_samples(self,w=None):
         if w is None:
@@ -1327,12 +1326,10 @@ class VSSGP(SSGP):
             nlml_ss += self.snr_penalty(self.loghyp)
 
         # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml_wrt_lh = T.jacobian(nlml_ss.sum(),self.loghyp)
-        dnlml_wrt_w = T.jacobian(nlml_ss.sum(),self.w)
+        dnlml_ss = T.jacobian(nlml_ss.sum(),[self.loghyp,self.w])
 
         utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
-        self.nlml_ss = F((),nlml_ss,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
+        self.nlml_ss = F((),nlml_ss,name='%s>nlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         utils.print_with_stamp('Compiling jacobian of sparse spectral training loss function',self.name)
-        self.dnlml_ss = F((),(nlml_ss,dnlml_wrt_lh,dnlml_wrt_w),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-
+        self.dnlml_ss = F((),(nlml_ss,dnlml_ss[0],dnlml_ss[1]),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
