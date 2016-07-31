@@ -12,10 +12,9 @@ from ghost.learners.EpisodicLearner import *
 from ghost.regression.GP import GP_UI, SPGP_UI, SSGP_UI
 
 class PILCO(EpisodicLearner):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', wrap_angles=False, use_scan=True, filename_prefix=None, learn_from_iteration=-1, task_name = None):
-        self.use_scan = use_scan
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', filename_prefix=None, learn_from_iteration=-1, task_name = None):
         self.dynamics_model = None
-        self.wrap_angles = wrap_angles
+        self.wrap_angles = params['wrap_angles'] if 'wrap_angles' in params else False
         self.rollout_fn=None
         self.policy_gradient_fn=None
         self.angle_idims = params['angle_dims']
@@ -48,7 +47,6 @@ class PILCO(EpisodicLearner):
         H_steps = int(np.ceil(self.H/self.plant.dt))
         self.H_steps =theano.shared( H_steps )
         self.gamma0 = theano.shared( np.array(self.discount,dtype=theano.config.floatX) )
-
     
     def save(self):
         ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
