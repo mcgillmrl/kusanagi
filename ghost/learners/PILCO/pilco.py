@@ -170,6 +170,10 @@ class PILCO(EpisodicLearner):
         is uncertain.'''
         utils.print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
 
+        # first check if the shared variables we need are not initialized
+        if not ( self.dynamics_model.X and self.dynamics_model.Y and self.dynamics_model.loghyp and self.dynamics_model.logsn2):
+            self.train_dynamics()
+
         # this defines the loop where the state is propaagated
         def rollout_single_step(mv,Sv,mx,Sx,gamma,*args):
             mv_next, Sv_next, mx_next, Sx_next = self.propagate_state(mx,Sx)
