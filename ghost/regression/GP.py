@@ -1169,7 +1169,7 @@ class SSGP_UI(SSGP, GP_UI):
             # Compute the second moment of the output
             m2 = 0.5*matrix_dot(beta[i], Q, beta[j].T)
             
-            m2 = theano.ifelse.ifelse(T.eq(i,j), m2 + sn2[i]*(1.0 + sf2M[i]*T.sum(self.iA[i]*Q + 1e-9)), m2)
+            m2 = theano.ifelse.ifelse(T.eq(i,j), m2 + sn2[i]*(1.0 + sf2M[i]*T.sum(self.iA[i]*Q)), m2)
             M2 = T.set_subtensor(M2[i,j], m2)
             M2 = theano.ifelse.ifelse(T.eq(i,j), M2 , T.set_subtensor(M2[j,i], m2))
 
