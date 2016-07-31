@@ -1104,84 +1104,10 @@ class SSGP_UI(SSGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
 
-    def predict_symbolic(self,mx,Sx, method=2):
-        if method == 1:
-            # fast compilation
-            return self.predict_symbolic_1(mx,Sx)
-        else:
-            # fast running
-            return self.predict_symbolic_2(mx,Sx)
-
-    def predict_symbolic_1(self,mx,Sx):
-        if self.N < self.n_basis:
+    def predict_symbolic(self,mx,Sx):
+        #if self.N < self.n_basis:
             # stick with the full GP
-            return GP_UI.predict_symbolic(self,mx,Sx)
-
-        idims = self.D
-        odims = self.E
-        
-        # precompute some variables
-        sf2 = T.exp(2*self.loghyp[:,idims])
-        sn2 = T.exp(2*self.loghyp[:,idims+1])
-        E = self.sr.shape[0]
-        Ms = self.sr.shape[1]
-        oidx = T.arange(E); sidx = T.arange(Ms)
-        srdotx = self.sr.dot(mx)
-        srdotSx = self.sr.dot(Sx) 
-        siSxsj = srdotSx.dot(self.sr.transpose(1,2,0)).transpose(0,3,1,2) #Ms x Ms
-        srdotSxdotsr = siSxsj[oidx,oidx][:,sidx,sidx]
-        e = T.exp(-0.5*srdotSxdotsr)
-        cos_srdotx = T.cos(srdotx)
-        sin_srdotx = T.sin(srdotx)
-        cos_srdotx_e = cos_srdotx*e
-        sin_srdotx_e = sin_srdotx*e
-
-        # compute the mean vector
-        mphi = T.horizontal_stack( sin_srdotx_e, cos_srdotx_e ) # E x 2*Ms
-        M = T.sum( mphi*self.beta_ss, 1)
-
-        # input output covariance
-        mx_c = mx.dimshuffle(0,'x'); mx_r = mx.dimshuffle('x',0)
-        sin_srdotx_e_r = sin_srdotx_e.dimshuffle(0,'x',1); cos_srdotx_e_r = cos_srdotx_e.dimshuffle(0,'x',1)
-        c = T.concatenate([ mx_c*sin_srdotx_e_r + srdotSx.transpose(0,2,1)*cos_srdotx_e_r, mx_c*cos_srdotx_e_r - srdotSx.transpose(0,2,1)*sin_srdotx_e_r ], axis=2) # E x D x 2*Ms
-        beta_ss_r = self.beta_ss.dimshuffle(0,'x',1)
-        V = matrix_inverse(Sx).dot(T.sum( c*beta_ss_r, 2 ).T - T.outer(mx,M))
-        
-        # compute the second moment matrix
-        sijSxsij = -0.5*(srdotSxdotsr.dimshuffle(0,'x',1,'x') + srdotSxdotsr.dimshuffle('x',0,'x',1)) 
-        em =  T.exp(sijSxsij+siSxsj)      # MsxMs
-        ep =  T.exp(sijSxsij-siSxsj)     # MsxMs
-        sin_srdotx_c = sin_srdotx.dimshuffle(0,'x',1,'x')
-        sin_srdotx_r = sin_srdotx.dimshuffle('x',0,'x',1)
-        cos_srdotx_c = cos_srdotx.dimshuffle(0,'x',1,'x')
-        cos_srdotx_r = cos_srdotx.dimshuffle('x',0,'x',1)
-        ss = sin_srdotx_c*sin_srdotx_r
-        sc = sin_srdotx_c*cos_srdotx_r
-        cs = cos_srdotx_c*sin_srdotx_r
-        cc = cos_srdotx_c*cos_srdotx_r
-        sm = (sc-cs)*em
-        sp = (sc+cs)*ep
-        cm = (ss+cc)*em
-        cp = (cc-ss)*ep
-        Qu = T.concatenate([cm-cp,sm+sp],axis=3)
-        Ql = T.concatenate([sp-sm,cm+cp],axis=3)
-        Q = T.concatenate([Qu,Ql],axis=2)
-        M2 = 0.5*T.sum(beta_ss_r*T.sum(Q*beta_ss_r,-1),-1)
-
-        # compute the additional diagonal term for the second moment matrix
-        sf2Ms = (sf2/Ms.astype(theano.config.floatX))
-        diagm2 = T.diag( sn2*(1.0 + sf2Ms*T.sum(self.iA*Q[oidx,oidx],[1,2])) + 1e-9)
-        M2 = M2 + diagm2
-
-        # compute the predictive covariance
-        S = M2 - T.outer(M,M)
-        
-        return M,S,V
-
-    def predict_symbolic_2(self,mx,Sx):
-        if self.N < self.n_basis:
-            # stick with the full GP
-            return GP_UI.predict_symbolic(self,mx,Sx)
+        #    return GP_UI.predict_symbolic(self,mx,Sx)
 
         idims = self.D
         odims = self.E
