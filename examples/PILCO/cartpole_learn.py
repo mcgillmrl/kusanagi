@@ -55,13 +55,12 @@ def default_params():
 
 
 if __name__ == '__main__':
-    J = 4                                                                   # number of random initial trials
+    J = 6                                                                   # number of random initial trials
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
-    #learner_params['dynmodel_class'] = NN
-    #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
-    #learner_params['use_scan'] = False
+    learner_params['dynmodel_class'] = NN
+    learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100,100]
     #learner_params['params']['dynmodel']['n_basis'] = 100
     learner = PILCO(**learner_params)
     atexit.register(learner.stop)

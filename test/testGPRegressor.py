@@ -12,12 +12,12 @@ np.set_printoptions(linewidth=500, precision=17, suppress=True)
 
 def test_func1(X,ftype=2):
     if ftype==1:
-        ret = np.exp(-0.05*(np.sum((X**2),1)))*np.sin(2.5*X.sum(1))
+        ret = 100*np.exp(-0.05*(np.sum((X**2),1)))*np.sin(2.5*X.sum(1))
     else:
         ret=np.zeros((X.shape[0]))
         ret[X.max(1)>0]=1
         ret -= 0.5
-        ret = (ret + 0.1*np.sin(2.5*X.sum(1)))
+        ret = 10*(ret + 0.1*np.sin(2.5*X.sum(1)))
     return ret
 
 def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, input_noise=0.01, output_noise=0.01,rand_seed=None):

@@ -122,14 +122,19 @@ class PILCO(EpisodicLearner):
         D = mx.shape[0]
         D_ = self.mx0.get_value().size
 
+        #mx = theano.printing.Print('mx\n')(mx)
+        #Sx = theano.printing.Print('Sx\n')(Sx)
         # convert angles from input distribution to its complex representation
         mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,D_)
 
         # compute distribution of control signal
         logsn2 = self.dynamics_model.logsn2
-        Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(logsn2)*theano.tensor.ones((D,)))# noisy state measurement
+        Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(logsn2))# noisy state measurement
         mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
         mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
+        #mu = theano.printing.Print('mu\n')(mu)
+        #Su = theano.printing.Print('Su\n')(Su)
+
         
         # compute state control joint distribution
         n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
@@ -149,6 +154,8 @@ class PILCO(EpisodicLearner):
 
         #  predict the change in state given current state-action
         # C_deltax = inv (Sxu) dot Sxu_deltax
+        #mxu = theano.printing.Print('mxu\n')(mxu)
+        #Sxu = theano.printing.Print('Sxu\n')(Sxu)
         m_deltax, S_deltax, C_deltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
 
         # compute the successor state distribution
@@ -159,7 +166,15 @@ class PILCO(EpisodicLearner):
         #  get cost:
         mcost, Scost = self.cost(mx_next,Sx_next)
 
-        return [mcost,Scost,mx_next,Sx_next]
+        # check if dynamics model has an updates dictionary
+        updates = theano.updates.OrderedUpdates()
+        if hasattr(self.dynamics_model,'prediction_updates') and self.dynamics_model.prediction_updates is not None:
+            updates += self.dynamics_model.prediction_updates
+
+        if hasattr(self.policy,'prediction_updates') and self.policy.prediction_updates is not None:
+            updates += self.policy.prediction_updates
+        
+        return [mcost,Scost,mx_next,Sx_next], updates
 
     def get_rollout(self, mx0, Sx0, H, gamma0):
         ''' Given some initial state distribution Normal(mx0,Sx0), and a prediction horizon H 
@@ -168,14 +183,10 @@ class PILCO(EpisodicLearner):
         is uncertain.'''
         utils.print_with_stamp('Computing symbolic expression graph for belief state propagation',self.name)
 
-        # first check if the shared variables we need are not initialized
-        if not ( self.dynamics_model.X and self.dynamics_model.Y and self.dynamics_model.loghyp and self.dynamics_model.logsn2):
-            self.train_dynamics()
-
         # this defines the loop where the state is propaagated
         def rollout_single_step(mv,Sv,mx,Sx,gamma,*args):
-            mv_next, Sv_next, mx_next, Sx_next = self.propagate_state(mx,Sx)
-            return gamma*mv_next,(gamma**2)*Sv_next, mx_next, Sx_next, gamma*gamma
+            [mv_next, Sv_next, mx_next, Sx_next], updates = self.propagate_state(mx,Sx)
+            return [gamma*mv_next,(gamma**2)*Sv_next, mx_next, Sx_next, gamma*gamma], updates
         
         # this are the initial distribution of the cost
         mv0, Sv0 = self.cost(mx0,Sx0)
@@ -185,7 +196,6 @@ class PILCO(EpisodicLearner):
         shared_vars = []
         shared_vars.extend(self.dynamics_model.get_all_shared_vars())
         shared_vars.extend(self.policy.get_all_shared_vars())
-
         # create the nodes that return the result from scan
         rollout_output, updts = theano.scan(fn=rollout_single_step, 
                                             outputs_info=[mv0,Sv0,mx0,Sx0,gamma0], 
@@ -209,7 +219,7 @@ class PILCO(EpisodicLearner):
         mean_states.name = 'mx_list'
         cov_states.name = 'Sx_list'
 
-        return mean_costs, var_costs, mean_states, cov_states
+        return [mean_costs, var_costs, mean_states, cov_states], updts
 
     def get_policy_value(self, mx0 = None, Sx0 = None, H = None, gamma0 = None, should_save_to_disk=False):
         ''' Returns a symbolic expression (theano tensor variable) for the value of the current policy '''
@@ -218,8 +228,8 @@ class PILCO(EpisodicLearner):
         H = self.H_steps if H is None else H
         gamma0 = self.gamma0 if gamma0 is None else gamma0
 
-        mc_,Sc_,mx_,Sx_ = self.get_rollout(mx0,Sx0,H,gamma0)
-        return mc_.sum()
+        [mc_,Sc_,mx_,Sx_], updts = self.get_rollout(mx0,Sx0,H,gamma0)
+        return mc_.sum(), updts
 
     def get_policy_gradients(self, expected_accumulated_cost, params):
         ''' Creates the variables representing the policy gradients (theano tensor variables) of
@@ -238,12 +248,13 @@ class PILCO(EpisodicLearner):
         H = self.H_steps if H is None else H
         gamma0 = self.gamma0 if gamma0 is None else gamma0
 
-        mc_,Sc_,mx_,Sx_ = self.get_rollout(mx0,Sx0,H,gamma0)
+        [mc_,Sc_,mx_,Sx_], updts = self.get_rollout(mx0,Sx0,H,gamma0)
 
         utils.print_with_stamp('Compiling belief state propagation',self.name)
         self.rollout_fn = theano.function([], 
                                           [mc_,Sc_,mx_,Sx_], 
                                           allow_input_downcast=True, 
+                                          updates=updts,
                                           name='%s>rollout_fn'%(self.name))
         utils.print_with_stamp("Done compiling.",self.name)
         if should_save_to_disk:
@@ -258,7 +269,7 @@ class PILCO(EpisodicLearner):
         H = self.H_steps if H is None else H
         gamma0 = self.gamma0 if gamma0 is None else gamma0
         
-        mc_,Sc_,mx_,Sx_ = self.get_rollout(mx0,Sx0,H,gamma0)
+        [mc_,Sc_,mx_,Sx_], updts = self.get_rollout(mx0,Sx0,H,gamma0)
         expected_accumulated_cost = mc_.sum()
         expected_accumulated_cost.name = 'J'
 
@@ -274,6 +285,7 @@ class PILCO(EpisodicLearner):
         self.policy_gradient_fn = theano.function([],
                                                    retvars, 
                                                    allow_input_downcast=True, 
+                                                   updates=updts,
                                                    name="%s>policy_gradient_fn"%(self.name))
         utils.print_with_stamp("Done compiling.",self.name)
         if should_save_to_disk:

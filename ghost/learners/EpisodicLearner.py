@@ -293,12 +293,13 @@ class EpisodicLearner(object):
             # compile optimizer f not available
             if not hasattr(self,'train_fn'):
                 # get the value as a symbolic expression
-                v = self.get_policy_value()
+                v,updts = self.get_policy_value()
                 # get the updates using the desired minimization method
                 utils.print_with_stamp("Compiling optimizer",self.name)
                 min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
                 p = self.policy.get_params(symbolic=True)
                 updates = min_method_updt(v,p,learning_rate=self.learning_rate)
+                updates += updts
                 self.train_fn = theano.function([],v,updates=updates)
                 utils.print_with_stamp("Done compiling.",self.name)
 

@@ -15,12 +15,12 @@ np.set_printoptions(linewidth=500, precision=17, suppress=True)
 
 def test_func1(X,ftype=2):
     if ftype==1:
-        ret = np.exp(-0.05*(np.sum((X**2),1)))*np.sin(2.5*X.sum(1))
+        ret = 100*np.exp(-0.05*(np.sum((X**2),1)))*np.sin(2.5*X.sum(1))
     else:
         ret=np.zeros((X.shape[0]))
         ret[X.max(1)>0]=1
         ret -= 0.5
-        ret = (ret + 0.1*np.sin(2.5*X.sum(1)))
+        ret = -10*(ret + 0.1*np.sin(2.5*X.sum(1)))
     return ret
 
 def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, input_noise=0.01, output_noise=0.01,rand_seed=None):
@@ -37,8 +37,9 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     
     #  ================== test  dataset ==================
     # generate testing points
-    kk = input_noise*convolve2d(np.array([[1,2,3,2,1]]),np.array([[1,2,3,2,1]]).T)/9.0;
-    s_test = convolve2d(np.eye(idims),kk,'same')
+    #kk = input_noise*convolve2d(np.array([[1,2,3,2,1]]),np.array([[1,2,3,2,1]]).T)/9.0;
+    #s_test = convolve2d(np.eye(idims),kk,'same')
+    s_test = input_noise*np.eye(idims)
     s_test = np.tile(s_test,(n_test,1)).reshape(n_test,idims,idims)
     x_test = 60*(np.random.rand(n_test,idims) - 0.5)
     # generate the output at the test points
@@ -71,7 +72,7 @@ if __name__=='__main__':
     utils.print_with_stamp("Building test dataset",'main')
     train_dataset,test_dataset = build_dataset(idims=idims,odims=odims,n_train=n_train,n_test=n_test, output_noise=args.noise1, input_noise=args.noise2, rand_seed=31337)
     utils.print_with_stamp("Building regressor",'main')
-    nn = NN(idims,[100,100,100,100],odims)
+    nn = NN(idims,odims, hidden_dims=[100,100,100,100])
     nn.set_dataset(train_dataset[0],train_dataset[1])
 
     nn.train()

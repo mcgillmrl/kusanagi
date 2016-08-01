@@ -139,6 +139,7 @@ class GP(object):
 
     def set_loghyp(self, loghyp):
         # this creates one theano shared variable for the log hyperparameters
+        loghyp = loghyp.astype(theano.config.floatX)
         if self.loghyp is None:
             self.loghyp = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
             self.logsn2 = 2*self.loghyp[:,-1]
@@ -775,6 +776,7 @@ class RBFGP(GP_UI):
     
     def set_loghyp(self, loghyp):
         # this creates one theano shared variable for the log hyperparameters
+        loghyp = loghyp.astype(theano.config.floatX)
         if self.loghyp_full is None:
             self.loghyp_full = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
             self.loghyp = T.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
