@@ -40,11 +40,13 @@ class ExperienceDataset(object):
         self.immediate_cost.append([])
         self.curr_episode += 1
         self.state_changed = True
-        if hasattr(self, 'episode_labels'):
+        try:
             if random:
                 self.episode_labels.append("RANDOM")
             else:
                 self.episode_labels.append(learning_iteration)
+        except AttributeError:
+            pass
 
     def n_samples(self):
         ''' Returns the total number of samples in this dataset '''
@@ -74,15 +76,18 @@ class ExperienceDataset(object):
         self.actions = state[i.next()]
         self.immediate_cost = state[i.next()]
         self.curr_episode = state[i.next()]
-        if hasattr(self, 'policy_history') and hasattr(self, 'episode_labels'):
+        try:
             self.policy_history = state[i.next()]
             self.episode_labels = state[i.next()]
+        except IndexError:
+            pass
 
     def get_state(self):
-        if hasattr(self, 'policy_history') and hasattr(self, 'episode_labels'):
-            return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode, self.policy_history, self.episode_labels]
-        else:
-            return [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
+        try:
+            ret = [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode, self.policy_history, self.episode_labels]
+        except AttributeError:
+            ret = [self.time_stamps,self.states,self.actions,self.immediate_cost,self.curr_episode]
+        return ret
 
     def reset(self):
         utils.print_with_stamp('Resetting experience dataset',self.name)

@@ -64,28 +64,6 @@ class EpisodicLearner(object):
         # try loading from file, initialize from scratch otherwise
         try:
             self.load()
-            if learn_from_iteration != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
-                if not hasattr(self.experience, 'policy_history'):
-                    pass
-                elif (learn_from_iteration+1 >= len(self.experience.policy_history)):
-                    utils.print_with_stamp('WARNING! You are attempting to load from an iteration that does not exist! Press space to instead continue from last iteration')
-                    raw_input()
-                else:
-                    utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
-                    entry_num = 0
-                    while experience.episode_labels[entry_num] != self.learn_from_iteration:
-                        entry_num += 1
-                    while experience.episode_labels[entry_num] == self.learn_from_iteration:
-                        entry_num += 1
-                    self.experience.time_stamps = self.experience.time_stamps[:entry_num]
-                    self.experience.states = self.experience.states[:entry_num]
-                    self.experience.actions = self.experience.actions[:entry_num]
-                    self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
-                    self.experience.curr_episode = entry_num-1
-                    if learn_from_iteration is not 0:
-                        self.policy.set_params(self.experience.policy_history[learn_from_iteration-1])
-                        self.experience.policy_history = self.experience.policy_history[:learn_from_iteration]
-                    self.learning_iteration = self.learn_from_iteration + 1
         except IOError:
             utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
             self.init_cost()
@@ -103,7 +81,31 @@ class EpisodicLearner(object):
             state = t_load(f)
             self.set_state(state)
         self.state_changed = False
-    
+        
+        if self.learn_from_iteration != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
+                if not hasattr(self.experience, 'policy_history'):
+                    pass
+                else:
+                    utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
+                    entry_num = 0
+                    while self.experience.episode_labels[entry_num] != self.learn_from_iteration:
+                        entry_num += 1
+                    while self.experience.episode_labels[entry_num] == self.learn_from_iteration:
+                        entry_num += 1
+                    self.experience.time_stamps = self.experience.time_stamps[:entry_num]
+                    self.experience.states = self.experience.states[:entry_num]
+                    self.experience.actions = self.experience.actions[:entry_num]
+                    self.experience.immediate_cost = self.experience.immediate_cost[:entry_num]
+                    self.experience.episode_labels = self.experience.episode_labels[:entry_num]
+                    self.experience.curr_episode = entry_num-1
+                    if self.learn_from_iteration is not "RANDOM":
+                        self.policy.set_params(self.experience.policy_history[self.learn_from_iteration-1])
+                        self.experience.policy_history = self.experience.policy_history[:self.learn_from_iteration]
+                        self.learning_iteration = self.learn_from_iteration + 1
+                    else: 
+                        self.policy.set_default_parameters()
+                        self.experience.policy_history = []
+
     def save(self):
         # save policy and experience separately
         self.policy.save()
@@ -132,14 +134,14 @@ class EpisodicLearner(object):
         self.n_episodes = state[i.next()]
         self.angle_idims = state[i.next()]
         self.async_plant = state[i.next()]
-        self.cost = state[i.next()]
+        self.evaluate_cost = state[i.next()]
         self.H = state[i.next()]
         self.discount = state[i.next()]
         self.learning_iteration = state[i.next()]
         self.n_evals = state[i.next()]
 
     def get_state(self):
-        return [self.n_episodes,self.angle_idims,self.async_plant,self.cost,self.H,self.discount,self.learning_iteration,self.n_evals]
+        return [self.n_episodes,self.angle_idims,self.async_plant,self.evaluate_cost,self.H,self.discount,self.learning_iteration,self.n_evals]
 
     def init_cost(self):
         if self.cost:
