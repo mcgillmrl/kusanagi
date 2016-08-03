@@ -33,6 +33,19 @@ class ExperienceDataset(object):
         self.immediate_cost[curr_episode].append(c_t)
         self.state_changed = True
 
+    def add_episode(self, episode):
+        i = utils.integer_generator()
+        self.time_stamps.append(state[i.next()])
+        self.states.append(state[i.next()])
+        self.actions.append(state[i.next()])
+        self.immediate_cost.append(state[i.next()])
+        self.curr_episode.append(state[i.next()])
+        try:
+            self.policy_history.append(state[i.next()])
+            self.episode_labels.append(state[i.next()])
+        except IndexError:
+            pass
+
     def new_episode(self, random = False, learning_iteration = -1):
         self.time_stamps.append([])
         self.states.append([])
@@ -98,3 +111,4 @@ class ExperienceDataset(object):
         self.curr_episode = -1
         self.state_changed = False
         self.policy_history = []
+        self.episode_labels = []
