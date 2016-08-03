@@ -83,15 +83,32 @@ class EpisodicLearner(object):
         self.state_changed = False
         
         if self.learn_from_iteration != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
-                if not hasattr(self.experience, 'policy_history'):
+                if self.learn_from_iteration == 0:
+                    utils.print_with_stamp('Resetting data completely')
+                    self.experience.time_stamps = []
+                    self.experience.states = []
+                    self.experience.actions = []
+                    self.experience.immediate_cost = []
+                    self.experience.episode_labels = []
+                    self.experience.curr_episode = -1
+                    self.experience.policy_history = []
+                    self.experience.episode_labels = []
+                    self.policy.set_default_parameters()
+                elif not hasattr(self.experience, 'policy_history'):
                     pass
                 else:
                     utils.print_with_stamp('Loading from iteration %s and reverting datasets to that iteration'%(str(self.learn_from_iteration)))
                     entry_num = 0
-                    while self.experience.episode_labels[entry_num] != self.learn_from_iteration:
-                        entry_num += 1
-                    while self.experience.episode_labels[entry_num] == self.learn_from_iteration:
-                        entry_num += 1
+                    try:
+                        while self.experience.episode_labels[entry_num] != self.learn_from_iteration:
+                            entry_num += 1
+                        while self.experience.episode_labels[entry_num] == self.learn_from_iteration:
+                            entry_num += 1
+                    except IndexError:
+                        utils.print_with_stamp('ERROR: You are trying to load from an iteration that has not been performed. Press enter to continue by loading the most recent data, or CTRL-C to close.')
+                        raw_input()
+                        entry_num -= 1
+                        self.learn_from_iteration = self.experience.episode_labels[entry_num]
                     self.experience.time_stamps = self.experience.time_stamps[:entry_num]
                     self.experience.states = self.experience.states[:entry_num]
                     self.experience.actions = self.experience.actions[:entry_num]
