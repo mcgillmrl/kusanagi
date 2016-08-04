@@ -359,7 +359,7 @@ class PILCO(EpisodicLearner):
                 self.mx0.set_value(x0.mean(0).astype('float64'))
                 self.Sx0.set_value(np.cov(x0.T).astype('float64'))
             else:
-                self.mx0.set_value(x0.astype('float64'))
+                self.mx0.set_value(x0.astype('float64').flatten())
                 self.Sx0.set_value(1e-2*np.eye(x0.size).astype('float64'))
 
             # append data to the dynamics model

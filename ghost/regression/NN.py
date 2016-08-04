@@ -115,7 +115,7 @@ class NN(object):
             if self.drop_hidden and self.drop_hidden>0:
                 network = lasagne.layers.DropoutLayer(network, p=self.drop_hidden)
 
-        self.network = lasagne.layers.DenseLayer(network, num_units=self.E, nonlinearity=lasagne.nonlinearities.tanh, name=self.name+'_output')
+        self.network = lasagne.layers.DenseLayer(network, num_units=self.E, nonlinearity=lasagne.nonlinearities.linear, name=self.name+'_output')
 
     def init_loss(self):
         ''' initializes the loss function for training '''
