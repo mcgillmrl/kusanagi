@@ -46,30 +46,37 @@ def default_params():
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
 
+    learner_params['max_evals'] = 100
+    learner_params['conv_thr'] = 1e-9
+    learner_params['min_method'] = 'L-BFGS-B'
+
     learner_params['plant'] = plant_params
     learner_params['policy'] = policy_params
     learner_params['dynmodel'] = dynmodel_params
     learner_params['cost'] = cost_params
 
-    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI, 'viz_class' : CartpoleDraw, 'task_name' : "tuesday", 'learn_from_iteration' : -1}
+    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI}#, 'viz_class' : CartpoleDraw, 'task_name' : "tuesday", 'learn_from_iteration' : -1}
 
 
 if __name__ == '__main__':
-    J = 6                                                                   # number of random initial trials
+    J = 4                                                                   # number of random initial trials
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
+    #learner_params['min_method'] = 'ADAM'
     #learner_params['dynmodel_class'] = NN
-    #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100,100]
+    #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
     #learner_params['params']['dynmodel']['n_basis'] = 100
     learner = PILCO(**learner_params)
     atexit.register(learner.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data
         # gather data with random trials
-        for i in xrange(J):
+        for i in xrange(J-1):
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
+        learner.plant.reset_state()
+        learner.apply_controller()
     else:
         learner.plant.reset_state()
         learner.apply_controller()
@@ -90,7 +97,7 @@ if __name__ == '__main__':
         learner.apply_controller()
 
         # plot results
-        #plot_results(learner)
+        plot_results(learner)
 
         # save latest state of the learner
         learner.save()

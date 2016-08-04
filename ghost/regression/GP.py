@@ -89,8 +89,8 @@ class GP(object):
             assert self.Y.get_value(borrow=True).shape[1] == Y_dataset.shape[1]
         
         # first, convert numpy arrays to appropriate type
-        X_dataset = X_dataset.astype( theano.config.floatX )
-        Y_dataset = Y_dataset.astype( theano.config.floatX )
+        X_dataset = X_dataset.astype( 'float64' )
+        Y_dataset = Y_dataset.astype( 'float64' )
         # dims = non_angle_dims + 2*angle_dims
         self.N = X_dataset.shape[0]
         self.D = X_dataset.shape[1]
@@ -120,8 +120,8 @@ class GP(object):
         if self.X is None:
             self.set_dataset(X_dataset,Y_dataset)
         else:
-            X_ = np.vstack((self.X.get_value(), X_dataset.astype(theano.config.floatX)))
-            Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(theano.config.floatX)))
+            X_ = np.vstack((self.X.get_value(), X_dataset.astype(self.X.dtype)))
+            Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(self.Y.dtype)))
             self.set_dataset(X_,Y_)
 
     def init_loghyp(self):
@@ -139,12 +139,12 @@ class GP(object):
 
     def set_loghyp(self, loghyp):
         # this creates one theano shared variable for the log hyperparameters
-        loghyp = loghyp.astype(theano.config.floatX)
+        loghyp = loghyp.astype('float64')
         if self.loghyp is None:
             self.loghyp = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
             self.logsn2 = 2*self.loghyp[:,-1]
         else:
-            loghyp = loghyp.reshape(self.loghyp.get_value(borrow=True).shape).astype(theano.config.floatX)
+            loghyp = loghyp.reshape(self.loghyp.get_value(borrow=True).shape)
             self.loghyp.set_value(loghyp,borrow=True)
 
     def get_params(self, symbolic=True, all_shared=False):
@@ -174,12 +174,12 @@ class GP(object):
 
         # these are shared variables for the kernel matrix, its cholesky decomposition and K^-1 dot Y
         if self. iK is None:
-            self.iK = S(np.zeros((self.E,self.N,self.N),dtype=theano.config.floatX), name="%s>iK"%(self.name))
+            self.iK = S(np.zeros((self.E,self.N,self.N),dtype='float64'), name="%s>iK"%(self.name))
         if self.L is None:
-            self.L = S(np.zeros((self.E,self.N,self.N),dtype=theano.config.floatX), name="%s>L"%(self.name))
+            self.L = S(np.zeros((self.E,self.N,self.N),dtype='float64'), name="%s>L"%(self.name))
         if self.beta is None:
-            self.beta = S(np.zeros((self.E,self.N),dtype=theano.config.floatX), name="%s>beta"%(self.name))
-        N = self.X.shape[0].astype(theano.config.floatX)
+            self.beta = S(np.zeros((self.E,self.N),dtype='float64'), name="%s>beta"%(self.name))
+        N = self.X.shape[0].astype('float64')
         
         def log_marginal_likelihood(Y,loghyp,X,EyeN):
             # initialise the (before compilation) kernel function
@@ -220,12 +220,12 @@ class GP(object):
             nlml += self.snr_penalty(self.loghyp)
 
         # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml = T.jacobian(nlml.sum(),self.loghyp)
+        dnlml = T.grad(nlml.sum(),self.loghyp)
 
         # Compile the theano functions
         utils.print_with_stamp('Compiling full GP training loss function',self.name)
         self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-        utils.print_with_stamp('Compiling jacobian of full GP training loss function',self.name)
+        utils.print_with_stamp('Compiling gradient of full GP training loss function',self.name)
         self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         self.state_changed = True # for saving
     
@@ -388,8 +388,8 @@ class GP_UI(GP):
 
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
-        iLdotSx = iL.dot(Sx)
-        B = T.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + T.eye(idims)   #TODO vectorize this
+        iLdotSx = iL.dot(Sx.astype('float64')) # force the matrix inverse to be done with double precision
+        B = T.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + T.eye(idims)                              #TODO vectorize this
         t = T.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
         c = sf2/T.sqrt(T.stack([det(B[i]) for i in xrange(odims)]))
         l = T.exp(-0.5*T.sum(inp*t,2))
@@ -406,10 +406,10 @@ class GP_UI(GP):
         logk_r = logk.dimshuffle(0,'x',1)
         logk_c = logk.dimshuffle(0,1,'x')
         Lambda = iL**2
-        R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
+        R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.astype('float64').T).transpose(0,1,3,2) + T.eye(idims) # again forcing the matrix inverse to be done with double precision
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         
-        M2 = T.zeros((self.E,self.E))
+        M2 = T.zeros((self.E,self.E),dtype='float64')
         # initialize indices
         indices = [ T.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
@@ -481,7 +481,7 @@ class SPGP(GP):
         self.should_recompile = True
         # pick initial cluster centers from dataset
         X = self.X.get_value()
-        X_sp_ = utils.kmeanspp(X,self.n_basis).astype(theano.config.floatX)
+        X_sp_ = utils.kmeanspp(X,self.n_basis)
 
         # perform kmeans to get initial cluster centers
         utils.print_with_stamp('Initialising pseudo inputs',self.name)
@@ -524,15 +524,15 @@ class SPGP(GP):
             
             # initialize shared variables
             if self.iKmm is None:
-                self.iKmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>iKmm"%(self.name))
+                self.iKmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype='float64'), name="%s>iKmm"%(self.name))
             if self.Lmm is None:
-                self.Lmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>Lmm"%(self.name))
+                self.Lmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype='float64'), name="%s>Lmm"%(self.name))
             if self.Amm is None:
-                self.Amm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>Amm"%(self.name))
+                self.Amm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype='float64'), name="%s>Amm"%(self.name))
             if self.iBmm is None:
-                self.iBmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype=theano.config.floatX), name="%s>iBmm"%(self.name))
+                self.iBmm = S(np.zeros((self.E,self.n_basis,self.n_basis),dtype='float64'), name="%s>iBmm"%(self.name))
             if self.beta_sp is None:
-                self.beta_sp = S(np.zeros((self.E,self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
+                self.beta_sp = S(np.zeros((self.E,self.n_basis),dtype='float64'), name="%s>beta_sp"%(self.name))
 
             # initialize the training loss function of the sparse FITC approximation
             def log_marginal_likelihood(Y,loghyp,X,X_sp,EyeM):
@@ -544,10 +544,10 @@ class SPGP(GP):
                 ll = T.exp(loghyp[:idims])
                 sf2 = T.exp(2*loghyp[idims])
                 sn2 = T.exp(2*loghyp[idims+1])
-                N = X.shape[0].astype(theano.config.floatX)
-                M = X_sp.shape[0].astype(theano.config.floatX)
+                N = X.shape[0].astype('float64')
+                M = X_sp.shape[0].astype('float64')
 
-                ridge = 1e-6 if theano.config.floatX == 'float64' else 5e-4
+                ridge = 1e-6
                 Kmm = kernel_func(X_sp) + ridge*EyeM
                 Kmn = kernel_func(X_sp, X)
                 Lmm = cholesky(Kmm)
@@ -571,7 +571,7 @@ class SPGP(GP):
 
                 log_det_K_sp = T.sum(T.log(Gamma)) - 2*T.sum(T.log(T.diag(Lmm))) + 2*T.sum(T.log(T.diag(Amm)))
 
-                nlml_sp = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) + log_det_K_sp + N*np.log(2*np.pi).astype(theano.config.floatX) )
+                nlml_sp = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) + log_det_K_sp + N*np.log(2*np.pi) )
 
                 return nlml_sp, iKmm, Lmm, Amm, iBmm, beta_sp
             
@@ -597,12 +597,12 @@ class SPGP(GP):
 
             # TODO include the log hyperparameters in the optimization
             # TODO give the option for separate inducing inputs for every output dimension
-            dnlml_sp = T.jacobian(nlml_sp.sum(),self.X_sp)
+            dnlml_sp = T.grad(nlml_sp.sum(),self.X_sp)
 
             # Compile the theano functions
             utils.print_with_stamp('Compiling FITC training loss function',self.name)
             self.nlml_sp = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-            utils.print_with_stamp('Compiling jacobian of FITC training loss function',self.name)
+            utils.print_with_stamp('Compiling gradient of FITC training loss function',self.name)
             self.dnlml_sp = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True,updates=updts)
             
     def predict_symbolic(self,mx,Sx):
@@ -638,7 +638,7 @@ class SPGP(GP):
         return M,S,V
 
     def set_X_sp(self, X_sp):
-        X_sp = X_sp.reshape(self.X_sp.get_value(borrow=True).shape).astype(theano.config.floatX)
+        X_sp = X_sp.reshape(self.X_sp.get_value(borrow=True).shape)
         self.X_sp.set_value(X_sp,borrow=True)
     
     def get_params(self, symbolic=True):
@@ -721,7 +721,7 @@ class SPGP_UI(SPGP,GP_UI):
         R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         
-        M2 = T.zeros((self.E,self.E))
+        M2 = T.zeros((self.E,self.E),dtype='float64')
         # initialize indices
         indices = [ T.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
@@ -776,13 +776,13 @@ class RBFGP(GP_UI):
     
     def set_loghyp(self, loghyp):
         # this creates one theano shared variable for the log hyperparameters
-        loghyp = loghyp.astype(theano.config.floatX)
+        loghyp = loghyp
         if self.loghyp_full is None:
             self.loghyp_full = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
             self.loghyp = T.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
             self.logsn2 = 2*self.loghyp[:,-1]
         else:
-            loghyp = loghyp.reshape(self.loghyp_full.get_value(borrow=True).shape).astype(theano.config.floatX)
+            loghyp = loghyp.reshape(self.loghyp_full.get_value(borrow=True).shape)
             self.loghyp_full.set_value(loghyp,borrow=True)
 
     def predict_symbolic(self,mx,Sx):
@@ -800,7 +800,7 @@ class RBFGP(GP_UI):
 
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
-        iLdotSx = iL.dot(Sx)
+        iLdotSx = iL.dot(Sx.astype('float64')) # force the matrix inverse to be done with double precision
         B = T.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + T.eye(idims)   #TODO vectorize this
         t = T.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
         c = sf2/T.sqrt(T.stack([det(B[i]) for i in xrange(odims)]))
@@ -818,7 +818,7 @@ class RBFGP(GP_UI):
         logk_r = logk.dimshuffle(0,'x',1)
         logk_c = logk.dimshuffle(0,1,'x')
         Lambda = iL**2
-        R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + T.eye(idims)
+        R = T.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.astype('float64').T).transpose(0,1,3,2) + T.eye(idims) # again forcing the matrix inverse to be done with double precision
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         
         if self.E == 1:
@@ -834,7 +834,7 @@ class RBFGP(GP_UI):
             m2 = m2 + 1e-6
             M2 = T.stack([m2])
         else:
-            M2 = T.zeros((self.E,self.E))
+            M2 = T.zeros((self.E,self.E),dtype='float64')
             # initialize indices
             indices = [ T.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
@@ -921,24 +921,24 @@ class SSGP(GP):
         beta_ss = [[]]*odims
         nlml_ss = [[]]*odims
         if self.iA is None:
-            self.iA = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>iA"%(self.name))
+            self.iA = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype='float64'), name="%s>iA"%(self.name))
         if self.Lmm is None:
-            self.Lmm = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype=theano.config.floatX), name="%s>Lmm"%(self.name))
+            self.Lmm = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype='float64'), name="%s>Lmm"%(self.name))
         if self.beta_ss is None:
-            self.beta_ss = S(np.zeros((self.E,2*self.n_basis),dtype=theano.config.floatX), name="%s>beta_sp"%(self.name))
+            self.beta_ss = S(np.zeros((self.E,2*self.n_basis),dtype='float64'), name="%s>beta_ss"%(self.name))
         
         # sample initial unscaled spectral points
         self.set_spectral_samples()
 
         #init variables
-        N = self.X.shape[0].astype(theano.config.floatX)
-        M = self.sr.shape[1].astype(theano.config.floatX)
+        N = self.X.shape[0].astype('float64')
+        M = self.sr.shape[1].astype('float64')
         Mi = 2*self.sr.shape[1]
         sf2 = T.exp(2*self.loghyp[:,idims])
         sf2M = sf2/M
         sn2 = T.exp(2*self.loghyp[:,idims+1])
         srdotX = self.sr.dot(self.X.T)
-        phi_f = T.concatenate( [T.sin(srdotX), T.cos(srdotX)], axis=1 ) # E x 2*n_basis x N
+        phi_f = T.concatenate( [T.sin(srdotX), T.cos(srdotX)], axis=1 ).astype('float64') # E x 2*n_basis x N
         
         # TODO vectorize these ops
         for i in xrange(odims):
@@ -946,12 +946,11 @@ class SSGP(GP):
             A[i] = sf2M_i*phi_f_i.dot(phi_f_i.T) + sn2_i*T.eye(Mi)
             Lmm[i] = cholesky(A[i])
             iA[i] = solve_upper_triangular(Lmm[i].T, solve_lower_triangular(Lmm[i],T.eye(Mi)))
-
             Yi = self.Y[:,i]
-            Yci = solve_lower_triangular(Lmm[i],phi_f_i.dot(Yi))
+            Yci = solve_lower_triangular(Lmm[i],(phi_f_i.dot(Yi)))
             beta_ss[i] = sf2M_i*solve_upper_triangular(Lmm[i].T,Yci)
-            
-            nlml_ss[i] = 0.5*( Yi.dot(Yi) - sf2M_i*Yci.dot(Yci) )/sn2_i + T.sum(T.log(T.diag(Lmm[i]))) + (0.5*N - M)*T.log(sn2_i) + 0.5*N*np.log(2*np.pi).astype(theano.config.floatX)
+
+            nlml_ss[i] = 0.5*( Yi.dot(Yi) - sf2M_i*Yci.dot(Yci) )/sn2_i + T.sum(T.log(T.diag(Lmm[i]))) + (0.5*N - M)*T.log(sn2_i) + 0.5*N*np.log(2*np.pi)
 
         nlml_ss = T.stack(nlml_ss)
         if cache_vars:
@@ -972,23 +971,23 @@ class SSGP(GP):
             nlml_ss += self.snr_penalty(self.loghyp)
 
         # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml_ss = T.jacobian(nlml_ss.sum(),[self.loghyp,self.w])
+        dnlml_ss = T.grad(nlml_ss.sum(),[self.loghyp,self.w])
 
         utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
         self.nlml_ss = F((),nlml_ss,name='%s>nlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-        utils.print_with_stamp('Compiling jacobian of sparse spectral training loss function',self.name)
+        utils.print_with_stamp('Compiling gradient of sparse spectral training loss function',self.name)
         self.dnlml_ss = F((),(nlml_ss,dnlml_ss[0],dnlml_ss[1]),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
     def set_spectral_samples(self,w=None):
         if w is None:
             idims = self.D
             odims = self.E
-            w = np.random.randn(self.n_basis,odims,idims).astype(theano.config.floatX)
+            w = np.random.randn(self.n_basis,odims,idims).astype('float64')
         else:
             if self.w is not None:
-                w = w.reshape(self.w.get_value(borrow=True).shape).astype(theano.config.floatX)
+                w = w.reshape(self.w.get_value(borrow=True).shape).astype('float64')
             else:
-                w = w.reshape((self.n_basis,odims,idims)).astype(theano.config.floatX)
+                w = w.reshape((self.n_basis,odims,idims)).astype('float64')
 
 
         if self.w is None:
@@ -1010,6 +1009,9 @@ class SSGP(GP):
         self.set_loghyp(loghyp)
         self.set_spectral_samples(w)
         nlml,dnlml_lh,dnlml_sr = self.dnlml_ss()
+        nlml = np.array(nlml)
+        dnlml_lh = np.array(dnlml_lh)
+        dnlml_sr = np.array(dnlml_sr)
         nlml = nlml.sum()
         dnlml = utils.wrap_params([dnlml_lh,dnlml_sr])
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
@@ -1082,7 +1084,7 @@ class SSGP(GP):
         variance = [[]]*odims
         for i in xrange(odims):
             sr = self.sr[i]
-            M = sr.shape[0].astype(theano.config.floatX)
+            M = sr.shape[0].astype('float64')
             sf2 = T.exp(2*self.loghyp[i,idims])
             sn2 = T.exp(2*self.loghyp[i,idims+1])
             # sr.T.dot(x) for all sr and X. size n_basis x N
@@ -1116,7 +1118,7 @@ class SSGP_UI(SSGP, GP_UI):
         
         # precompute some variables
         Ms = self.sr.shape[1]
-        sf2M = T.exp(2*self.loghyp[:,idims])/T.cast(Ms,theano.config.floatX)
+        sf2M = T.exp(2*self.loghyp[:,idims])/T.cast(Ms,'float64')
         sn2 = T.exp(2*self.loghyp[:,idims+1])
         srdotx = self.sr.dot(mx)
         srdotSx = self.sr.dot(Sx) 
@@ -1140,7 +1142,7 @@ class SSGP_UI(SSGP, GP_UI):
         
         srdotSxdotsr_c = srdotSxdotsr.dimshuffle(0,1,'x')
         srdotSxdotsr_r = srdotSxdotsr.dimshuffle(0,'x',1)
-        M2 = T.zeros((self.E,self.E))
+        M2 = T.zeros((self.E,self.E),dtype='float64')
         # initialize indices
         indices = [ T.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
@@ -1224,7 +1226,7 @@ class VSSGP(SSGP):
         self.fc_mean = S(self.fc_mean_,name='%s>fc_mean'%(self.name),borrow=True)
         self.fc_cov = S(self.fc_cov_,name='%s>fc_cov'%(self.name),borrow=True)
 
-        N = self.X.shape[0].astype(theano.config.floatX)
+        N = self.X.shape[0].astype('float64')
         for i in xrange(odims):
             Ms = sr.shape[0]
             sf2 = T.exp(2*self.loghyp[i,idims])
@@ -1254,10 +1256,10 @@ class VSSGP(SSGP):
             nlml_ss += self.snr_penalty(self.loghyp)
 
         # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml_ss = T.jacobian(nlml_ss.sum(),[self.loghyp,self.w])
+        dnlml_ss = T.grad(nlml_ss.sum(),[self.loghyp,self.w])
 
         utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
         self.nlml_ss = F((),nlml_ss,name='%s>nlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-        utils.print_with_stamp('Compiling jacobian of sparse spectral training loss function',self.name)
+        utils.print_with_stamp('Compiling gradient of sparse spectral training loss function',self.name)
         self.dnlml_ss = F((),(nlml_ss,dnlml_ss[0],dnlml_ss[1]),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
