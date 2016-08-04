@@ -6,9 +6,8 @@ import time
 import utils
 
 class NN(object):
-    def __init__(self,idims, odims, hidden_dims=[128,128], dropout_samples=50, state_samples=10, uncertain_inputs=True, name='NN', profile=False):
-        ''' Constructs a Bayessian Neural Network regressor.
-        '''
+    ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
+    def __init__(self,idims, odims, hidden_dims=[128,128], dropout_samples=250, uncertain_inputs=True, name='NN', profile=False):
         self.D = idims
         self.hidden_dims = hidden_dims
         self.E = odims
@@ -20,15 +19,14 @@ class NN(object):
         self.logsn2 = theano.shared(np.array(ls2,dtype=theano.config.floatX))
         self.lscale2 = 10
 
-        self.learning_params = {'iters': 10000, 'batch_size': 500}
+        self.learning_params = {'iters': 25000, 'batch_size': 500}
         self.network = None
         self.loss_fn = None
         self.train_fn = None
         self.predict_fn = None
         self.prediction_updates = None
-        self.drop_hidden = 0.05
+        self.drop_hidden = 0.01
         self.dropout_samples = theano.shared(dropout_samples, name="%s>dropout_samples"%(self.name)) 
-        self.state_samples = theano.shared(state_samples, name="%s>state_samples"%(self.name)) 
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
 
         self.X = None; self.Y = None
@@ -36,6 +34,8 @@ class NN(object):
 
         self.profile = profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
+
+        self.learn_noise = True
     
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
@@ -71,14 +71,14 @@ class NN(object):
         if self.Y is None:
             self.Y = theano.shared(Y_dataset,name='%s>Y'%(self.name),borrow=True)
             self.Ym = theano.shared(Y_dataset.mean(0),name='%s>Ym'%(self.name),borrow=True)
-            self.Ys = theano.shared(2*Y_dataset.std(0),name='%s>Ys'%(self.name),borrow=True)
+            self.Ys = theano.shared(3*Y_dataset.std(0),name='%s>Ys'%(self.name),borrow=True)
         else:
             self.Y.set_value(Y_dataset,borrow=True)
             self.Ym.set_value(Y_dataset.mean(0),borrow=True)
-            self.Ys.set_value(2*Y_dataset.std(0),borrow=True)
+            self.Ys.set_value(3*Y_dataset.std(0),borrow=True)
 
-        self.lscale2 = 0.0001*self.X.get_value(borrow=True).var(0).sum()
-        self.logsn2.set_value(np.log(0.001*self.Y.get_value(borrow=True).var(0)).astype(theano.config.floatX))
+        self.lscale2 = 1e-7*self.X.get_value(borrow=True).var(0).sum()
+        self.logsn2.set_value(np.log(1e-2*self.Y.get_value(borrow=True).var(0)).astype(theano.config.floatX))
 
     def append_dataset(self,X_dataset,Y_dataset):
         if self.X is None:
@@ -108,14 +108,14 @@ class NN(object):
 
         # create hidden layers
         for i in xrange(len(self.hidden_dims)):
-            network = lasagne.layers.DenseLayer(network, num_units=self.hidden_dims[i], nonlinearity=lasagne.nonlinearities.tanh, name=self.name+'_h%d'%(i))
+            network = lasagne.layers.DenseLayer(network, num_units=self.hidden_dims[i], nonlinearity=lasagne.nonlinearities.rectify, name=self.name+'_h%d'%(i))
             # add batch normalization
             #network = lasagne.layers.batch_norm(network)
             # add dropout to the hidden layer
-            if self.drop_hidden:
+            if self.drop_hidden and self.drop_hidden>0:
                 network = lasagne.layers.DropoutLayer(network, p=self.drop_hidden)
 
-        self.network = lasagne.layers.DenseLayer(network, num_units=self.E, nonlinearity=lasagne.nonlinearities.linear, name=self.name+'_output')
+        self.network = lasagne.layers.DenseLayer(network, num_units=self.E, nonlinearity=lasagne.nonlinearities.tanh, name=self.name+'_output')
 
     def init_loss(self):
         ''' initializes the loss function for training '''
@@ -125,8 +125,8 @@ class NN(object):
 
         utils.print_with_stamp('Initialising loss function',self.name)
         # evaluate the output in mini_batches
-        train_inputs = theano.tensor.matrix('%s>train_inputs'%(self.name))
-        train_targets = theano.tensor.matrix('%s>train_targets'%(self.name))
+        train_inputs = theano.tensor.fmatrix('%s>train_inputs'%(self.name))
+        train_targets = theano.tensor.fmatrix('%s>train_targets'%(self.name))
         train_predictions = lasagne.layers.get_output(self.network, train_inputs, deterministic=False)#, batch_norm_update_averages=True, batch_norm_use_averages=True)
         train_predictions = train_predictions*self.Ys + self.Ym
 
@@ -134,22 +134,36 @@ class NN(object):
         #loss = theano.tensor.mean(lasagne.objectives.squared_error(train_predictions,train_targets))
         delta_y = train_predictions-train_targets
         N,E = train_targets.shape
-        error = ((delta_y*theano.tensor.exp(-0.5*self.logsn2))**2).sum(1)
         l2_penalty = lasagne.regularization.regularize_network_params(self.network, lasagne.regularization.l2)
         l2_weight = self.lscale2*(1.0-self.drop_hidden)/(2.0*N)
-        loss = 0.5*error.mean() + l2_weight*l2_penalty + 0.5*self.logsn2.sum()
+        if self.learn_noise:
+            error = ((delta_y*theano.tensor.exp(-0.5*self.logsn2))**2).sum(1)
+            loss = 0.5*error.mean() + l2_weight*l2_penalty + 0.5*self.logsn2.sum()
+        else:
+            error = (delta_y**2).sum(1)
+            loss = error.mean() + l2_weight*l2_penalty 
+
 
         # build the updates dictionary ( sets the optimization algorithm for the network parameters)
         params = lasagne.layers.get_all_params(self.network, trainable=True)
-        params.append(self.logsn2)
+        if self.learn_noise:
+            params.append(self.logsn2)
         #updates = lasagne.updates.nesterov_momentum(loss,params,learning_rate=self.learning_params['rate'],momentum=self.learning_params['momentum'])
-        #updates = lasagne.updates.adadelta(loss,params)
-        updates = lasagne.updates.adam(loss,params)
+        #updates = lasagne.updates.adadelta(loss,params,learning_rate=1e-1)
+        updates = lasagne.updates.adam(loss,params,learning_rate=1e-3)
         
         # compile the training function
         utils.print_with_stamp('Compiling training and  loss functions',self.name)
         self.train_fn = theano.function([train_inputs,train_targets],loss,updates=updates,allow_input_downcast=True)
         self.loss_fn = theano.function([train_inputs,train_targets],loss,allow_input_downcast=True)
+        utils.print_with_stamp('Done compiling',self.name)
+        #theano.printing.pydotprint(self.train_fn,outfile='train_fn_%s.png'%(theano.config.device))
+        #theano.printing.pydotprint(self.loss_fn,outfile='loss_fn_%s.png'%(theano.config.device))
+        #with open('loss_fn_%s.txt'%(theano.config.device),'w') as f:
+        #    theano.printing.debugprint(self.loss_fn,file=f,print_type=True)
+        #with open('train_fn_%s.txt'%(theano.config.device),'w') as f:
+        #    theano.printing.debugprint(self.train_fn,file=f,print_type=True)
+
 
     def init_predict(self):
         mx = theano.tensor.vector('mx')
@@ -174,37 +188,48 @@ class NN(object):
                                             profile=self.profile,
                                             mode=self.compile_mode,
                                             allow_input_downcast=True)
+        utils.print_with_stamp('Done compiling',self.name)
+        #theano.printing.pydotprint(self.predict_fn,outfile='predict_fn_%s.pdf'%(theano.config.device))
+        #with open('predict_fn_%s.png'%(theano.config.device),'w') as f:
+        #    theano.printing.debugprint(self.predict_fn,file=f,print_type=True)
         self.state_changed = True # for saving
 
-    def predict_symbolic(self,mx,Sx=None, reinit_network=False, deterministic=False, rescale=True):
+    def predict_symbolic(self,mx,Sx=None, reinit_network=False):
         if self.network is None or reinit_network:
             self.build_network()
-
+        
+        mx = mx.astype('float64')
         if Sx is not None:
+            Sx = Sx.astype('float64')
             # generate random samples from input (assuming gaussian distributed inputs)
-            # standard uniform samples
-            self.z_std = self.m_rng.normal((self.state_samples,self.D))
+            # standard uniform samples (one sample per network sample)
+            z_std = self.m_rng.normal((self.dropout_samples,self.D))
 
             # transform to multivariate normal
-            Lx = theano.tensor.slinalg.cholesky(Sx + 1e-6*theano.tensor.eye(Sx.shape[0]))
-            x = mx + self.z_std.dot(Lx.T)
+            Lx = theano.tensor.slinalg.cholesky(Sx)
+            x = mx + z_std.dot(Lx.T)
         else:
             x = mx[None,:]
-
+        
+        # force the input data to be represented with single precision floats
+        x = x.astype('float32')
         def sample_network(x_):
             # sample from gaussian
             y_ = lasagne.layers.get_output(self.network, x_, deterministic=False)#, batch_norm_update_averages=False, batch_norm_use_averages=True)
-            return x_,y_
+            return y_
 
-        (x,y), self.prediction_updates = theano.scan(fn=sample_network,
-                                            non_sequences=[x],
-                                            n_steps=self.dropout_samples, 
+        y, self.prediction_updates = theano.scan(fn=sample_network,
+                                            sequences=[x],
+                                            #n_steps=self.dropout_samples, 
                                             allow_gc=False)
 
-        x = x.transpose(2,0,1).flatten(2).T
         y = y.transpose(2,0,1).flatten(2).T
+        # convert back to whatever precision is set by default
         y = y*self.Ys + self.Ym
-        n = theano.tensor.cast(y.shape[0], dtype=theano.config.floatX)
+        #y = theano.printing.Print('dropout_sample')(y)
+        y = y.astype('float64')
+        
+        n = theano.tensor.cast(y.shape[0], dtype='float64')
         # empirical mean
         M = y.mean(axis=0)
         # empirical covariance
@@ -216,7 +241,7 @@ class NN(object):
             C = theano.tensor.slinalg.solve_upper_triangular(Lx.T,C)
         else:
             C = theano.tensor.zeros((self.D,self.E))
-
+        
         return [M,S,C]
 
     def predict(self,mx,Sx = None, dropout_samples=None):

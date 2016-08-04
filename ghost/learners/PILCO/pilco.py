@@ -23,8 +23,8 @@ class PILCO(EpisodicLearner):
             os.environ['KUSANAGI_RUN_OUTPUT'] = os.path.join(utils.get_output_dir(),task_name)
             utils.print_with_stamp("Changed KUSANAGI_RUN_OUTPUT to %s"%(os.environ['KUSANAGI_RUN_OUTPUT']))
         # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
-        x0 = np.array(params['x0'],dtype=theano.config.floatX).squeeze()
-        S0 = np.array(params['S0'],dtype=theano.config.floatX).squeeze()
+        x0 = np.array(params['x0'],dtype='float64').squeeze()
+        S0 = np.array(params['S0'],dtype='float64').squeeze()
         dyn_idims = len(x0) + len(self.angle_idims) + len(self.maxU)
         # output dimensions are state dims
         dyn_odims = len(x0)
@@ -42,11 +42,11 @@ class PILCO(EpisodicLearner):
         super(PILCO, self).__init__(params, plant_class, policy_class, cost_func,viz_class, experience, async_plant, name, filename_prefix,learn_from_iteration)
         
         # create shared variables for rollout input parameters
-        self.mx0 = theano.shared(x0)
-        self.Sx0 = theano.shared(S0)
+        self.mx0 = theano.shared(x0.astype('float64'))
+        self.Sx0 = theano.shared(S0.astype('float64'))
         H_steps = int(np.ceil(self.H/self.plant.dt))
-        self.H_steps =theano.shared( H_steps )
-        self.gamma0 = theano.shared( np.array(self.discount,dtype=theano.config.floatX) )
+        self.H_steps =theano.shared( int(H_steps) )
+        self.gamma0 = theano.shared( np.array(self.discount,dtype='float64') )
     
     def save(self):
         ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
@@ -79,7 +79,7 @@ class PILCO(EpisodicLearner):
 
     def save_rollout(self):
         ''' Saves the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
-        sys.setrecursionlimit(100000)
+        sys.setrecursionlimit(10000)
         path = os.path.join(utils.get_output_dir(),self.filename+'_rollout.zip')
         with open(path,'wb') as f:
             utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
@@ -130,11 +130,11 @@ class PILCO(EpisodicLearner):
         # compute distribution of control signal
         logsn2 = self.dynamics_model.logsn2
         Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(logsn2))# noisy state measurement
+        #Sx_ = theano.printing.Print('Sx_\n')(Sx_)
         mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
         mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
         #mu = theano.printing.Print('mu\n')(mu)
         #Su = theano.printing.Print('Su\n')(Su)
-
         
         # compute state control joint distribution
         n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
@@ -188,6 +188,9 @@ class PILCO(EpisodicLearner):
             [mv_next, Sv_next, mx_next, Sx_next], updates = self.propagate_state(mx,Sx)
             return [gamma*mv_next,(gamma**2)*Sv_next, mx_next, Sx_next, gamma*gamma], updates
         
+        # force Sx to have double precision
+        mx0 = mx0.astype('float64')
+        Sx0 = Sx0.astype('float64')
         # this are the initial distribution of the cost
         mv0, Sv0 = self.cost(mx0,Sx0)
 
@@ -294,13 +297,13 @@ class PILCO(EpisodicLearner):
     def rollout(self, mx0, Sx0, H_steps, discount, symbolic=False):
         ''' Function that ensures the compiled rollout function is initialised before we can call it'''
         if self.rollout_fn is None:
-            self.compile_rollout(should_save_to_disk=True)
+            self.compile_rollout()
 
         # update shared vars
         self.mx0.set_value(mx0)
         self.Sx0.set_value(Sx0)
-        self.H_steps.set_value(H_steps)
-        self.gamma0.set_value( np.array(discount,dtype=theano.config.floatX) )
+        self.H_steps.set_value(int(H_steps))
+        self.gamma0.set_value( np.array(discount,dtype='float64') )
 
         # call theano function
         return self.rollout_fn()
@@ -308,13 +311,13 @@ class PILCO(EpisodicLearner):
     def policy_gradient(self, mx0, Sx0, H_steps, discount):
         ''' Function that ensures the compiled policy gradients function is initialised before we can call it'''
         if self.policy_gradient_fn is None:
-            self.compile_policy_gradients(should_save_to_disk=True)
+            self.compile_policy_gradients()
 
         # update shared vars
         self.mx0.set_value(mx0)
         self.Sx0.set_value(Sx0)
-        self.H_steps.set_value(H_steps)
-        self.gamma0.set_value( np.array(discount,dtype=theano.config.floatX) )
+        self.H_steps.set_value(int(H_steps))
+        self.gamma0.set_value( np.array(discount,dtype='float64') )
 
         # call theano function
         return self.policy_gradient_fn()
@@ -353,17 +356,17 @@ class PILCO(EpisodicLearner):
             # get distribution of initial states
             x0 = np.array(x0)
             if n_episodes > 1:
-                self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
-                self.Sx0.set_value(np.cov(x0.T).astype(theano.config.floatX))
+                self.mx0.set_value(x0.mean(0).astype('float64'))
+                self.Sx0.set_value(np.cov(x0.T).astype('float64'))
             else:
-                self.mx0.set_value(x0.astype(theano.config.floatX))
-                self.Sx0.set_value(1e-2*np.eye(x0.size).astype(theano.config.floatX))
+                self.mx0.set_value(x0.astype('float64'))
+                self.Sx0.set_value(1e-2*np.eye(x0.size).astype('float64'))
 
             # append data to the dynamics model
             self.dynamics_model.append_dataset(X,Y)
         else:
-            x0 = np.array(self.plant.x0, dtype=theano.config.floatX).squeeze()
-            S0 = np.array(self.plant.S0, dtype=theano.config.floatX).squeeze()
+            x0 = np.array(self.plant.x0, dtype='float64').squeeze()
+            S0 = np.array(self.plant.S0, dtype='float64').squeeze()
             self.mx0.set_value(x0)
             self.Sx0.set_value(S0)
 
@@ -390,8 +393,8 @@ class PILCO(EpisodicLearner):
             return np.zeros((H_steps,)),np.ones((H_steps,))
 
         # setup initial state
-        mx = np.array(self.plant.x0, dtype=theano.config.floatX).squeeze()
-        Sx = np.array(self.plant.S0, dtype=theano.config.floatX).squeeze()
+        mx = np.array(self.plant.x0, dtype='float64').squeeze()
+        Sx = np.array(self.plant.S0, dtype='float64').squeeze()
         
         if return_grads:
             pg = self.policy_gradient(mx,Sx,H_steps,self.discount)

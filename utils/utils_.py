@@ -247,9 +247,7 @@ def wrap_params(p_list):
     # flatten out and concatenate the parameters
     P = []
     for pi in p_list:
-        # TODO only do this if pyCuda is installed
-        #if type(pi)==theano.sandbox.cuda.CudaNdarray:
-        #    pi = np.array(pi.__array__())
+        pi = np.array(pi.__array__())
         P.append(pi.flatten())
     P = np.concatenate(P)
     return P
