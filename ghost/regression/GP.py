@@ -997,12 +997,12 @@ class SSGP(GP):
         else:
             self.w.set_value(w,borrow=True)
     
-    def get_params(self, symbolic=True, all_shared=False):
-        retvars = super(SSGP,self).get_params(symbolic=True)
-        retvars.append(self.w)
-        if not symbolic:
-            retvars = [ r.get_value(borrow=True) for r in retvars]
-            return retvars
+    # def get_params(self, symbolic=True, all_shared=False):
+    #     retvars = super(SSGP,self).get_params(symbolic=True)
+    #     retvars.append(self.w)
+    #     if not symbolic:
+    #         retvars = [ r.get_value(borrow=True) for r in retvars]
+    #         return retvars
 
     def loss_ss(self, params, parameter_shapes):
         loghyp,w = utils.unwrap_params(params,parameter_shapes)

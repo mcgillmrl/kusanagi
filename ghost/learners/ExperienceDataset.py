@@ -33,7 +33,7 @@ class ExperienceDataset(object):
         self.immediate_cost[curr_episode].append(c_t)
         self.state_changed = True
 
-    def add_episode(self, episode):
+    def add_episode(self, state):
         i = utils.integer_generator()
         self.time_stamps.append(state[i.next()])
         self.states.append(state[i.next()])
