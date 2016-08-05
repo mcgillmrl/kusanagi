@@ -39,7 +39,7 @@ class ExperienceDataset(object):
         self.states.append(state[i.next()])
         self.actions.append(state[i.next()])
         self.immediate_cost.append(state[i.next()])
-        self.curr_episode.append(state[i.next()])
+        self.curr_episode += 1
         try:
             self.policy_history.append(state[i.next()])
             self.episode_labels.append(state[i.next()])
