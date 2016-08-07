@@ -47,7 +47,7 @@ class EpisodicLearner(object):
         self.viz = viz_class(self.plant) if viz_class is not None else None
         # initialize experience dataset
         self.experience = ExperienceDataset(filename_prefix=self.filename) if experience is None else experience
-        self.learn_from_iteration = learn_from_iteration
+        self.learn_from_iteration = learn_from_iteration #for usage of this parameter, see the load() method below
         # initialize learner state variables
         self.n_episodes = 0
         self.angle_idims = params['angle_dims'] if 'angle_dims' in params else []
@@ -82,6 +82,11 @@ class EpisodicLearner(object):
             self.set_state(state)
         self.state_changed = False
         
+			'''USAGE OF LEARN_FROM_ITERATION
+			-1: Resume learning from most recent state
+			0: Restart learning completely (re-do random trials)
+			RANDOM : if you pass this string, you will keep the random trial data
+			n>0 : resume from policy n (currently does not keep experience from policy n having been applied, we need to apply_controller to get data from this policy)'''
         if self.learn_from_iteration != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
                 if self.learn_from_iteration == 0:
                     utils.print_with_stamp('Resetting data completely')
@@ -102,8 +107,8 @@ class EpisodicLearner(object):
                     try:
                         while self.experience.episode_labels[entry_num] != self.learn_from_iteration:
                             entry_num += 1
-                        while self.experience.episode_labels[entry_num] == self.learn_from_iteration:
-                            entry_num += 1
+                        # while self.experience.episode_labels[entry_num] == self.learn_from_iteration:
+                        #     entry_num += 1
                     except IndexError:
                         utils.print_with_stamp('ERROR: You are trying to load from an iteration that has not been performed. Press enter to continue by loading the most recent data, or CTRL-C to close.')
                         raw_input()
