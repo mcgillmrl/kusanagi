@@ -47,7 +47,7 @@ class BaseControl(object):
         
 # GP based controller
 class RBFPolicy(RBFGP):
-    def __init__(self, m0=None, S0=None, maxU=[10], n_basis=10, angle_dims=[], name='RBFGP', filename=None):
+    def __init__(self, m0=None, S0=None, maxU=[10], n_basis=10, angle_dims=[], name='RBFPolicy', filename=None):
         self.maxU = np.array(maxU)
         self.n_basis = n_basis
         self.angle_dims = angle_dims

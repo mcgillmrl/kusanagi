@@ -340,7 +340,7 @@ class GP(object):
             output_filename = self.filename+'.zip' if output_filename is None else output_filename
             path = os.path.join(output_folder,output_filename)
             with open(path,'wb') as f:
-                utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs'%(self.D,self.E),self.name)
+                utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs to %s'%(self.D,self.E,path),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
 
