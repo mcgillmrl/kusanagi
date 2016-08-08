@@ -62,31 +62,29 @@ class EpisodicLearner(object):
         self.n_evals = 0
 
         # try loading from file, initialize from scratch otherwise
-        try:
-            self.load()
-        except IOError:
-            utils.print_with_stamp('Initialising new %s learner [ Could not open %s_state.zip ]'%(self.name, self.filename),self.name)
-            self.init_cost()
+        utils.print_with_stamp('Initialising new %s learner'%(self.name),self.name)
         self.state_changed = False
 
-    def load(self):
+    def load(self, output_folder=None,output_filename=None):
         # load policy and experience separately
-        self.policy.load()
-        self.experience.load()
+        self.policy.load(output_folder,output_path)
+        self.experience.load(output_folder,output_path)
         
         # load learner state
-        path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
+        output_filename = self.filename+'.zip' if output_filename is None else output_filename
+        path = os.path.join(output_folder,output_filename)
         with open(path,'rb') as f:
             utils.print_with_stamp('Loading learner state from %s.zip'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
         self.state_changed = False
         
-			'''USAGE OF LEARN_FROM_ITERATION
-			-1: Resume learning from most recent state
-			0: Restart learning completely (re-do random trials)
-			RANDOM : if you pass this string, you will keep the random trial data
-			n>0 : resume from policy n (currently does not keep experience from policy n having been applied, we need to apply_controller to get data from this policy)'''
+        '''USAGE OF LEARN_FROM_ITERATION
+        -1: Resume learning from most recent state
+        0: Restart learning completely (re-do random trials)
+        RANDOM : if you pass this string, you will keep the random trial data
+        n>0 : resume from policy n (currently does not keep experience from policy n having been applied, we need to apply_controller to get data from this policy)'''
         if self.learn_from_iteration != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
                 if self.learn_from_iteration == 0:
                     utils.print_with_stamp('Resetting data completely')
@@ -128,17 +126,19 @@ class EpisodicLearner(object):
                         self.policy.set_default_parameters()
                         self.experience.policy_history = []
 
-    def save(self):
+    def save(self, output_folder=None,output_filename=None):
         # save policy and experience separately
-        self.policy.save()
+        self.policy.save(output_folder,output_filename)
         if hasattr(self.experience, 'policy_history'):
             self.experience.policy_history.append(self.policy.get_params(symbolic=False))
-        self.experience.save()
+        self.experience.save(output_folder,output_filename)
 
         # save learner state
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+            output_folder = utils.get_output_dir() if output_folder is None else output_folder
+            output_filename = self.filename+'.zip' if output_filename is None else output_filename
+            path = os.path.join(output_folder,output_filename)
             with open(path,'wb') as f:
                 utils.print_with_stamp('Saving learner state to %s.zip'%(self.filename),self.name)
                 t_dump(self.get_state(),f,2)
@@ -149,7 +149,6 @@ class EpisodicLearner(object):
         self.plant.stop()
         if self.viz is not None:
             self.viz.stop()
-        #self.save()
 
     def set_state(self,state):
         i = utils.integer_generator()
@@ -191,6 +190,9 @@ class EpisodicLearner(object):
             policy = RandPolicy(self.policy.maxU)
         else:
             policy = self.policy
+
+        #initialize cost if neeeded
+        self.init_cost()
 
         # mark the start of the episode
         self.experience.new_episode(random = random_controls, learning_iteration = self.learning_iteration)

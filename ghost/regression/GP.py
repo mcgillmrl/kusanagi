@@ -64,21 +64,13 @@ class GP(object):
         # filename for saving
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX)
         
-        try:
-            # try loading from pickled file, to avoid recompiling
-            self.load()
-            if (X_dataset is not None and Y_dataset is not None):
-                self.set_dataset(X_dataset,Y_dataset)
-
-        except IOError:
-            utils.print_with_stamp('Initialising new GP regressor [ Could not open %s.zip ]'%(self.filename),self.name)
-            # initialize the class if no pickled version is available
-            if X_dataset is not None and Y_dataset is not None:
-                self.set_dataset(X_dataset,Y_dataset)
-                self.init_loss()
+        # initialize the class if no pickled version is available
+        if X_dataset is not None and Y_dataset is not None:
+            utils.print_with_stamp('Initialising new GP regressor',self.name)
+            self.set_dataset(X_dataset,Y_dataset)
+            utils.print_with_stamp('Finished initialising GP regressor',self.name)
         
         self.ready = False
-        utils.print_with_stamp('Finished initialising GP regressor',self.name)
     
     def set_dataset(self,X_dataset,Y_dataset):
         # ensure we don't change the number of input and output dimensions ( the number of samples can change)
@@ -331,18 +323,22 @@ class GP(object):
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         self.trained = True
 
-    def load(self):
-        path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+    def load(self, output_folder=None,output_filename=None):
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
+        output_filename = self.filename+'.zip' if output_filename is None else output_filename
+        path = os.path.join(output_folder,output_filename)
         with open(path,'rb') as f:
             utils.print_with_stamp('Loading compiled GP from %s'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
         self.state_changed = False
     
-    def save(self):
+    def save(self, output_folder=None,output_filename=None):
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+            output_folder = utils.get_output_dir() if output_folder is None else output_folder
+            output_filename = self.filename+'.zip' if output_filename is None else output_filename
+            path = os.path.join(output_folder,output_filename)
             with open(path,'wb') as f:
                 utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs'%(self.D,self.E),self.name)
                 t_dump(self.get_state(),f,2)

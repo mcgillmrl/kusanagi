@@ -240,23 +240,23 @@ class LocalLinearPolicy(object):
             self.alpha_= np.array(alpha).astype(theano.config.floatX)
             self.alpha.set_value(self.alpha_,borrow=True)
 
-    def load(self):
+    def load(self, output_folder=None,output_filename=None):
         # load the parameters of the policy
-        path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
+        output_filename = self.filename+'.zip' if output_filename is None else output_filename
+        path = os.path.join(output_folder,output_filename)
         with open(path,'rb') as f:
             utils.print_with_stamp('Loading %s from %s.zip'%(self.name, self.filename),self.name)
             self.A, self.b, self.u_nominal, self.z_nominal, self.A_, self.b_, self.u_nominal_, self.z_nominal_ = t_load(f)
         self.state_changed = False
     
-    def save(self):
-        # save policy and experience separately
-        # self.policy.save()
-        # self.experience.save()
-
+    def save(self, output_folder=None,output_filename=None):
         # save learner state
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+            output_folder = utils.get_output_dir() if output_folder is None else output_folder
+            output_filename = self.filename+'.zip' if output_filename is None else output_filename
+            path = os.path.join(output_folder,output_filename)
             with open(path,'wb') as f:
                 utils.print_with_stamp('Saving learner state to %s.zip'%(self.filename),self.name)
                 state = (self.A, self.b, self.u_nominal, self.z_nominal, self.A_, self.b_, self.u_nominal_, self.z_nominal_)
@@ -265,7 +265,6 @@ class LocalLinearPolicy(object):
 
     def get_all_shared_vars(self):
         return [attr for attr in self.__dict__.values() if isinstance(attr,theano.tensor.sharedvar.SharedVariable)]
-
 
 class AdjustedPolicy:
     def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI, use_control_input=True):
@@ -306,11 +305,11 @@ class AdjustedPolicy:
     def set_params(self,params):
         return self.adjustment_model.set_params(symbolic)
 
-    def load(self):
-        self.adjustment_model.load()
+    def load(self, output_folder=None,output_filename=None):
+        self.adjustment_model.load(output_folder,output_path)
 
-    def save(self):
-        self.adjustment_model.save()
+    def save(self, output_folder=None,output_filename=None):
+        self.adjustment_model.save(output_folder,output_path)
 
 # GP based controller
 class NNPolicy(NN):

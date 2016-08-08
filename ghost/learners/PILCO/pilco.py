@@ -48,16 +48,16 @@ class PILCO(EpisodicLearner):
         self.H_steps =theano.shared( int(H_steps) )
         self.gamma0 = theano.shared( np.array(self.discount,dtype='float64') )
     
-    def save(self):
+    def save(self, output_folder=None,output_filename=None):
         ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
-        super(PILCO,self).save()
-        self.dynamics_model.save()
+        super(PILCO,self).save(output_folder,output_filename)
+        self.dynamics_model.save(output_folder,output_filename)
 
-    def load(self):
+    def load(self, output_folder=None,output_filename=None):
         ''' Loads the state of the learner, including the parameters of the policy and the dynamics model, and the compiled rollout functions'''
-        super(PILCO,self).load()
-        self.dynamics_model.load()
-        self.load_rollout()
+        super(PILCO,self).load(output_folder,output_filename)
+        self.dynamics_model.load(output_folder,output_filename)
+        self.load_rollout(output_folder,output_filename)
     
     def set_state(self,state):
         ''' In addition to the EpisodicLearner state variables, saves the values of self.wrap_angles, self.next_episode, self.mx0 and self.Sx0'''
@@ -77,10 +77,12 @@ class PILCO(EpisodicLearner):
         state.append(self.Sx0)
         return state
 
-    def save_rollout(self):
+    def save_rollout(self, output_folder=None,output_filename=None):
         ''' Saves the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
         sys.setrecursionlimit(10000)
-        path = os.path.join(utils.get_output_dir(),self.filename+'_rollout.zip')
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
+        output_filename = self.filename+'_rollout.zip' if output_filename is None else output_filename
+        path = os.path.join(output_folder,output_filename)
         with open(path,'wb') as f:
             utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
             # this saves the shared variables used by the rollout and policy gradients. This means that the zip file
@@ -89,9 +91,11 @@ class PILCO(EpisodicLearner):
             t_vars = [self.dynamics_model.get_state(), self.policy.get_state(), self.rollout_fn, self.policy_gradient_fn]
             t_dump(t_vars,f,2)
 
-    def load_rollout(self):
+    def load_rollout(self, output_folder=None,output_filename=None):
         ''' Loads the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
-        path = os.path.join(utils.get_output_dir(),self.filename+'_rollout.zip')
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
+        output_filename = self.filename+'_rollout.zip' if output_filename is None else output_filename
+        path = os.path.join(output_folder,output_filename)
         with open(path,'rb') as f:
             utils.print_with_stamp('Loading compiled rollout from %s_rollout.zip'%(self.filename),self.name)
             t_vars = t_load(f)
@@ -209,6 +213,12 @@ class PILCO(EpisodicLearner):
                                             name="%s>rollout_scan"%(self.name))
 
         mean_costs,var_costs,mean_states,cov_states,gamma_ = rollout_output
+        
+        if hasattr(self.dynamics_model,'learning_iteration_updates') and self.dynamics_model.learning_iteration_updates is not None:
+            updts += self.dynamics_model.learning_iteration_updates
+
+        if hasattr(self.policy,'learning_iteration_updates') and self.policy.learning_iteration_updates is not None:
+            updts += self.policy.learning_iteration_updates
 
         # prepend the initial cost distribution
         mean_costs = theano.tensor.concatenate([mv0.dimshuffle('x'), mean_costs])

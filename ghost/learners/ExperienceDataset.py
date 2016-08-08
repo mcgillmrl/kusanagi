@@ -12,18 +12,15 @@ class ExperienceDataset(object):
             self.name = name
             self.filename = self.name+'_dataset' if filename_prefix is None else filename_prefix+'_dataset'
 
-            try:
-                self.load()   
-            except IOError:
-                utils.print_with_stamp('Initialising new experience dataset [ Could not open %s.zip ]'%(self.filename),self.name)
-                self.time_stamps = []
-                self.states = []
-                self.actions = []
-                self.immediate_cost = []
-                self.curr_episode = -1
-                self.state_changed = False
-                self.policy_history = []
-                self.episode_labels = []
+            utils.print_with_stamp('Initialising new experience dataset',self.name)
+            self.time_stamps = []
+            self.states = []
+            self.actions = []
+            self.immediate_cost = []
+            self.curr_episode = -1
+            self.state_changed = False
+            self.policy_history = []
+            self.episode_labels = []
 
     def add_sample(self,t,x_t=None,u_t=None,c_t=None):
         curr_episode = self.curr_episode
@@ -65,18 +62,22 @@ class ExperienceDataset(object):
         ''' Returns the total number of samples in this dataset '''
         return sum([len(s) for s in self.states])
 
-    def load(self):
-        path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+    def load(self, output_folder=None,output_filename=None):
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
+        output_filename = self.filename+'.zip' if output_filename is None else output_filename
+        path = os.path.join(output_folder,output_filename)
         with open(path,'rb') as f:
             utils.print_with_stamp('Loading experience dataset from %s.zip'%(self.filename),self.name)
             state = t_load(f)
             self.set_state(state)
         self.state_changed = False
     
-    def save(self):
+    def save(self, output_folder=None,output_filename=None):
         sys.setrecursionlimit(100000)
         if self.state_changed:
-            path = os.path.join(utils.get_run_output_dir(),self.filename+'.zip')
+            output_folder = utils.get_output_dir() if output_folder is None else output_folder
+            output_filename = self.filename+'.zip' if output_filename is None else output_filename
+            path = os.path.join(output_folder,output_filename)
             with open(path,'wb') as f:
                 utils.print_with_stamp('Saving experience dataset to %s.zip'%(self.filename),self.name)
                 t_dump(self.get_state(),f,2)
