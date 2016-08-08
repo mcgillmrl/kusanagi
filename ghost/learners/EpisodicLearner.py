@@ -165,13 +165,19 @@ class EpisodicLearner(object):
         return [self.n_episodes,self.angle_idims,self.async_plant,self.evaluate_cost,self.H,self.discount,self.learning_iteration,self.n_evals]
 
     def init_cost(self):
-        if self.cost:
+        if self.cost and not self.evaluate_cost:
             utils.print_with_stamp('Compiling cost function',self.name)
             mx = theano.tensor.vector('mx')
             Sx = theano.tensor.matrix('Sx')
             self.evaluate_cost = theano.function((mx,Sx),self.cost(mx,Sx), allow_input_downcast=True)
         else:
             utils.print_with_stamp('No cost function provided',self.name)
+    
+    def set_cost(new_cost):
+        ''' Replaces the old cost function with a new one (and recompiles it)'''
+        self.cost = new_cost
+        self.evaluate_cost = None
+        self.init_cost()
 
     def apply_controller(self,H=None,random_controls=False):
         '''
