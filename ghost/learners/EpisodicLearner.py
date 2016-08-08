@@ -173,9 +173,9 @@ class EpisodicLearner(object):
         else:
             utils.print_with_stamp('No cost function provided',self.name)
     
-    def set_cost(new_cost):
+    def set_cost(new_cost_func, new_cost_params):
         ''' Replaces the old cost function with a new one (and recompiles it)'''
-        self.cost = new_cost
+        self.cost = partial(new_cost_func, params=new_cost_params)
         self.evaluate_cost = None
         self.init_cost()
 
