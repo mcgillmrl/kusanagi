@@ -67,8 +67,8 @@ class EpisodicLearner(object):
 
     def load(self, output_folder=None,output_filename=None):
         # load policy and experience separately
-        self.policy.load(output_folder,output_path)
-        self.experience.load(output_folder,output_path)
+        self.policy.load(output_folder,output_filename)
+        self.experience.load(output_folder,output_filename)
         
         # load learner state
         output_folder = utils.get_output_dir() if output_folder is None else output_folder

@@ -306,10 +306,10 @@ class AdjustedPolicy:
         return self.adjustment_model.set_params(symbolic)
 
     def load(self, output_folder=None,output_filename=None):
-        self.adjustment_model.load(output_folder,output_path)
+        self.adjustment_model.load(output_folder,output_filename)
 
     def save(self, output_folder=None,output_filename=None):
-        self.adjustment_model.save(output_folder,output_path)
+        self.adjustment_model.save(output_folder,output_filename)
 
 # GP based controller
 class NNPolicy(NN):
