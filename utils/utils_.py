@@ -1,6 +1,10 @@
 import os,sys
 from datetime import datetime
 
+import math
+import time
+import zipfile
+
 import random
 import numpy as np
 import theano
@@ -387,3 +391,51 @@ def set_run_output_dir(new_path):
 def set_output_dir(new_path):
     ''' Sets the output directory temporary files. Assumes that new_path is well formed'''
     os.environ['KUSANAGI_OUTPUT'] = new_path
+
+def sync_output_filename(output_filename, obj_filename, suffix):
+  if output_filename is None:
+    output_filename = obj_filename+suffix
+  else:
+    obj_filename = output_filename
+    # try removing suffix
+    suffix_idx = obj_filename.find(suffix)
+    if suffix_idx >= 0:
+      obj_filename = obj_filename[:suffix_idx]
+  return output_filename, obj_filename
+
+# creates zip of files: <snapshot_header>_<YYMMDD_HHMMSS.mmm>.zip
+# if filename clash, will append _#
+#
+# Sample usage:
+#   save_snapshot_zip('./test', ['./PILCO_GP_UI_Cartpole_RBFGP_sat.zip', './PILCO_GP_UI_Cartpole_RBFGP_sat_dataset.zip', './RBFGP_sat_5_1_cpu_float64.zip'])
+def save_snapshot_zip(snapshot_header='./snapshot',files=[]):
+  # Construct filename
+  now = time.time()
+  ms = now - math.floor(now)
+  ms = math.floor(ms*1000)
+  time_str = time.strftime('%y%m%d_%H%M%S')
+  snapshot_filename='%s_%s.%03d' % (snapshot_header, time_str, int(ms))
+
+  # Verify/append _# to filename
+  repeat_counter = None
+  if os.path.isfile(snapshot_filename+'.zip'):
+    repeat_counter = -1
+    while True:
+      repeat_counter += 1
+      cand_filename = '%s_%d' % (snapshot_filename, repeat_counter)
+      if not os.path.isfile(cand_filename+'.zip'):
+        break
+    snapshot_filename = cand_filename
+
+  # Save files
+  try:
+    with zipfile.ZipFile(snapshot_filename+'.zip', 'w') as myzip:
+      for f in files:
+        if os.path.isfile(f):
+          myzip.write(f)
+        # else ignore file not found
+      myzip.close()
+  except BaseException: # TODO: zipfile.BadZipfile, zipfile.LargeZipFile
+    # TODO: handle bad load
+    pass
+

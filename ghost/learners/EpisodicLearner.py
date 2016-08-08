@@ -72,7 +72,7 @@ class EpisodicLearner(object):
         
         # load learner state
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
-        output_filename = self.filename+'.zip' if output_filename is None else output_filename
+        [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
         path = os.path.join(output_folder,output_filename)
         with open(path,'rb') as f:
             utils.print_with_stamp('Loading learner state from %s.zip'%(self.filename),self.name)
@@ -137,7 +137,7 @@ class EpisodicLearner(object):
         sys.setrecursionlimit(100000)
         if self.state_changed:
             output_folder = utils.get_output_dir() if output_folder is None else output_folder
-            output_filename = self.filename+'.zip' if output_filename is None else output_filename
+            [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
             path = os.path.join(output_folder,output_filename)
             with open(path,'wb') as f:
                 utils.print_with_stamp('Saving learner state to %s.zip'%(self.filename),self.name)

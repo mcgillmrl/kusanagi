@@ -6,3 +6,4 @@ syntax: glob
 *.swn
 *.swm
 *.swl
+*~

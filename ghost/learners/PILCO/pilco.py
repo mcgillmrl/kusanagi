@@ -81,7 +81,7 @@ class PILCO(EpisodicLearner):
         ''' Saves the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
         sys.setrecursionlimit(10000)
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
-        output_filename = self.filename+'_rollout.zip' if output_filename is None else output_filename
+        [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '_rollout.zip')
         path = os.path.join(output_folder,output_filename)
         with open(path,'wb') as f:
             utils.print_with_stamp('Saving compiled rollout to %s_rollout.zip'%(self.filename),self.name)
@@ -94,7 +94,7 @@ class PILCO(EpisodicLearner):
     def load_rollout(self, output_folder=None,output_filename=None):
         ''' Loads the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
-        output_filename = self.filename+'_rollout.zip' if output_filename is None else output_filename
+        [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '_rollout.zip')
         path = os.path.join(output_folder,output_filename)
         with open(path,'rb') as f:
             utils.print_with_stamp('Loading compiled rollout from %s_rollout.zip'%(self.filename),self.name)
