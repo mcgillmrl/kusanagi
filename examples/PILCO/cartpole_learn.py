@@ -68,7 +68,10 @@ if __name__ == '__main__':
     #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
     #learner_params['params']['dynmodel']['n_basis'] = 100
     learner = PILCO(**learner_params)
-    learner.load()
+    try:
+        learner.load()
+    except:
+        pass
     atexit.register(learner.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data
