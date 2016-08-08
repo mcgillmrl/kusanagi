@@ -68,8 +68,9 @@ if __name__ == '__main__':
     #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
     #learner_params['params']['dynmodel']['n_basis'] = 100
     learner = PILCO(**learner_params)
+    learner.save('task1')
     try:
-        learner.load()
+        learner.load('task1')
     except:
         pass
     atexit.register(learner.stop)

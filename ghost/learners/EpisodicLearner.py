@@ -43,6 +43,7 @@ class EpisodicLearner(object):
         # initialize cost
         params['cost']['angle_dims'] = params['angle_dims']
         self.cost = partial(cost_func, params=params['cost']) if cost_func is not None else None
+        self.evaluate_cost = None
         # initialize vizualization
         self.viz = viz_class(self.plant) if viz_class is not None else None
         # initialize experience dataset
