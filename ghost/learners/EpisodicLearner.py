@@ -168,6 +168,19 @@ class EpisodicLearner(object):
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
 
+    def get_snapshot_content_paths(self, output_folder=None):
+		output_folder = utils.get_output_dir() if output_folder is None else output_folder
+		content_paths = [os.path.join(output_folder,self.policy.filename+'.zip'),
+						 os.path.join(output_folder,self.experience.filename+'.zip'),
+						 os.path.join(output_folder,self.filename+'.zip')]
+		return content_paths
+
+    def save_snapshot(self, output_folder=None, output_prefix='snapshot'):
+		output_folder = utils.get_output_dir() if output_folder is None else output_folder
+		snapshot_header = os.path.join(output_folder,output_prefix)
+		content_paths = self.get_snapshot_content_paths(output_folder)
+		utils.save_snapshot_zip(snapshot_header,content_paths)
+
     def stop(self):
         ''' Stops the plant, the visualization (if available) and saves the state of the learner'''
         self.plant.stop()
