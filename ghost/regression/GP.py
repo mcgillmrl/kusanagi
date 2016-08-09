@@ -26,7 +26,7 @@ class GP(object):
 
         # GP options
         self.min_method = "L-BFGS-B"
-        self.state_changed = False
+        self.state_changed = True
         self.should_recompile = False
         self.trained = False
         self.uncertain_inputs = uncertain_inputs
@@ -54,7 +54,7 @@ class GP(object):
         self.X = None; self.Y = None
         self.iK = None; self.L = None; self.beta = None;
         self.kernel_func = None
-        self.nlml = None
+        self.nlml = None; self.dnlml=None
 
         # compiled functions
         self.predict_fn = None
@@ -978,30 +978,26 @@ class SSGP(GP):
         self.dnlml_ss = F((),(nlml_ss,dnlml_ss[0],dnlml_ss[1]),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
     def set_spectral_samples(self,w=None):
+        idims = self.D
+        odims = self.E
         if w is None:
-            idims = self.D
-            odims = self.E
             w = np.random.randn(self.n_basis,odims,idims).astype('float64')
         else:
-            if self.w is not None:
-                w = w.reshape(self.w.get_value(borrow=True).shape).astype('float64')
-            else:
-                w = w.reshape((self.n_basis,odims,idims)).astype('float64')
-
+            w = w.reshape((self.n_basis,odims,idims)).astype('float64')
 
         if self.w is None:
-            idims = self.D
             self.w = S(w,name='%s>w'%(self.name),borrow=True)
             self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
         else:
             self.w.set_value(w,borrow=True)
     
-    # def get_params(self, symbolic=True, all_shared=False):
-    #     retvars = super(SSGP,self).get_params(symbolic=True)
-    #     retvars.append(self.w)
-    #     if not symbolic:
-    #         retvars = [ r.get_value(borrow=True) for r in retvars]
-    #         return retvars
+    def get_params(self, symbolic=True, all_shared=False):
+        # Who commented this out before? Don't break code without asking!
+         retvars = super(SSGP,self).get_params(symbolic=True)
+         retvars.append(self.w)
+         if not symbolic:
+             retvars = [ r.get_value(borrow=True) for r in retvars]
+             return retvars
 
     def loss_ss(self, params, parameter_shapes):
         loghyp,w = utils.unwrap_params(params,parameter_shapes)
@@ -1193,72 +1189,48 @@ class VSSGP(SSGP):
     def __init__(self, X_dataset=None, Y_dataset=None, name='VSSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, hyperparameter_gradients=False):
         self.n_basis = n_basis
         super(VSSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+    
+    def initialize_parameters(self,w=None):
+        # TODO this is for a single SE kernel component
+        idims = self.D
+        odims = self.E
 
+        # initialize inducing frequencies, inputs and phases
+        if w is None:
+            w = np.random.randn(self.n_basis,odims,idims).astype('float64')
+        else:
+            w = w.reshape((self.n_basis,odims,idims)).astype('float64')
+        
+        z = np.random.randn(self.n_basis,odims,idims).astype('float64')
+        b = np.random.uniform(0,2*np.pi,size=(self.n_basis,odims))
+
+        if self.w is None:
+            self.w = S(w,name='%s>w'%(self.name),borrow=True)
+            self.z = S(z,name='%s>z'%(self.name),borrow=True)
+            self.b = S(b,name='%s>b'%(self.name),borrow=True)
+            self.w_scaled = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+        else:
+            self.w.set_value(w,borrow=True)
+            self.z.set_value(z,borrow=True)
+            self.b.set_value(b,borrow=True)
+
+    
     def init_loss(self):
         super(VSSGP, self).init_loss()
         utils.print_with_stamp('Initialising expression graph for sparse spectral training loss function',self.name)
         idims = self.D
         odims = self.E
 
-        self.A = [[]]*odims
-        self.iA = [[]]*odims
-        self.beta_ss = [[]]*odims
-        nlml_ss = [[]]*odims
-        
-        # hyperparameters for the prior parameters
-        # for the spectral points distribution
-        self.w_mean_ = np.zeros(self.n_basis,self.D)
-        self.w_cov_ = np.ones(self.n_basis,self.D)
-        # for the inducing spectral points distribution
-        self.z_ = np.zeros(self.n_basis,self.D)
-        # for the phases
-        self.b_bounds_ = np.tile(np.array([0,2*np.pi]),(self.n_basis,1))
-        # for the fourier coefficients
-        self.fc_mean_ = np.zeros(self.E,self.D)
-        self.fc_cov_ = np.ones(self.E,self.D)
+        # this initializes the inducing frequencies as self.w ( and scaled inducing frequencies as self.w_scaled )
+        # the inducing inputs as self.z and the inducing phases as self.b
+        self.initialize_parameters()
 
-        # initialize shared variables for all parameters
-        self.w_mean = S(self.w_mean_,name='%s>w_mean'%(self.name),borrow=True)
-        self.w_cov = S(self.w_cov_,name='%s>w_cov'%(self.name),borrow=True)
-        self.z = S(self.z_,name='%s>z'%(self.name),borrow=True)
-        self.b_bounds = S(self.b_bounds_,name='%s>b_bounds'%(self.name),borrow=True)
-        self.fc_mean = S(self.fc_mean_,name='%s>fc_mean'%(self.name),borrow=True)
-        self.fc_cov = S(self.fc_cov_,name='%s>fc_cov'%(self.name),borrow=True)
+        # precompute some variables
+        K = self.w_scaled.shape[1]
+        sf2K = T.exp(2*self.loghyp[:,idims])/T.cast(K,'float64')
+        sn2 = T.exp(2*self.loghyp[:,idims+1])
 
-        N = self.X.shape[0].astype('float64')
-        for i in xrange(odims):
-            Ms = sr.shape[0]
-            sf2 = T.exp(2*self.loghyp[i,idims])
-            sn2 = T.exp(2*self.loghyp[i,idims+1])
-            ill = T.exp(-self.loghyp[i,:idims])
-            
-            x_nm = 2*np.pi*(iLL*(self.X[:,None,:]-self.z[None,:,:])) #  N x 1 x D - 1 x Ms x D = N x Ms x D
-            x_Sw_x = T.sum(x_nm*x_nm*self.w_cov,-1)  #  N x Ms, we only store the diagonal of w_cov, so we do not need to perform dot products
-            uw_x = T.sum(self.w_mean*x_nm,-1) # N x Ms
-            exp_x_Sw_x = T.exp(-0.5*x_Sw_x)
-            m_cos_w = ( sin(uw_k + self.b_bounds[:,1]) - sin(uw_k + self.b_bounds[:,0]) )/(self.b_bounds[:,1] - self.b_bounds[:,0])
-            m_cos_2w = ( sin(2*(uw_k + self.b_bounds[:,1])) - sin(2*(uw_k + self.b_bounds[:,0])) )/(self.b_bounds[:,1] - self.b_bounds[:,0])
-            m_phi = T.sqrt(2*sf2/M)*exp_x_Sw_x*m_cos_w # N x Ms
-            m_K =  m_phi.T.dot(m_phi) # Ms x Ms
-            m_K = m_K - T.diag(m_K) + 0.5*(1+(exp_x_Sx_x**4)*m_cos_2w)
-            A = m_K + sn2[i]*T.eye(self.w.shape[0])
-            Lmm = cholesky(A)
-            Yi = self.Y[:,i]
-            Yci = solve_lower_triangular(Lmm,m_phi.dot(Yi))
-            Yi = self.Y[:,i]
-            
-            nlml_ss[i] = -0.5*N*T.log(2*np.pi/sn2) - 0.5*sn2*Yi.dot(Yi) + 0.5*sn2*Yci.dot(Yci) + T.sum(T.log(T.diag(Lmm/sn2)))
-        
-        nlml_ss = T.stack(nlml_ss)
-        if self.snr_penalty is not None:
-            penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
-            nlml_ss += self.snr_penalty(self.loghyp)
-
-        # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml_ss = T.grad(nlml_ss.sum(),[self.loghyp,self.w])
-
-        utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
-        self.nlml_ss = F((),nlml_ss,name='%s>nlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-        utils.print_with_stamp('Compiling gradient of sparse spectral training loss function',self.name)
-        self.dnlml_ss = F((),(nlml_ss,dnlml_ss[0],dnlml_ss[1]),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-
+        # compute the feature vectors
+        def get_feature_vector(w,z,b,X): 
+            X_centered = X[None,:,:] - z[:,None,:]   # n_basis x N x D
+            #wdotx = w.dot(X

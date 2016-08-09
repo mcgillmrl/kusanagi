@@ -64,7 +64,7 @@ class EpisodicLearner(object):
 
         # try loading from file, initialize from scratch otherwise
         utils.print_with_stamp('Initialising new %s learner'%(self.name),self.name)
-        self.state_changed = False
+        self.state_changed = True
 
     def load(self, output_folder=None,output_filename=None):
         # load policy and experience separately
@@ -135,6 +135,7 @@ class EpisodicLearner(object):
                         self.experience.policy_history = []
 
     def save(self, output_folder=None,output_filename=None):
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
         # save policy and experience separately
         if not os.path.exists(output_folder):
             try:
@@ -159,7 +160,6 @@ class EpisodicLearner(object):
         # save learner state
         sys.setrecursionlimit(100000)
         if self.state_changed or output_folder is not None or output_filename is not None:
-            output_folder = utils.get_output_dir() if output_folder is None else output_folder
             [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
             path = os.path.join(output_folder,output_filename)
 

@@ -18,7 +18,7 @@ class ExperienceDataset(object):
             self.actions = []
             self.immediate_cost = []
             self.curr_episode = -1
-            self.state_changed = False
+            self.state_changed = True
             self.policy_history = []
             self.episode_labels = []
 

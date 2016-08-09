@@ -251,7 +251,7 @@ def wrap_params(p_list):
     # flatten out and concatenate the parameters
     P = []
     for pi in p_list:
-        pi = np.array(pi.__array__())
+        pi = np.array(pi.__array__()) # to deal with other types that do not implement the numpy array API
         P.append(pi.flatten())
     P = np.concatenate(P)
     return P
