@@ -211,11 +211,17 @@ class EpisodicLearner(object):
             else:
                 utils.print_with_stamp('No cost function provided',self.name)
     
-    def set_cost(new_cost_func, new_cost_params):
+    def set_cost(self, new_cost_func, new_cost_params):
         ''' Replaces the old cost function with a new one (and recompiles it)'''
         self.cost = partial(new_cost_func, params=new_cost_params)
         self.evaluate_cost = None
         self.init_cost()
+
+    def set_experience(self, new_experience):
+        #get name form the experience 
+        experience_filename = self.experience.filename
+        self.experience = new_experience
+        self.experience.filename = experience_filename
 
     def apply_controller(self,H=None,random_controls=False):
         '''
