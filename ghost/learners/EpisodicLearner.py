@@ -89,6 +89,7 @@ class EpisodicLearner(Loadable):
         0: Restart learning completely (re-do random trials)
         RANDOM : if you pass this string, you will keep the random trial data
         n>0 : resume from policy n (currently does not keep experience from policy n having been applied, we need to apply_controller to get data from this policy)'''
+        '''
         if self.learn_from_iteration != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
                 if self.learn_from_iteration == 0:
                     utils.print_with_stamp('Resetting data completely')
@@ -129,6 +130,7 @@ class EpisodicLearner(Loadable):
                     else: 
                         self.policy.set_default_parameters()
                         self.experience.policy_history = []
+        '''
 
     def save(self, output_folder=None,output_filename=None):
         # save learner state
