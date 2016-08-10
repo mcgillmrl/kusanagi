@@ -251,7 +251,7 @@ def wrap_params(p_list):
     # flatten out and concatenate the parameters
     P = []
     for pi in p_list:
-        pi = np.array(pi.__array__())
+        pi = np.array(pi.__array__()) # to deal with other types that do not implement the numpy array API
         P.append(pi.flatten())
     P = np.concatenate(P)
     return P
@@ -407,14 +407,16 @@ def sync_output_filename(output_filename, obj_filename, suffix):
 # if filename clash, will append _#
 #
 # Sample usage:
-#   save_snapshot_zip('./test', ['./PILCO_GP_UI_Cartpole_RBFGP_sat.zip', './PILCO_GP_UI_Cartpole_RBFGP_sat_dataset.zip', './RBFGP_sat_5_1_cpu_float64.zip'])
-def save_snapshot_zip(snapshot_header='./snapshot',files=[]):
+#   save_snapshot_zip('test', ['PILCO_GP_UI_Cartpole_RBFGP_sat.zip', 'PILCO_GP_UI_Cartpole_RBFGP_sat_dataset.zip', 'RBFGP_sat_5_1_cpu_float64.zip'])
+def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timestamp=True):
   # Construct filename
-  now = time.time()
-  ms = now - math.floor(now)
-  ms = math.floor(ms*1000)
-  time_str = time.strftime('%y%m%d_%H%M%S')
-  snapshot_filename='%s_%s.%03d' % (snapshot_header, time_str, int(ms))
+  snapshot_filename = snapshot_header
+  if with_timestamp:
+    now = time.time()
+    ms = now - math.floor(now)
+    ms = math.floor(ms*1000)
+    time_str = time.strftime('%y%m%d_%H%M%S')
+    snapshot_filename='%s_%s.%03d' % (snapshot_header, time_str, int(ms))
 
   # Verify/append _# to filename
   repeat_counter = None
@@ -430,12 +432,16 @@ def save_snapshot_zip(snapshot_header='./snapshot',files=[]):
   # Save files
   try:
     with zipfile.ZipFile(snapshot_filename+'.zip', 'w') as myzip:
-      for f in files:
-        if os.path.isfile(f):
-          myzip.write(f)
-        # else ignore file not found
+      for archived_filepath in archived_files:
+        if os.path.isfile(archived_filepath):
+          arcname = archived_filepath
+          sep_idx = arcname.rfind(os.sep)
+          if sep_idx >= 0:
+            arcname = arcname[sep_idx+1:]
+          myzip.write(archived_filepath, arcname)
+        else:
+          print_with_stamp('Snapshot cannot find %s'%(archived_filepath), 'Utils')
       myzip.close()
-  except BaseException: # TODO: zipfile.BadZipfile, zipfile.LargeZipFile
-    # TODO: handle bad load
-    pass
-
+      print_with_stamp('Saved snapshot to %s.zip'%(snapshot_filename), 'Utils')
+  except BaseException, err:
+    print_with_stamp('Snapshot exception: %s'%str(err), 'Utils')

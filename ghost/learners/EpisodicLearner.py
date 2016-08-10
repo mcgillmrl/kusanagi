@@ -64,7 +64,7 @@ class EpisodicLearner(object):
 
         # try loading from file, initialize from scratch otherwise
         utils.print_with_stamp('Initialising new %s learner'%(self.name),self.name)
-        self.state_changed = False
+        self.state_changed = True
 
     def load(self, output_folder=None,output_filename=None):
         # load policy and experience separately
@@ -135,6 +135,7 @@ class EpisodicLearner(object):
                         self.experience.policy_history = []
 
     def save(self, output_folder=None,output_filename=None):
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
         # save policy and experience separately
         if output_folder is not None and not os.path.exists(output_folder):
             try:
@@ -159,7 +160,6 @@ class EpisodicLearner(object):
         # save learner state
         sys.setrecursionlimit(100000)
         if self.state_changed or output_folder is not None or output_filename is not None:
-            output_folder = utils.get_output_dir() if output_folder is None else output_folder
             [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
             path = os.path.join(output_folder,output_filename)
 
@@ -167,6 +167,19 @@ class EpisodicLearner(object):
                 utils.print_with_stamp('Saving learner state to %s.zip'%(path),self.name)
                 t_dump(self.get_state(),f,2)
             self.state_changed = False
+
+    def get_snapshot_content_paths(self, output_folder=None):
+		output_folder = utils.get_output_dir() if output_folder is None else output_folder
+		content_paths = [os.path.join(output_folder,self.policy.filename+'.zip'),
+						 os.path.join(output_folder,self.experience.filename+'.zip'),
+						 os.path.join(output_folder,self.filename+'.zip')]
+		return content_paths
+
+    def save_snapshot(self, output_folder=None, output_prefix='snapshot'):
+		output_folder = utils.get_output_dir() if output_folder is None else output_folder
+		snapshot_header = os.path.join(output_folder,output_prefix)
+		content_paths = self.get_snapshot_content_paths(output_folder)
+		utils.save_snapshot_zip(snapshot_header,content_paths)
 
     def stop(self):
         ''' Stops the plant, the visualization (if available) and saves the state of the learner'''
@@ -198,11 +211,17 @@ class EpisodicLearner(object):
             else:
                 utils.print_with_stamp('No cost function provided',self.name)
     
-    def set_cost(new_cost_func, new_cost_params):
+    def set_cost(self, new_cost_func, new_cost_params):
         ''' Replaces the old cost function with a new one (and recompiles it)'''
         self.cost = partial(new_cost_func, params=new_cost_params)
         self.evaluate_cost = None
         self.init_cost()
+
+    def set_experience(self, new_experience):
+        #get name form the experience 
+        experience_filename = self.experience.filename
+        self.experience = new_experience
+        self.experience.filename = experience_filename
 
     def apply_controller(self,H=None,random_controls=False):
         '''

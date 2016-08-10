@@ -74,7 +74,7 @@ if __name__ == '__main__':
         learner.load()
     except:
         pass
-    
+
     atexit.register(learner.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data

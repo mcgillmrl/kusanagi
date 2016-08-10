@@ -67,6 +67,12 @@ class PILCO(EpisodicLearner):
         self.dynamics_model.load(output_folder,dynamics_filename)
         #self.load_rollout(output_folder,output_filename)
     
+    def get_snapshot_content_paths(self, output_folder=None):
+		content_paths = super(PILCO,self).get_snapshot_content_paths(output_folder)
+		output_folder = utils.get_output_dir() if output_folder is None else output_folder
+		content_paths.append( os.path.join(output_folder,self.dynamics_model.filename+'.zip') )
+		return content_paths
+		    
     def set_state(self,state):
         ''' In addition to the EpisodicLearner state variables, saves the values of self.wrap_angles, self.next_episode, self.mx0 and self.Sx0'''
         i = utils.integer_generator(-4)
