@@ -68,6 +68,9 @@ class Loadable(object):
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
         [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
         path = os.path.join(output_folder,output_filename)
+        # append the zip extension
+        if not path.endswith('.zip'):
+            path = path+'.zip'
         try:
             with open(path,'rb') as f:
                 utils.print_with_stamp('Loading state from %s'%(path),self.name)
@@ -82,7 +85,7 @@ class Loadable(object):
         sys.setrecursionlimit(100000)
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
         [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
-
+        
         if self.state_changed or output_folder is not None or output_filename is not None:
             # check if output_folder exists, create it if necessary.
             if not os.path.exists(output_folder):
@@ -92,8 +95,12 @@ class Loadable(object):
                     utils.print_with_stamp( 'Unable to create the directory: %s'%(output_folder), self.name )
                     raise
 
-            # contrusct file path
+            # construct file path
             path = os.path.join(output_folder,output_filename)
+            # append the zip extension
+            if not path.endswith('.zip'):
+                path = path+'.zip'
+
             with open(path,'wb') as f:
                 utils.print_with_stamp('Saving state to %s'%(path),self.name)
                 t_dump(self.get_state(),f,2)
