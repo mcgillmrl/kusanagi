@@ -6,20 +6,19 @@ class ExperienceDataset(Loadable):
     ''' Class used to store data from runs with a learning agent'''
     def __init__(self, name='Experience', filename_prefix=None, filename=None):
         self.name = name
+        self.time_stamps = []
+        self.states = []
+        self.actions = []
+        self.immediate_cost = []
+        self.policy_history = []
+        self.episode_labels = []
+        self.curr_episode = -1
+        self.state_changed = True
         if filename is not None:
             self.filename=filename
         else:
             self.filename = self.name+'_dataset' if filename_prefix is None else filename_prefix+'_dataset'
-
             utils.print_with_stamp('Initialising new experience dataset',self.name)
-            self.time_stamps = []
-            self.states = []
-            self.actions = []
-            self.immediate_cost = []
-            self.policy_history = []
-            self.episode_labels = []
-            self.curr_episode = -1
-            self.state_changed = True
         
         Loadable.__init__(self,name=name,filename=self.filename)
 

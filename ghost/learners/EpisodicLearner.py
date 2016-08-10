@@ -99,7 +99,7 @@ class EpisodicLearner(Loadable):
         0: Restart learning completely (re-do random trials)
         RANDOM : if you pass this string, you will keep the random trial data
         n>0 : resume from policy n (currently does not keep experience from policy n having been applied, we need to apply_controller to get data from this policy)'''
-        '''
+        
         if self.learn_from_iteration != -1: #if we want to load from a specific iteration, revert policy and experience to what it was at that iter
                 if self.learn_from_iteration == 0:
                     utils.print_with_stamp('Resetting data completely')
@@ -140,9 +140,19 @@ class EpisodicLearner(Loadable):
                     else: 
                         self.policy.set_default_parameters()
                         self.experience.policy_history = []
-        '''
+       
 
     def save(self, output_folder=None,output_filename=None):
+        #initialize cost if neeeded
+        self.init_cost()
+
+        # initialize policy if needed
+        p = self.policy.get_params()
+        for pi in p:
+            if pi is None or pi.size == 0:
+                self.policy.set_default_parameters()
+                break
+
         # save learner state
         super(EpisodicLearner,self).save(output_folder,output_filename)
         
@@ -196,9 +206,7 @@ class EpisodicLearner(Loadable):
 
     def set_experience(self, new_experience):
         #get name form the experience 
-        experience_filename = self.experience.filename
-        self.experience = new_experience
-        self.experience.filename = experience_filename
+        self.experience.set_state(new_experience.get_state())
 
     def apply_controller(self,H=None,random_controls=False):
         '''
@@ -264,7 +272,7 @@ class EpisodicLearner(Loadable):
                 #print t,x_t,u_t,c_t[0]
             else:
                 # append to experience dataset
-                self.experience.append(t,x_t,u_t,0)
+                self.experience.add_sample(t,x_t,u_t,0)
 
             # step the plant if necessary
             if not self.async_plant:
@@ -293,7 +301,7 @@ class EpisodicLearner(Loadable):
             self.experience.add_sample(t,x_t,u_t,c_t)
             #print t,x_t,u_t,c_t[0]
         else:
-            self.experience.append(t,x_t,u_t,0)
+            self.experience.add_sample(t,x_t,u_t,0)
 
         # stop robot
         run_value = np.array(self.experience.immediate_cost[-1][:-1])

@@ -44,19 +44,28 @@ def maha(X1,X2=None,M=None, all_pairs=True):
         D = T.sum(deltaM*delta,1)
     return D
 
-def print_with_stamp(message, name=None, same_line=False):
+def print_with_stamp(message, name=None, same_line=False, use_log=True):
     out_str = ''
     if name is None:
         out_str = '[%s] %s'%(str(datetime.now()),message)
     else:
         out_str = '[%s] %s > %s'%(str(datetime.now()),name,message)
-    
-    if same_line:
-        sys.stdout.write('\r'+out_str)
+
+    logfile = get_logfile()
+    # this will only log to a file if 1) use_log is True and 2) $KUSANAGI_LOGFILE is set ( can be set with utils.set_logfile(new_path) )
+    if not use_log or len(logfile) == 0:
+        if same_line:
+            sys.stdout.write('\r'+out_str)
+        else:
+            sys.stdout.write(out_str)
+            print ''
+        sys.stdout.flush()
     else:
-        sys.stdout.write(out_str)
-        print ''
-    sys.stdout.flush()
+        # TODO seek the last line of the file and delete it ( if same_line == True )
+        if not same_line:
+            write_mode = 'a' if os.path.isfile(logfile) else 'w'
+            with open(logfile,write_mode) as f:
+                f.write(out_str+'\n')
 
 def kmeanspp(X,k):
     import random
@@ -358,6 +367,15 @@ def plot_results(learner,H=None):
     plt.show(False)
     plt.waitforbuttonpress(0.05)
 
+def get_logfile():
+    ''' Returns the path of the file where the output of print_with_stamp wil be redirected. This can be set 
+    via the $KUSANAGI_LOGFILE environment variable. If not set, it will return an empty string.'''
+
+    if 'KUSANAGI_LOGFILE' in os.environ:
+        return os.environ['KUSANAGI_LOGFILE']
+    else:
+        return ''
+
 def get_run_output_dir():
     ''' Returns the current output folder for the last run results. This can be set via the $KUSANAGI_RUN_OUTPUT environment 
     variable. If not set, it will default to $HOME/.kusanagi/output/last_run. The directory will be created 
@@ -383,6 +401,13 @@ def get_output_dir():
         if not os.path.isdir(os.environ['KUSANAGI_OUTPUT']):
             raise
     return os.environ['KUSANAGI_OUTPUT']
+
+def set_logfile(new_path, base_path=None):
+    ''' Sets the path of the log file. Assumes that new_path is well formed'''
+    if base_path is None:
+        os.environ['KUSANAGI_LOGFILE'] = new_path
+    else:
+        os.environ['KUSANAGI_LOGFILE'] = os.path.join(base_path,new_path)
 
 def set_run_output_dir(new_path):
     ''' Sets the output directory for the files related to the current run. Assumes that new_path is well formed'''
