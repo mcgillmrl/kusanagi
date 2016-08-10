@@ -18,7 +18,7 @@ def default_params():
     #utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
     # setup learner parameters
     # general parameters
-    J = 4                                                                   # number of random initial trials
+    J = 2                                                                   # number of random initial trials
     N = 100                                                                 # learning iterations
     learner_params = {}
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
@@ -47,16 +47,17 @@ def default_params():
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
 
-    learner_params['max_evals'] = 100
-    learner_params['conv_thr'] = 1e-9
+    learner_params['max_evals'] = 125
+    learner_params['conv_thr'] = 1e-10
     learner_params['min_method'] = 'L-BFGS-B'
+    learner_params['realtime'] = True
 
     learner_params['plant'] = plant_params
     learner_params['policy'] = policy_params
     learner_params['dynmodel'] = dynmodel_params
     learner_params['cost'] = cost_params
 
-    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI, 'viz_class' : CartpoleDraw, 'task_name' : "tuesday", 'learn_from_iteration' : -1}
+    return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': SSGP_UI}#, 'viz_class' : CartpoleDraw, 'task_name' : "tuesday", 'learn_from_iteration' : -1}
 
 
 if __name__ == '__main__':
@@ -69,11 +70,7 @@ if __name__ == '__main__':
     #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
     #learner_params['params']['dynmodel']['n_basis'] = 100
     learner = PILCO(**learner_params)
-    
-    try:
-        learner.load()
-    except:
-        pass
+    learner.load()
 
     atexit.register(learner.stop)
 
@@ -89,7 +86,7 @@ if __name__ == '__main__':
         learner.apply_controller()
         
         # plot results
-        #plot_results(learner)
+        plot_results(learner)
 
     # learning loop
     for i in xrange(N):
@@ -104,7 +101,7 @@ if __name__ == '__main__':
         learner.apply_controller()
 
         # plot results
-        #plot_results(learner)
+        plot_results(learner)
 
         # save latest state of the learner
         learner.save()

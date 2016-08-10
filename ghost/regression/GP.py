@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import sys
 import theano
 import theano.tensor as T
 
@@ -8,7 +7,6 @@ from functools import partial
 from scipy.optimize import minimize, basinhopping
 from scipy.cluster.vq import kmeans
 from theano import function as F, shared as S
-from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.tensor.nlinalg import matrix_dot
 from theano.sandbox.linalg import psd,matrix_inverse,det,cholesky
 from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular
@@ -16,10 +14,10 @@ from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular
 import cov
 import SNRpenalty
 import utils
+from base.Loadable import Loadable
 
-class GP(object):
+class GP(Loadable):
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, hyperparameter_gradients=False, snr_penalty=SNRpenalty.SEard):
-        
         # theano options
         self.profile= profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
@@ -35,19 +33,16 @@ class GP(object):
         self.covs = (cov.SEard, cov.Noise)
         
         # dimension related variables
+        self.N = 0
         if X_dataset is None:
             if idims is None:
                 raise ValueError('You need to either provide X_dataset (n x idims numpy array) or a value for idims') 
             self.D = idims
-        else:
-            self.D = X_dataset.shape[1]
 
         if Y_dataset is None:
             if odims is None:
                 raise ValueError('You need to either provide Y_dataset (n x odims numpy array) or a value for odims') 
             self.E = odims
-        else:
-            self.E = Y_dataset.shape[1]
 
         #symbolic varianbles
         self.loghyp = None; self.logsn2 = None
@@ -60,12 +55,16 @@ class GP(object):
         self.predict_fn = None
         self.predict_d_fn = None
         
-        self.dnlml=None
-
         # name of this class for printing command line output and saving
         self.name = name
         # filename for saving
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX)
+        Loadable.__init__(self,name=name,filename=self.filename)
+        
+        # register theanno functions and shared variables for saving
+        self.register_types([T.sharedvar.SharedVariable, theano.compile.function_module.Function])
+        # register additional variables for saving
+        self.register(['trained'])
         
         # initialize the class if no pickled version is available
         if X_dataset is not None and Y_dataset is not None:
@@ -74,6 +73,18 @@ class GP(object):
             utils.print_with_stamp('Finished initialising GP regressor',self.name)
         
         self.ready = False
+
+    def load(self, output_folder=None,output_filename=None):
+        ''' loads the state from file, and initializes additional variables'''
+        # load state
+        super(GP,self).load(output_folder,output_filename)
+        
+        # initalize missing variables
+        if self.X is not None:
+            self.N = self.X.get_value(borrow=True).shape[0]
+
+        if self.loghyp is not None:
+            self.logsn2 = 2*self.loghyp[:,-1]
     
     def set_dataset(self,X_dataset,Y_dataset):
         # ensure we don't change the number of input and output dimensions ( the number of samples can change)
@@ -137,10 +148,12 @@ class GP(object):
         loghyp = loghyp.astype('float64')
         if self.loghyp is None:
             self.loghyp = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
-            self.logsn2 = 2*self.loghyp[:,-1]
         else:
             loghyp = loghyp.reshape(self.loghyp.get_value(borrow=True).shape)
             self.loghyp.set_value(loghyp,borrow=True)
+
+        if self.logsn2 is None:
+            self.logsn2 = 2*self.loghyp[:,-1]
 
     def get_params(self, symbolic=True, all_shared=False):
         if symbolic:
@@ -314,9 +327,9 @@ class GP(object):
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
         try:
-            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-10, options={'maxiter': 500})
         except ValueError:
-            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-9, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-10, options={'maxiter': 500})
         print ''
         loghyp = opt_res.x.reshape(loghyp0.shape)
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
@@ -325,48 +338,6 @@ class GP(object):
         print (self.loghyp.eval())
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         self.trained = True
-
-    def load(self, output_folder=None,output_filename=None):
-        output_folder = utils.get_output_dir() if output_folder is None else output_folder
-        [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
-        path = os.path.join(output_folder,output_filename)
-        with open(path,'rb') as f:
-            utils.print_with_stamp('Loading compiled GP from %s'%(path),self.name)
-            state = t_load(f)
-            self.set_state(state)
-        self.state_changed = False
-    
-    def save(self, output_folder=None,output_filename=None):
-        sys.setrecursionlimit(100000)
-        if self.state_changed or output_folder is not None or output_filename is not None:
-            output_folder = utils.get_output_dir() if output_folder is None else output_folder
-            [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
-            path = os.path.join(output_folder,output_filename)
-            with open(path,'wb') as f:
-                utils.print_with_stamp('Saving compiled GP with %d inputs and %d outputs to %s'%(self.D,self.E,path),path)
-                t_dump(self.get_state(),f,2)
-            self.state_changed = False
-
-    def set_state(self,state):
-        # TODO get_all_shared_vars(as_dict=True) instead of individually going through all shared variables
-        i = utils.integer_generator()
-        self.X = state[i.next()]
-        self.N = 0 if self.X is None else self.X.get_value(borrow=True).shape[0]
-        self.Y = state[i.next()]
-        self.loghyp = state[i.next()]
-        self.logsn2 = None if self.loghyp is None else 2*self.loghyp[:,-1]
-        self.iK = state[i.next()]
-        self.L = state[i.next()]
-        self.beta = state[i.next()]
-        self.nlml = state[i.next()]
-        self.dnlml = state[i.next()]
-        self.predict_fn = state[i.next()]
-        self.predict_d_fn = state[i.next()]
-        self.kernel_func = state[i.next()]
-        self.trained = state[i.next()]
-
-    def get_state(self):
-        return [self.X,self.Y,self.loghyp,self.iK,self.L,self.beta,self.nlml,self.dnlml,self.predict_fn,self.predict_d_fn,self.kernel_func,self.trained]
 
 class GP_UI(GP):
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'GP_UI', idims=None, odims=None, profile=False, uncertain_inputs=True, hyperparameter_gradients=False):
@@ -449,31 +420,6 @@ class SPGP(GP):
         self.n_basis = n_basis
         # intialize parent class params
         super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
-
-    def set_state(self,state):
-        i = utils.integer_generator(-8)
-        self.X_sp = state[i.next()]
-        self.iKmm = state[i.next()]
-        self.iBmm = state[i.next()]
-        self.Lmm = state[i.next()]
-        self.Amm = state[i.next()]
-        self.beta_sp = state[i.next()]
-        self.nlml_sp = state[i.next()]
-        self.dnlml_sp = state[i.next()]
-        super(SPGP,self).set_state(state[:-8])
-        self.should_recompile = False
-
-    def get_state(self):
-        state = super(SPGP,self).get_state()
-        state.append(self.X_sp)
-        state.append(self.iKmm)
-        state.append(self.iBmm)
-        state.append(self.Lmm)
-        state.append(self.Amm)
-        state.append(self.beta_sp)
-        state.append(self.nlml_sp)
-        state.append(self.dnlml_sp)
-        return state
 
     def init_pseudo_inputs(self):
         assert self.N > self.n_basis, "Dataset must have more than n_basis [ %n ] to enable inference with sparse pseudo inputs"%(self.n_basis)
@@ -669,7 +615,7 @@ class SPGP(GP):
                 self.init_loss()
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
             m_loss_sp = utils.MemoizeJac(self.loss_sp)
-            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
+            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=1e-10, options={'maxiter': 750})
             print ''
             X_sp = opt_res.x.reshape(self.X_sp.get_value(borrow=True).shape)
             self.set_X_sp(X_sp)
@@ -755,18 +701,22 @@ class RBFGP(GP_UI):
             name += '_sat'
         self.loghyp_full=None
         super(RBFGP, self).__init__(X_dataset,Y_dataset,idims=idims,odims=odims,name=name,profile=profile,hyperparameter_gradients=True)
+        
+        # register additional variables for saving
+        self.register(['sat_func'])
+        self.register(['loghyp_full'])
+        self.register(['iK','beta','L'])
 
-    def set_state(self,state):
-        self.sat_func = state[-2]
-        self.loghyp_full = state[-1]
-        super(RBFGP,self).set_state(state[:-2])
+    def load(self, output_folder=None,output_filename=None):
+        ''' loads the state from file, and initializes additional variables'''
+        # load state
+        super(RBFGP,self).load(output_folder,output_filename)
+        
+        # initalize missing variables
+        if self.loghyp_full is not None:
+            self.loghyp = T.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
+            self.logsn2 = 2*self.loghyp[:,-1]
 
-    def get_state(self):
-        state = super(RBFGP,self).get_state()
-        state.append(self.sat_func)
-        state.append(self.loghyp_full)
-        return state
-    
     def get_params(self, symbolic=True, all_shared=False):
         retvars = [self.loghyp_full,self.X,self.Y]
         if not symbolic:
@@ -775,14 +725,16 @@ class RBFGP(GP_UI):
     
     def set_loghyp(self, loghyp):
         # this creates one theano shared variable for the log hyperparameters
-        loghyp = loghyp
+        loghyp = loghyp.astype('float64')
         if self.loghyp_full is None:
             self.loghyp_full = S(loghyp,name='%s>loghyp'%(self.name),borrow=True)
             self.loghyp = T.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
-            self.logsn2 = 2*self.loghyp[:,-1]
         else:
             loghyp = loghyp.reshape(self.loghyp_full.get_value(borrow=True).shape)
             self.loghyp_full.set_value(loghyp,borrow=True)
+
+        if self.logsn2 is None:
+            self.logsn2 = 2*self.loghyp[:,-1]
 
     def predict_symbolic(self,mx,Sx):
         idims = self.D
@@ -880,33 +832,18 @@ class SSGP(GP):
         self.dnlml_ss = None
         self.n_basis = n_basis
         super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+    
+    def load(self, output_folder=None,output_filename=None):
+        ''' loads the state from file, and initializes additional variables'''
+        # load state
+        super(SSGP,self).load(output_folder,output_filename)
+        
+        # initalize missing variables
+        if self.w is not None:
+            self.set_spectral_samples(w=self.w.get_value(borrow=True))
 
-    def set_state(self,state):
-        i = utils.integer_generator(-7)
-        self.w = state[i.next()]
-        self.sr = state[i.next()]
-        self.beta_ss = state[i.next()]
-        self.Lmm = state[i.next()]
-        self.iA = state[i.next()]
-        self.nlml_ss = state[i.next()]
-        self.dnlml_ss = state[i.next()]
-        super(SSGP,self).set_state(state[:-7])
-        self.should_recompile = False
-
-    def get_state(self):
-        state = super(SSGP,self).get_state()
-        state.append(self.w)
-        state.append(self.sr)
-        state.append(self.beta_ss)
-        state.append(self.Lmm)
-        state.append(self.iA)
-        state.append(self.nlml_ss)
-        state.append(self.dnlml_ss)
-        return state
-
-    def set_dataset(self,X_dataset,Y_dataset):
-        # set the dataset on the parent class
-        super(SSGP, self).set_dataset(X_dataset,Y_dataset)
+        if self.loghyp is not None:
+            self.set_loghyp( self.loghyp.get_value(borrow=True) )
 
     def init_loss(self,cache_vars=True):
         super(SSGP, self).init_loss()
@@ -987,9 +924,11 @@ class SSGP(GP):
 
         if self.w is None:
             self.w = S(w,name='%s>w'%(self.name),borrow=True)
-            self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
         else:
             self.w.set_value(w,borrow=True)
+            
+        if self.sr is None:
+            self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
     
     def get_params(self, symbolic=True, all_shared=False):
         # Who commented this out before? Don't break code without asking!
@@ -1062,7 +1001,7 @@ class SSGP(GP):
         p0 = [self.loghyp.get_value(),self.w.get_value()]
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = utils.MemoizeJac(self.loss_ss)
-        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-9, options={'maxiter': 1000})
+        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-10, options={'maxiter': 750})
         print ''
         loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
@@ -1231,6 +1170,4 @@ class VSSGP(SSGP):
         sn2 = T.exp(2*self.loghyp[:,idims+1])
 
         # compute the feature vectors
-        def get_feature_vector(w,z,b,X): 
-            X_centered = X[None,:,:] - z[:,None,:]   # n_basis x N x D
-            #wdotx = w.dot(X
+        X_centered = self.X[None,:,:] - z[:,None,:]   # n_basis x N x D

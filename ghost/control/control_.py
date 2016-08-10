@@ -1,50 +1,14 @@
 import numpy as np
 import theano
-import os, sys
 import utils
 
-from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from ghost.regression.GP import RBFGP, SSGP_UI
 from ghost.regression.NN import NN
 from ghost.control.saturation import gSat
 from functools import partial
 from utils import gTrig2, gTrig2_np
+from base.Loadable import Loadable
 
-class BaseControl(object):
-    '''
-        Class that specifies the basic interface for a controller. Any class implementing this interface should provide the  following methods:
-        set_default_parameters, evaluate, get_params, set_params
-    '''
-    def __init__(self, name='BaseControl'):
-        # load from disk
-        self.load()
-        # check if we need to initialize
-        params = self.get_params()
-        for p in params:
-            if p is None or p.size == 0:
-                self.set_default_parameters()
-                break
-
-    def set_default_parameters(self):
-        raise NotImplementedError("You need to implement the set_default_parameters method in your BaseControl subclass.")
-
-    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False):
-        raise NotImplementedError("You need to implement evaluate method in your BaseControl subclass.")
-
-    def get_params(self, symbolic=False):
-        raise NotImplementedError("You need to implement the get_params method in your BaseControl subclass.")
-
-    def set_params(self,params):
-        raise NotImplementedError("You need to implement the set_params method in your BaseControl subclass.")
-
-    def save(self):
-        # call get_params and write them to disk
-        pass
-
-    def load(self):
-        # load params from disk and pass them to set_params
-        pass
-        
 # GP based controller
 class RBFPolicy(RBFGP):
     def __init__(self, m0=None, S0=None, maxU=[10], n_basis=10, angle_dims=[], name='RBFPolicy', filename=None):
@@ -58,7 +22,6 @@ class RBFPolicy(RBFGP):
         if filename is not None:
             # try loading from file
             self.uncertain_inputs = True
-            self.X_ = None; self.Y_ = None; self.loghyp_=None
             self.filename = filename
             self.sat_func = sat_func
             self.load()
@@ -69,13 +32,6 @@ class RBFPolicy(RBFGP):
             policy_idims = len(self.m0) + len(self.angle_dims)
             policy_odims = len(self.maxU)
             super(RBFPolicy, self).__init__(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name)
-            
-            # check if we need to initialize
-            params = self.get_params()
-            for p in params:
-                if p is None or p.size == 0:
-                    self.set_default_parameters()
-                    break
 
     def set_default_parameters(self):
         # init policy inputs near the given initial state
@@ -130,7 +86,7 @@ class RandPolicy:
         pass # nothing to load
 
 # linear time varying policy
-class LocalLinearPolicy(object):
+class LocalLinearPolicy(Loadable):
     def __init__(self, H, dt, m0, S0=None, maxU=[10], angle_dims=[], name='LocalLinearPolicy'):
         self.maxU = np.array(maxU)
         self.angle_dims = angle_dims
@@ -143,6 +99,10 @@ class LocalLinearPolicy(object):
         self.name = name
         self.add_noise = True
         self.set_default_parameters()
+
+        Loadable.__init__(self,name=name,filename=self.filename)
+        # register theano functions and shared variables for saving
+        self.register_types([T.sharedvar.SharedVariable, theano.compile.function_module.Function])
 
     def set_default_parameters(self):
         H_steps = int(np.ceil(self.H/self.dt))
@@ -240,28 +200,6 @@ class LocalLinearPolicy(object):
             self.alpha_= np.array(alpha).astype(theano.config.floatX)
             self.alpha.set_value(self.alpha_,borrow=True)
 
-    def load(self, output_folder=None,output_filename=None):
-        # load the parameters of the policy
-        output_folder = utils.get_output_dir() if output_folder is None else output_folder
-        [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
-        path = os.path.join(output_folder,output_filename)
-        with open(path,'rb') as f:
-            utils.print_with_stamp('Loading %s from %s.zip'%(self.name, self.filename),self.name)
-            self.A, self.b, self.u_nominal, self.z_nominal, self.A_, self.b_, self.u_nominal_, self.z_nominal_ = t_load(f)
-        self.state_changed = False
-    
-    def save(self, output_folder=None,output_filename=None):
-        # save learner state
-        sys.setrecursionlimit(100000)
-        if self.state_changed:
-            output_folder = utils.get_output_dir() if output_folder is None else output_folder
-            [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
-            path = os.path.join(output_folder,output_filename)
-            with open(path,'wb') as f:
-                utils.print_with_stamp('Saving learner state to %s.zip'%(self.filename),self.name)
-                state = (self.A, self.b, self.u_nominal, self.z_nominal, self.A_, self.b_, self.u_nominal_, self.z_nominal_)
-                t_dump(state,f,2)
-            self.state_changed = False
 
     def get_all_shared_vars(self):
         return [attr for attr in self.__dict__.values() if isinstance(attr,theano.tensor.sharedvar.SharedVariable)]
@@ -323,7 +261,6 @@ class NNPolicy(NN):
         if filename is not None:
             # try loading from file
             self.uncertain_inputs = True
-            self.X_ = None; self.Y_ = None; self.loghyp_=None
             self.filename = filename
             self.sat_func = sat_func
             self.load()

@@ -47,6 +47,8 @@ class PILCO(EpisodicLearner):
         H_steps = int(np.ceil(self.H/self.plant.dt))
         self.H_steps =theano.shared( int(H_steps) )
         self.gamma0 = theano.shared( np.array(self.discount,dtype='float64') )
+
+        self.register(['wrap_angles','next_episode','mx0','Sx0'])
     
     def save(self, output_folder=None,output_filename=None):
         ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
@@ -65,31 +67,12 @@ class PILCO(EpisodicLearner):
         if output_filename is not None:
             dynamics_filename = output_filename + "_dynamics"
         self.dynamics_model.load(output_folder,dynamics_filename)
-        #self.load_rollout(output_folder,output_filename)
     
     def get_snapshot_content_paths(self, output_folder=None):
 		content_paths = super(PILCO,self).get_snapshot_content_paths(output_folder)
 		output_folder = utils.get_output_dir() if output_folder is None else output_folder
 		content_paths.append( os.path.join(output_folder,self.dynamics_model.filename+'.zip') )
 		return content_paths
-		    
-    def set_state(self,state):
-        ''' In addition to the EpisodicLearner state variables, saves the values of self.wrap_angles, self.next_episode, self.mx0 and self.Sx0'''
-        i = utils.integer_generator(-4)
-        self.wrap_angles = state[i.next()]
-        self.next_episode = state[i.next()]
-        self.mx0 = state[i.next()]
-        self.Sx0 = state[i.next()]
-        super(PILCO,self).set_state(state[:-4])
-
-    def get_state(self):
-        ''' In addition to the EpisodicLearner state variables, loads the values of self.wrap_angles, self.next_episode, self.mx0 and self.Sx0'''
-        state = super(PILCO,self).get_state()
-        state.append(self.wrap_angles)
-        state.append(self.next_episode)
-        state.append(self.mx0)
-        state.append(self.Sx0)
-        return state
 
     def save_rollout(self, output_folder=None,output_filename=None):
         ''' Saves the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''

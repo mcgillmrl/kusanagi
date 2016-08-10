@@ -1,7 +1,6 @@
 import lasagne
 import numpy as np
 import os
-import sys
 import theano
 import time
 import utils
@@ -9,10 +8,10 @@ import utils
 from functools import partial
 from matplotlib import pyplot as plt
 from scipy.optimize import minimize, basinhopping
-from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
 from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.control import RandPolicy
+from base.Loadable import Loadable
 
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
@@ -24,7 +23,7 @@ STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
                           'ADADELTA': lasagne.updates.adadelta,
                           'ADAM': lasagne.updates.adam}
 
-class EpisodicLearner(object):
+class EpisodicLearner(Loadable):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None, learn_from_iteration=-1, task_name = None):
         self.name = name
         if task_name is not None:
@@ -61,12 +60,19 @@ class EpisodicLearner(object):
         self.async_plant = async_plant
         self.learning_iteration = 0;
         self.n_evals = 0
+        self.realtime = params['realtime'] if 'realtime' in params else True
+        
+        Loadable.__init__(self,name=name,filename=self.filename)
+        self.register(['n_episodes','angle_idims','async_plant','evaluate_cost','H','discount','learning_iteration','n_evals'])
 
         # try loading from file, initialize from scratch otherwise
         utils.print_with_stamp('Initialising new %s learner'%(self.name),self.name)
         self.state_changed = True
 
     def load(self, output_folder=None,output_filename=None):
+        # load learner state
+        super(EpisodicLearner,self).load(output_folder,output_filename)
+        
         # load policy and experience separately
         policy_filename = None
         if output_filename is not None:
@@ -77,16 +83,6 @@ class EpisodicLearner(object):
         if output_filename is not None:
             experience_filename = output_filename + '_experience'
         self.experience.load(output_folder,experience_filename)
-        
-        # load learner state
-        output_folder = utils.get_output_dir() if output_folder is None else output_folder
-        [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
-        path = os.path.join(output_folder,output_filename)
-        with open(path,'rb') as f:
-            utils.print_with_stamp('Loading learner state from %s.zip'%(path),self.name)
-            state = t_load(f)
-            self.set_state(state)
-        self.state_changed = False
         
         '''USAGE OF LEARN_FROM_ITERATION
         -1: Resume learning from most recent state
@@ -135,14 +131,8 @@ class EpisodicLearner(object):
                         self.experience.policy_history = []
 
     def save(self, output_folder=None,output_filename=None):
-        output_folder = utils.get_output_dir() if output_folder is None else output_folder
-        # save policy and experience separately
-        if output_folder is not None and not os.path.exists(output_folder):
-            try:
-                os.makedirs(output_folder)
-            except OSError:
-                print 'Unable to create the directory: ' + output_folder
-                raise
+        # save learner state
+        super(EpisodicLearner,self).save(output_folder,output_filename)
         
         policy_filename = None
         if output_filename is not None:
@@ -156,17 +146,6 @@ class EpisodicLearner(object):
             experience_filename = output_filename + '_experience'
             
         self.experience.save(output_folder,experience_filename)
-
-        # save learner state
-        sys.setrecursionlimit(100000)
-        if self.state_changed or output_folder is not None or output_filename is not None:
-            [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
-            path = os.path.join(output_folder,output_filename)
-
-            with open(path,'wb') as f:
-                utils.print_with_stamp('Saving learner state to %s.zip'%(path),self.name)
-                t_dump(self.get_state(),f,2)
-            self.state_changed = False
 
     def get_snapshot_content_paths(self, output_folder=None):
 		output_folder = utils.get_output_dir() if output_folder is None else output_folder
@@ -186,20 +165,6 @@ class EpisodicLearner(object):
         self.plant.stop()
         if self.viz is not None:
             self.viz.stop()
-
-    def set_state(self,state):
-        i = utils.integer_generator()
-        self.n_episodes = state[i.next()]
-        self.angle_idims = state[i.next()]
-        self.async_plant = state[i.next()]
-        self.evaluate_cost = state[i.next()]
-        self.H = state[i.next()]
-        self.discount = state[i.next()]
-        self.learning_iteration = state[i.next()]
-        self.n_evals = state[i.next()]
-
-    def get_state(self):
-        return [self.n_episodes,self.angle_idims,self.async_plant,self.evaluate_cost,self.H,self.discount,self.learning_iteration,self.n_evals]
 
     def init_cost(self):
         if not self.evaluate_cost:
@@ -231,11 +196,6 @@ class EpisodicLearner(object):
         @param H Horizon for applying controller (in seconds)
         @param random_controls Boolean flag that specifies whether to use the current policy or apply random controls
         '''
-        utils.print_with_stamp('Starting data collection run',self.name)
-        if H is  None:
-            H = self.H
-        utils.print_with_stamp('Running for %f seconds'%(H),self.name)
-
         if random_controls:
             policy = RandPolicy(self.policy.maxU)
         else:
@@ -244,10 +204,22 @@ class EpisodicLearner(object):
         #initialize cost if neeeded
         self.init_cost()
 
+        # initialize policy if needed
+        p = self.policy.get_params()
+        for pi in p:
+            if pi is None or pi.size == 0:
+                self.policy.set_default_parameters()
+                break
+
         # mark the start of the episode
         self.experience.new_episode(random = random_controls, learning_iteration = self.learning_iteration)
 
         # start robot
+        utils.print_with_stamp('Starting data collection run',self.name)
+        if H is  None:
+            H = self.H
+        utils.print_with_stamp('Running for %f seconds'%(H),self.name)
+
         if self.async_plant:
             self.plant.start()
         if self.viz is not None:
@@ -287,9 +259,10 @@ class EpisodicLearner(object):
                 self.plant.step()
 
             # sleep to match the desired sample rate
-            exec_time = time.time() - exec_time
-            if exec_time < self.plant.dt:
-                time.sleep(self.plant.dt-exec_time)
+            if self.realtime:
+                exec_time = time.time() - exec_time
+                if exec_time < self.plant.dt:
+                    time.sleep(self.plant.dt-exec_time)
 
             #  get robot state (this should ensure synchronicity by blocking until dt seconds have passed):
             exec_time = time.time()

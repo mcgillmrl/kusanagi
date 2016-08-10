@@ -58,7 +58,7 @@ def build_GP(idims=9, odims=6, gp_type='GP', profile=theano.config.profile):
     elif gp_type == 'SPGP_UI':
         gp = SPGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
     elif gp_type == 'SSGP':
-        gp = SSGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
+        gp = SSGP(idims=idims,odims=odims,profile=profile,n_basis=100)
     elif gp_type == 'SSGP_UI':
         gp = SSGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
     else:
@@ -88,6 +88,7 @@ if __name__=='__main__':
     train_dataset,test_dataset = build_dataset(idims=idims,odims=odims,n_train=n_train,n_test=n_test, output_noise=args.noise1, input_noise=args.noise2, rand_seed=31337)
     utils.print_with_stamp("Building regressor",'main')
     gp = build_GP(idims,odims,gp_type=args.gp_type,profile=theano.config.profile)
+    gp.load()
     gp.set_dataset(train_dataset[0],train_dataset[1])
 
     gp.train()
