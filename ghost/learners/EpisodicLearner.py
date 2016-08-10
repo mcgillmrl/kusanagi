@@ -83,6 +83,16 @@ class EpisodicLearner(Loadable):
         if output_filename is not None:
             experience_filename = output_filename + '_experience'
         self.experience.load(output_folder,experience_filename)
+
+        #initialize cost if neeeded
+        self.init_cost()
+
+        # initialize policy if needed
+        p = self.policy.get_params()
+        for pi in p:
+            if pi is None or pi.size == 0:
+                self.policy.set_default_parameters()
+                break
         
         '''USAGE OF LEARN_FROM_ITERATION
         -1: Resume learning from most recent state
