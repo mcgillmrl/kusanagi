@@ -1,4 +1,4 @@
-import os,sys
+import os,sys,stat
 from datetime import datetime
 
 import math
@@ -72,6 +72,7 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
                 if pos >0:
                     f.truncate()
             f.write(out_str+os.linesep)
+        os.system('chmod 777 %s'%(logfile))
 
 def kmeanspp(X,k):
     import random
