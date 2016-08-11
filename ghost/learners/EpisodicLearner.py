@@ -153,9 +153,6 @@ class EpisodicLearner(Loadable):
                 self.policy.set_default_parameters()
                 break
 
-        # save learner state
-        super(EpisodicLearner,self).save(output_folder,output_filename)
-        
         policy_filename = None
         if output_filename is not None:
             policy_filename = output_filename + '_policy'
@@ -168,6 +165,9 @@ class EpisodicLearner(Loadable):
             experience_filename = output_filename + '_experience'
             
         self.experience.save(output_folder,experience_filename)
+
+        # save learner state
+        super(EpisodicLearner,self).save(output_folder,output_filename)
 
     def get_snapshot_content_paths(self, output_folder=None):
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
