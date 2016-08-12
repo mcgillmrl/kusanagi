@@ -406,8 +406,10 @@ def plot_results_by_iteration(_experience,_dt, _x0, _S0, _H, _learner=None, _ite
         plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
     plt.plot(T_range,cost)
 
-    plt.savefig(out_file+'/Cost_Last_run.png')
-
+    if _out_file is not None:
+        plt.savefig(_out_file+'/Cost_Last_run.png')
+    else:
+        plt.savefig('Default_Folder_Imgs'+'/Cost_Last_run.png')
     states = np.array(_experience.states[-1])
     if _learner is not None:
         predicted_means = np.array(rollout_[2])
@@ -419,7 +421,10 @@ def plot_results_by_iteration(_experience,_dt, _x0, _S0, _H, _learner=None, _ite
 
         #plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
         plt.plot(T_range,states[:,d])
-        plt.savefig(out_file+'/Run_vs_Pred_Rollout'+str(d)+'.png')
+        if _out_file is not None:
+            plt.savefig(_out_file+'/Run_vs_Pred_Rollout'+str(d)+'.png')
+        else:
+            plt.savefig('Default_Folder_Imgs'+'/Run_vs_Pred_Rollout'+str(d)+'.png')
 
     plt.show(False)
     plt.waitforbuttonpress(0.05)
