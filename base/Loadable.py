@@ -66,19 +66,24 @@ class Loadable(object):
         
     def load(self, output_folder=None,output_filename=None):
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
+        print 'output_folder', output_folder
+        #TODO: check the error in get_output_dir() , in utils
+        #output_folder = '/home/adaptation/vbarbar/.kusanagi/2016_08_11_first_pool_trial/'
         [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
         path = os.path.join(output_folder,output_filename)
+        print 'path', path
         # append the zip extension
         if not path.endswith('.zip'):
             path = path+'.zip'
-        try:
-            with open(path,'rb') as f:
-                utils.print_with_stamp('Loading state from %s'%(path),self.name)
-                state = t_load(f)
-                self.set_state(state)
-            self.state_changed = False
-        except IOError:
-            utils.print_with_stamp('Unable to load state from %s'%(path),self.name)
+        #try:
+        with open(path,'rb') as f:
+            utils.print_with_stamp('Loading state from %s'%(path),self.name)
+            state = t_load(f)
+
+            self.set_state(state)
+        self.state_changed = False
+        #except IOError:
+        #    utils.print_with_stamp('Unable to load state from %s'%(path),self.name)
     
     def save(self, output_folder=None,output_filename=None):
         sys.setrecursionlimit(100000)

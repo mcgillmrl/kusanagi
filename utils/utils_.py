@@ -371,6 +371,56 @@ def plot_results(learner,H=None):
         plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
         plt.plot(T_range,states[:,d])
 
+    plt.figure('Total cost per learning iteration')
+    plt.gca().clear()
+    iters = []
+    cost_sums = []
+    for i in xrange(len(learner.experience.episode_labels)):
+        if learner.experience.episode_labels[i] != "RANDOM":
+            iters.append(learner.experience.episode_labels[i])
+            a = 0.0
+            for elem in learner.experience.immediate_cost[i]:
+                a += elem[0]
+            cost_sums.append(a)
+        if not iters:
+            print "No data to plot J vs. Iter#"
+    plt.plot(np.array(iters), np.array(cost_sums))
+
+    plt.show(False)
+    plt.waitforbuttonpress(0.05)
+
+def plot_results_by_iteration(_experience,_dt, _x0, _S0, _H, _learner=None, _iteration=-1, _out_file= None):
+    H_steps =int( np.ceil(_H/_dt))
+    # plot last run cost vs predicted cost
+    plt.figure('Cost of last run and Predicted cost')
+    plt.gca().clear()
+    #print '_experience.immediate_cost',_experience.immediate_cost
+    #print 'sum(_experience.immediate_cost)',reduce(lambda a, b: a+b, _experience.immediate_cost)
+    #print '_experience.curr_episode', _experience.curr_episode
+    cost = np.array(_experience.immediate_cost[_iteration])[:,0]
+    #print 'cost', cost
+    T_range = np.arange(0,len(cost),_dt)
+    print 'T_range', T_range
+    if _learner is not None:
+        rollout_ = _learner.rollout(_x0,_S0,H_steps,1)
+        plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+    plt.plot(T_range,cost)
+
+    plt.savefig(out_file+'/Cost_Last_run.png')
+
+    states = np.array(_experience.states[-1])
+    if _learner is not None:
+        predicted_means = np.array(rollout_[2])
+        predicted_vars = np.array(rollout_[3])
+    
+    for d in xrange(len(_x0)):
+        plt.figure('Last run vs Predicted rollout %d'%(d))
+        plt.gca().clear()
+
+        #plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+        plt.plot(T_range,states[:,d])
+        plt.savefig(out_file+'/Run_vs_Pred_Rollout'+str(d)+'.png')
+
     plt.show(False)
     plt.waitforbuttonpress(0.05)
 
