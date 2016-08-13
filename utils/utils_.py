@@ -10,6 +10,9 @@ import numpy as np
 import theano
 import theano.tensor as T
 from theano.sandbox.linalg import psd,matrix_inverse
+import matplotlib as mpl
+mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
+from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 
 def maha(X1,X2=None,M=None, all_pairs=True):
@@ -349,6 +352,7 @@ def update_errorbar(errobj, x, y, y_error):
     barsy.set_segments(new_segments_y)
 
 def plot_results(learner,H=None):
+
     dt = learner.plant.dt
     x0 = np.array(learner.plant.x0)
     S0 = np.array(learner.plant.S0)
@@ -369,7 +373,7 @@ def plot_results(learner,H=None):
     predicted_vars = np.array(rollout_[3])
     
     for d in xrange(x0.size):
-        plt.figure('Last run vs Predicted rollout %d'%(d))
+        plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
         plt.gca().clear()
         plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
         plt.plot(T_range,states[:,d])
@@ -392,45 +396,61 @@ def plot_results(learner,H=None):
     plt.show(False)
     plt.waitforbuttonpress(0.05)
 
-def plot_results_by_iteration(_experience,_dt, _x0, _S0, _H, _learner=None, _iteration=-1, _out_file= None):
-    H_steps =int( np.ceil(_H/_dt))
-    # plot last run cost vs predicted cost
-    plt.figure('Cost of last run and Predicted cost')
-    plt.gca().clear()
-    #print '_experience.immediate_cost',_experience.immediate_cost
-    #print 'sum(_experience.immediate_cost)',reduce(lambda a, b: a+b, _experience.immediate_cost)
-    #print '_experience.curr_episode', _experience.curr_episode
-    cost = np.array(_experience.immediate_cost[_iteration])[:,0]
-    #print 'cost', cost
-    T_range = np.arange(0,len(cost),_dt)
-    print 'T_range', T_range
-    if _learner is not None:
-        rollout_ = _learner.rollout(_x0,_S0,H_steps,1)
+def plot_and_save(learner,filename,H=None, target=None):
+    with PdfPages('plotting/' + filename) as pdf:
+        dt = learner.plant.dt
+        x0 = np.array(learner.plant.x0)
+        S0 = np.array(learner.plant.S0)
+        if H is None:
+            H = learner.H
+        H_steps =int( np.ceil(H/dt))
+        # plot last run cost vs predicted cost
+        plt.figure('Cost of last run and Predicted cost')
+        plt.title('Cost of last run and Predicted cost')
+        plt.gca().clear()
+        T_range = np.arange(0,H+dt,dt)
+        cost = np.array(learner.experience.immediate_cost[-1])[:,0]
+        rollout_ =  learner.rollout(x0,S0,H_steps,1)
         plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
-    plt.plot(T_range,cost)
+        plt.plot(T_range,cost)
+        pdf.savefig()
+        plt.close()
 
-    if _out_file is not None:
-        plt.savefig(_out_file+'/Cost_Last_run.png')
-    else:
-        plt.savefig('Default_Folder_Imgs'+'/Cost_Last_run.png')
-    states = np.array(_experience.states[-1])
-    if _learner is not None:
+        states = np.array(learner.experience.states[-1])
         predicted_means = np.array(rollout_[2])
         predicted_vars = np.array(rollout_[3])
-    
-    for d in xrange(len(_x0)):
-        plt.figure('Last run vs Predicted rollout %d'%(d))
+        
+        for d in xrange(x0.size):
+            plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
+            plt.title('Last run vs Predicted rollout for state dimension %d'%(d))
+            plt.gca().clear()
+            plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+            plt.plot(T_range,states[:,d])
+            if target:
+                plt.plot(T_range, [target[d]]*len(T_range))
+            pdf.savefig()
+            plt.close
+        ep_nums = []
+        ep_sums = []
+        for i in xrange(len(learner.experience.episode_labels)):
+            if learner.experience.episode_labels[i] != 'RANDOM':
+                ep_nums.append(learner.experience.episode_labels[i])
+                total_c = 0.0
+                for c in learner.experience.immediate_cost[i]:
+                    total_c += c[0]
+                ep_sums.append(total_c)
+        print ep_nums
+        print ep_sums
+        plt.figure('Total episode cost vs Iteration number')
+        plt.title('Total episode cost vs Iteration number')
         plt.gca().clear()
+        plt.plot(np.array(ep_nums), np.array(ep_sums))
+        plt.axis([0,ep_nums[-1],0,max(ep_sums)])
+        pdf.savefig()
+        plt.close()
 
-        #plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
-        plt.plot(T_range,states[:,d])
-        if _out_file is not None:
-            plt.savefig(_out_file+'/Run_vs_Pred_Rollout'+str(d)+'.png')
-        else:
-            plt.savefig('Default_Folder_Imgs'+'/Run_vs_Pred_Rollout'+str(d)+'.png')
 
-    plt.show(False)
-    plt.waitforbuttonpress(0.05)
+
 
 def get_logfile():
     ''' Returns the path of the file where the output of print_with_stamp wil be redirected. This can be set 
