@@ -528,7 +528,7 @@ def unzip_snapshot(zip_filepath, extract_path = ''):
 #
 # Sample usage:
 #   save_snapshot_zip('test', ['PILCO_GP_UI_Cartpole_RBFGP_sat.zip', 'PILCO_GP_UI_Cartpole_RBFGP_sat_dataset.zip', 'RBFGP_sat_5_1_cpu_float64.zip'])
-def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timestamp=True):
+def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timestamp=False):
   # Construct filename
   snapshot_filename = snapshot_header
   if with_timestamp:
