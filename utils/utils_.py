@@ -4,6 +4,7 @@ from datetime import datetime
 import math
 import time
 import zipfile
+import traceback
 
 import random
 import numpy as np
@@ -513,6 +514,15 @@ def sync_output_filename(output_filename, obj_filename, suffix):
       obj_filename = obj_filename[:suffix_idx]
   return output_filename, obj_filename
 
+def unzip_snapshot(zip_filepath, extract_path = ''):
+  try:
+    with zipfile.ZipFile(zip_filepath, 'r') as myzip:
+      myzip.extractall(extract_path)
+      print_with_stamp('Extracted %s.zip to %s'%(zip_filepath, os.path.abspath(extract_path)), 'Utils')
+  except BaseException, err:
+    print_with_stamp('unzip_snapshot exception: %s' % repr(err), 'Utils')
+    traceback.print_exc()
+
 # creates zip of files: <snapshot_header>_<YYMMDD_HHMMSS.mmm>.zip
 # if filename clash, will append _#
 #
@@ -554,4 +564,5 @@ def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timest
       myzip.close()
       print_with_stamp('Saved snapshot to %s.zip'%(snapshot_filename), 'Utils')
   except BaseException, err:
-    print_with_stamp('Snapshot exception: %s'%str(err), 'Utils')
+    print_with_stamp('save_snapshot_zip exception: %s' % repr(err), 'Utils')
+    traceback.print_exc()
