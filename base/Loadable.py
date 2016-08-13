@@ -14,7 +14,11 @@ class Loadable(object):
         ''' sets the class state from the input dictionary.'''
         assert isinstance(state,dict), "The state must be a dictionary (Files that saved a lit of variables will need to be converted)"
         for key in state.keys():
-            self.__dict__[key] = state[key]
+            value = state[key]
+            self.__dict__[key] = value
+            # if not already registered, register it so we don't lose data
+            if not any([isinstance(value,type_) for type_ in self.registered_types]) or not key in self.registered_keys:
+                self.register(key)
 
     def get_state(self):
         ''' gets the class state for the variable names in self.registered_keys'''

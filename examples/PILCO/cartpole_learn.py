@@ -70,7 +70,12 @@ if __name__ == '__main__':
     #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
     #learner_params['params']['dynmodel']['n_basis'] = 100
     learner = PILCO(**learner_params)
-    learner.load()
+    try:
+        learner.load(load_compiled_fns=True)
+        save_compiled_fns = False
+    except:
+        utils.print_with_stamp('Unable to load compiled fns','main')
+        save_compiled_fns = True
 
     atexit.register(learner.stop)
 
@@ -104,6 +109,7 @@ if __name__ == '__main__':
         plot_results(learner)
 
         # save latest state of the learner
-        learner.save()
+        learner.save(save_compiled_fns=save_compiled_fns)
+        save_compiled_fns = False  # only need to save the compiled functions once
     
     sys.exit(0)

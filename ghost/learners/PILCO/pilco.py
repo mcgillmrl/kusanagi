@@ -50,7 +50,7 @@ class PILCO(EpisodicLearner):
 
         self.register(['wrap_angles','next_episode','mx0','Sx0'])
     
-    def save(self, output_folder=None,output_filename=None):
+    def save(self, output_folder=None,output_filename=None, save_compiled_fns=False):
         ''' Saves the state of the learner, including the parameters of the policy and the dynamics model'''
         super(PILCO,self).save(output_folder,output_filename)
         
@@ -59,7 +59,10 @@ class PILCO(EpisodicLearner):
             dynamics_filename = output_filename + "_dynamics"
         self.dynamics_model.save(output_folder,dynamics_filename)
 
-    def load(self, output_folder=None,output_filename=None):
+        if save_compiled_fns:
+            self.save_compiled_fns(output_folder,output_filename)
+
+    def load(self, output_folder=None,output_filename=None, load_compiled_fns=False):
         ''' Loads the state of the learner, including the parameters of the policy and the dynamics model, and the compiled rollout functions'''
         super(PILCO,self).load(output_folder,output_filename)
         
@@ -67,6 +70,9 @@ class PILCO(EpisodicLearner):
         if output_filename is not None:
             dynamics_filename = output_filename + "_dynamics"
         self.dynamics_model.load(output_folder,dynamics_filename)
+
+        if load_compiled_fns:
+            self.load_compiled_fns(output_folder,output_filename)
     
     def get_snapshot_content_paths(self, output_folder=None):
         content_paths = super(PILCO,self).get_snapshot_content_paths(output_folder)
@@ -74,7 +80,7 @@ class PILCO(EpisodicLearner):
         content_paths.append( os.path.join(output_folder,self.dynamics_model.filename+'.zip') )
         return content_paths
 
-    def save_rollout(self, output_folder=None,output_filename=None):
+    def save_compiled_fns(self, output_folder=None,output_filename=None):
         ''' Saves the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
         sys.setrecursionlimit(50000)
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
@@ -84,7 +90,7 @@ class PILCO(EpisodicLearner):
         if not path.endswith('_rollout.zip'):
             path = path+'_rollout.zip'
         with open(path,'wb') as f:
-            utils.print_with_stamp('Saving compiled rollout to %s'%(path),self.name)
+            utils.print_with_stamp('Saving compiled functions to %s'%(path),self.name)
             # this saves the shared variables used by the rollout and policy gradients. This means that the zip file
             # will store the state of those variables from when this function is called
             # TODO save the shared variables form this class
@@ -92,7 +98,7 @@ class PILCO(EpisodicLearner):
             t_dump(t_vars,f,2)
             utils.print_with_stamp('Done saving.',self.name)
 
-    def load_rollout(self, output_folder=None,output_filename=None):
+    def load_compiled_fns(self, output_folder=None,output_filename=None):
         ''' Loads the compiled rollout and policy_gradient functions, along with the associated shared variables from the dynamics model and policy. The shared variables from the dynamics model adn the policy will be replaced with whatever is loaded, to ensure that the compiled rollout and policy_gradient functions are consistently updated, when the parameters of the dynamics_model and policy objects are changed. Since we won't store the latest state of these shared variables here, we will copy the values of the policy and dynamics_model parameters into the state of the shared variables. If the policy and dynamics_model parameters have been updated, we will need to load them before calling this function.'''
         sys.setrecursionlimit(50000)
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
@@ -102,7 +108,7 @@ class PILCO(EpisodicLearner):
         if not path.endswith('_rollout.zip'):
             path = path+'_rollout.zip'
         with open(path,'rb') as f:
-            utils.print_with_stamp('Loading compiled rollout from %s'%(path),self.name)
+            utils.print_with_stamp('Loading compiled functions from %s'%(path),self.name)
             t_vars = t_load(f)
             # here we are loading state variables that are probably outdated, but that are tied to the compiled rollout and policy_gradient functions
             # we need to restore whatever value the dataset and loghyp variables had, which is why we call get_params before replace the state variables
@@ -240,7 +246,7 @@ class PILCO(EpisodicLearner):
 
         return [mean_costs, var_costs, mean_states, cov_states], updts
 
-    def get_policy_value(self, mx0 = None, Sx0 = None, H = None, gamma0 = None, should_save_to_disk=False):
+    def get_policy_value(self, mx0 = None, Sx0 = None, H = None, gamma0 = None):
         ''' Returns a symbolic expression (theano tensor variable) for the value of the current policy '''
         mx0 = self.mx0 if mx0 is None else mx0
         Sx0 = self.Sx0 if Sx0 is None else Sx0
@@ -259,7 +265,7 @@ class PILCO(EpisodicLearner):
         dJdp = theano.tensor.grad(expected_accumulated_cost, params )
         return dJdp
 
-    def compile_rollout(self, mx0 = None, Sx0 = None, H = None, gamma0 = None, should_save_to_disk=False):
+    def compile_rollout(self, mx0 = None, Sx0 = None, H = None, gamma0 = None):
         ''' Compiles a theano function graph that compute the predicted states and discounted costs for a given
         inital state and prediction horizon.'''
         mx0 = self.mx0 if mx0 is None else mx0
@@ -276,10 +282,8 @@ class PILCO(EpisodicLearner):
                                           updates=updts,
                                           name='%s>rollout_fn'%(self.name))
         utils.print_with_stamp("Done compiling.",self.name)
-        if should_save_to_disk:
-            self.save_rollout()
 
-    def compile_policy_gradients(self, mx0 = None, Sx0 = None, H = None, gamma0 = None, should_save_to_disk=False):
+    def compile_policy_gradients(self, mx0 = None, Sx0 = None, H = None, gamma0 = None):
         ''' Compiles a theano function graph that computes the gradients of the expected accumulated a given
         initial state and prediction horizon. The function will return the value of the policy, followed by 
         the policy gradients.'''
@@ -307,8 +311,6 @@ class PILCO(EpisodicLearner):
                                                    updates=updts,
                                                    name="%s>policy_gradient_fn"%(self.name))
         utils.print_with_stamp("Done compiling.",self.name)
-        if should_save_to_disk:
-            self.save_rollout()
 
     def rollout(self, mx0, Sx0, H_steps, discount, symbolic=False):
         ''' Function that ensures the compiled rollout function is initialised before we can call it'''
