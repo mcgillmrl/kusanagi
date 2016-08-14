@@ -110,7 +110,7 @@ class PILCO(EpisodicLearner):
             utils.print_with_stamp('Loading compiled functions from %s'%(path),self.name)
             t_vars = t_load(f)
             # here we are loading state variables that are probably outdated, but that are tied to the compiled rollout and policy_gradient functions
-            # we need to restore whatever value the dataset and loghyp variables had, which is why we call get_params before replace the state variables
+            # we need to restore whatever value the dataset and loghyp variables had, which is why we call get_params before replacing the state variables
             X,Y = self.dynamics_model.get_dataset()
             params = self.dynamics_model.get_params(symbolic=False)
             self.dynamics_model.set_state(t_vars[0])
