@@ -76,6 +76,7 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
                     f.seek(pos,os.SEEK_SET)
                     c = f.read(1)
                 if pos >0 and c == '\r':
+                    f.seek(pos,os.SEEK_SET)
                     f.truncate()
                 f.write('\r')
             f.write(out_str+os.linesep)

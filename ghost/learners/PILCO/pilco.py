@@ -110,16 +110,18 @@ class PILCO(EpisodicLearner):
             utils.print_with_stamp('Loading compiled functions from %s'%(path),self.name)
             t_vars = t_load(f)
             # here we are loading state variables that are probably outdated, but that are tied to the compiled rollout and policy_gradient functions
-            # we need to restore whatever value the dataset and loghyp variables had, which is why we call get_params before replacing the state variables
-            X,Y = self.dynamics_model.get_dataset()
-            params = self.dynamics_model.get_params(symbolic=False)
+            # we need to restore whatever value the shared variables hold in the latest version
+            state = self.dynamics_model.get_state()
+            for key in state:
+                if key in t_vars[0] and isinstance(state[key],T.sharedvar.SharedVariable):
+                    t_vars[0][key].set_value(state[key].get_value())
             self.dynamics_model.set_state(t_vars[0])
-            self.dynamics_model.set_dataset(X,Y)
-            self.dynamics_model.set_params(params)
 
-            params = self.policy.get_params(symbolic=False)
+            state = self.policy.get_state()
+            for key in state:
+                if key in t_vars[1] and isinstance(state[key],T.sharedvar.SharedVariable):
+                    t_vars[1][key].set_value(state[key].get_value())
             self.policy.set_state(t_vars[1])
-            self.policy.set_params(params)
             
             # At this point the dynamics model and policy state variables should be tied to the rollout and policy_graddient function, and contain the up to date values of the
             # parameters
