@@ -515,13 +515,12 @@ def sync_output_filename(output_filename, obj_filename, suffix):
   return output_filename, obj_filename
 
 def unzip_snapshot(zip_filepath, extract_path = ''):
-  try:
-    with zipfile.ZipFile(zip_filepath, 'r') as myzip:
-      myzip.extractall(extract_path)
-      print_with_stamp('Extracted %s.zip to %s'%(zip_filepath, os.path.abspath(extract_path)), 'Utils')
-  except BaseException, err:
-    print_with_stamp('unzip_snapshot exception: %s' % repr(err), 'Utils')
-    traceback.print_exc()
+  if not zip_filepath.lower().endswith('.zip'):
+    zip_filepath += '.zip'
+    
+  with zipfile.ZipFile(zip_filepath, 'r') as myzip:
+    myzip.extractall(extract_path)
+    print_with_stamp('Extracted %s to %s'%(zip_filepath, os.path.abspath(extract_path)), 'Utils')
 
 # creates zip of files: <snapshot_header>_<YYMMDD_HHMMSS.mmm>.zip
 # if filename clash, will append _#
@@ -550,19 +549,15 @@ def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timest
     snapshot_filename = cand_filename
 
   # Save files
-  try:
-    with zipfile.ZipFile(snapshot_filename+'.zip', 'w') as myzip:
-      for archived_filepath in archived_files:
-        if os.path.isfile(archived_filepath):
-          arcname = archived_filepath
-          sep_idx = arcname.rfind(os.sep)
-          if sep_idx >= 0:
-            arcname = arcname[sep_idx+1:]
-          myzip.write(archived_filepath, arcname)
-        else:
-          print_with_stamp('Snapshot cannot find %s'%(archived_filepath), 'Utils')
-      myzip.close()
-      print_with_stamp('Saved snapshot to %s.zip'%(snapshot_filename), 'Utils')
-  except BaseException, err:
-    print_with_stamp('save_snapshot_zip exception: %s' % repr(err), 'Utils')
-    traceback.print_exc()
+  with zipfile.ZipFile(snapshot_filename+'.zip', 'w') as myzip:
+    for archived_filepath in archived_files:
+      if os.path.isfile(archived_filepath):
+        arcname = archived_filepath
+        sep_idx = arcname.rfind(os.sep)
+        if sep_idx >= 0:
+          arcname = arcname[sep_idx+1:]
+        myzip.write(archived_filepath, arcname)
+      else:
+        print_with_stamp('Snapshot cannot find %s'%(archived_filepath), 'Utils')
+    myzip.close()
+    print_with_stamp('Saved snapshot to %s.zip'%(snapshot_filename), 'Utils')
