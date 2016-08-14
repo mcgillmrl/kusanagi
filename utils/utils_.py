@@ -537,16 +537,10 @@ def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timest
     time_str = time.strftime('%y%m%d_%H%M%S')
     snapshot_filename='%s_%s.%03d' % (snapshot_header, time_str, int(ms))
 
-  # Verify/append _# to filename
+  # Crash if snapshot file already exists
   repeat_counter = None
   if os.path.isfile(snapshot_filename+'.zip'):
-    repeat_counter = -1
-    while True:
-      repeat_counter += 1
-      cand_filename = '%s_%d' % (snapshot_filename, repeat_counter)
-      if not os.path.isfile(cand_filename+'.zip'):
-        break
-    snapshot_filename = cand_filename
+    raise IOError('snapshot file %s already exists' % (snapshot_filename+'.zip'))
 
   # Save files
   with zipfile.ZipFile(snapshot_filename+'.zip', 'w') as myzip:
