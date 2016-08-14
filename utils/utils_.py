@@ -398,8 +398,11 @@ def plot_results(learner,H=None):
     plt.show(False)
     plt.waitforbuttonpress(0.05)
 
-def plot_and_save(learner,filename,H=None, target=None):
-    with PdfPages('plotting/' + filename) as pdf:
+def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
+    output_file = None
+    output_folder = get_output_dir() if output_folder is None else output_folder
+    output_file = os.path.abspath(os.path.join(output_folder, filename))
+    with PdfPages(output_file) as pdf:
         dt = learner.plant.dt
         x0 = np.array(learner.plant.x0)
         S0 = np.array(learner.plant.S0)
@@ -448,6 +451,7 @@ def plot_and_save(learner,filename,H=None, target=None):
         plt.axis([0,ep_nums[-1],0,max(ep_sums)])
         pdf.savefig()
         plt.close()
+    return output_file
 
 def get_logfile():
     ''' Returns the path of the file where the output of print_with_stamp wil be redirected. This can be set 
