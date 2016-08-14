@@ -113,13 +113,13 @@ class PILCO(EpisodicLearner):
             # we need to restore whatever value the shared variables hold in the latest version
             state = self.dynamics_model.get_state()
             for key in state:
-                if key in t_vars[0] and isinstance(state[key],T.sharedvar.SharedVariable):
+                if key in t_vars[0] and isinstance(state[key],theano.tensor.sharedvar.SharedVariable):
                     t_vars[0][key].set_value(state[key].get_value())
             self.dynamics_model.set_state(t_vars[0])
 
             state = self.policy.get_state()
             for key in state:
-                if key in t_vars[1] and isinstance(state[key],T.sharedvar.SharedVariable):
+                if key in t_vars[1] and isinstance(state[key],theano.tensor.sharedvar.SharedVariable):
                     t_vars[1][key].set_value(state[key].get_value())
             self.policy.set_state(t_vars[1])
             
