@@ -93,7 +93,6 @@ class PILCO(EpisodicLearner):
             utils.print_with_stamp('Saving compiled functions to %s'%(path),self.name)
             # this saves the shared variables used by the rollout and policy gradients. This means that the zip file
             # will store the state of those variables from when this function is called
-            # TODO save the shared variables form this class
             t_vars = [self.dynamics_model.get_state(), self.policy.get_state(), self.rollout_fn, self.policy_gradient_fn]
             t_dump(t_vars,f,2)
             utils.print_with_stamp('Done saving.',self.name)
@@ -112,8 +111,10 @@ class PILCO(EpisodicLearner):
             t_vars = t_load(f)
             # here we are loading state variables that are probably outdated, but that are tied to the compiled rollout and policy_gradient functions
             # we need to restore whatever value the dataset and loghyp variables had, which is why we call get_params before replace the state variables
+            X,Y = self.dynamics_model.get_dataset()
             params = self.dynamics_model.get_params(symbolic=False)
             self.dynamics_model.set_state(t_vars[0])
+            self.dynamics_model.set_dataset(X,Y)
             self.dynamics_model.set_params(params)
 
             params = self.policy.get_params(symbolic=False)

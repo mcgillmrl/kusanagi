@@ -86,6 +86,9 @@ class GP(Loadable):
         if self.loghyp is not None:
             self.logsn2 = 2*self.loghyp[:,-1]
     
+    def get_dataset(self):
+        return self.X.get_value(), self.Y.get_value()
+
     def set_dataset(self,X_dataset,Y_dataset):
         # ensure we don't change the number of input and output dimensions ( the number of samples can change)
         assert X_dataset.shape[0] == Y_dataset.shape[0], "X_dataset and Y_dataset must have the same number of rows"
@@ -170,9 +173,6 @@ class GP(Loadable):
 
     def set_params(self, params):
         loghyp = params[0]
-        inputs = params[1]
-        targets = params[2]
-        self.set_dataset(inputs,targets)
         self.set_loghyp(loghyp)
 
     def init_loss(self, cache_vars=True):
@@ -591,6 +591,11 @@ class SPGP(GP):
             retvars = [ r.get_value(borrow=True) for r in retvars]
         return retvars
 
+    def set_params(self, params):
+        super(SPGP,self).set_params(params)
+        X_sp = params[1]
+        self.set_X_sp(X_sp)
+
     def loss_sp(self,X_sp):
         self.set_X_sp(X_sp)
         res = self.dnlml_sp()
@@ -720,6 +725,12 @@ class RBFGP(GP_UI):
         if not symbolic:
             retvars = [ r.get_value(borrow=True) for r in retvars]
         return retvars
+
+    def set_params(self, params):
+        inputs = params[1]
+        targets = params[2]
+        self.set_dataset(inputs,targets)
+        super(RBFGP,self).set_params(params)
     
     def set_loghyp(self, loghyp):
         # this creates one theano shared variable for the log hyperparameters
@@ -843,17 +854,73 @@ class SSGP(GP):
         if self.loghyp is not None:
             self.set_loghyp( self.loghyp.get_value(borrow=True) )
 
+    def init_loss(self, cache_vars=True):
+        utils.print_with_stamp('Initialising expression graph for full GP training loss function',self.name)
+        idims = self.D
+        odims = self.E
+
+        # these are shared variables for the kernel matrix, its cholesky decomposition and K^-1 dot Y
+        if self. iK is None:
+            self.iK = S(np.zeros((self.E,self.N,self.N),dtype='float64'), name="%s>iK"%(self.name))
+        if self.L is None:
+            self.L = S(np.zeros((self.E,self.N,self.N),dtype='float64'), name="%s>L"%(self.name))
+        if self.beta is None:
+            self.beta = S(np.zeros((self.E,self.N),dtype='float64'), name="%s>beta"%(self.name))
+        N = self.X.shape[0].astype('float64')
+        
+        def log_marginal_likelihood(Y,loghyp,X,EyeN):
+            # initialise the (before compilation) kernel function
+            loghyps = (loghyp[:idims+1],loghyp[idims+1])
+            kernel_func = partial(cov.Sum, loghyps, self.covs)
+
+            # We initialise the kernel matrices (one for each output dimension)
+            K = kernel_func(X)
+            L = cholesky(K)
+            iK = solve_upper_triangular(L.T, solve_lower_triangular(L,EyeN))
+            Yc = solve_lower_triangular(L,Y)
+            beta = solve_upper_triangular(L.T,Yc)
+
+            # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
+            # the loghyperparameters across all output dimensions and train the GPs jointly)
+            nlml = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(L))) + N*T.log(2*np.pi) )
+
+            return nlml,iK,L,beta
+        
+        (nlml,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,T.eye(self.X.shape[0])], allow_gc=False)
+
+        iK = T.unbroadcast(iK,0) if iK.broadcastable[0] else iK
+        L = T.unbroadcast(L,0) if L.broadcastable[0] else L
+        beta = T.unbroadcast(beta,0) if beta.broadcastable[0] else beta
+    
+        if cache_vars:
+            # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
+            updts =[(self.iK,iK),(self.L,L),(self.beta,beta)]
+        else:
+            self.iK = iK 
+            self.L = L 
+            self.beta = beta
+            updts=None
+
+        # we add some penalty to avoid having parameters that are too large
+        if self.snr_penalty is not None:
+            penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
+            nlml += self.snr_penalty(self.loghyp)
+
+        # Compute the gradients for the sum of nlml for all output dimensions
+        dnlml = T.grad(nlml.sum(),self.loghyp)
+
+        # Compile the theano functions
+        utils.print_with_stamp('Compiling full GP training loss function',self.name)
+        self.nlml = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        utils.print_with_stamp('Compiling gradient of full GP training loss function',self.name)
+        self.dnlml = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        self.state_changed = True # for saving
     def init_loss(self,cache_vars=True):
         super(SSGP, self).init_loss()
         utils.print_with_stamp('Initialising expression graph for sparse spectral training loss function',self.name)
         idims = self.D
         odims = self.E
 
-        A = [[]]*odims
-        Lmm = [[]]*odims
-        iA = [[]]*odims
-        beta_ss = [[]]*odims
-        nlml_ss = [[]]*odims
         if self.iA is None:
             self.iA = S(np.zeros((self.E,2*self.n_basis,2*self.n_basis),dtype='float64'), name="%s>iA"%(self.name))
         if self.Lmm is None:
@@ -875,29 +942,32 @@ class SSGP(GP):
         phi_f = T.concatenate( [T.sin(srdotX), T.cos(srdotX)], axis=1 ).astype('float64') # E x 2*n_basis x N
         
         # TODO vectorize these ops
-        for i in xrange(odims):
-            sf2M_i = sf2M[i]; phi_f_i = phi_f[i]; sn2_i = sn2[i]
-            A[i] = sf2M_i*phi_f_i.dot(phi_f_i.T) + sn2_i*T.eye(Mi)
-            Lmm[i] = cholesky(A[i])
-            iA[i] = solve_upper_triangular(Lmm[i].T, solve_lower_triangular(Lmm[i],T.eye(Mi)))
-            Yi = self.Y[:,i]
-            Yci = solve_lower_triangular(Lmm[i],(phi_f_i.dot(Yi)))
-            beta_ss[i] = sf2M_i*solve_upper_triangular(Lmm[i].T,Yci)
+        phi_f.ndim
+        def log_marginal_likelihood(sf2M, sn2, phi_f, Y, EyeM):
+            phi_f.ndim
+            A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM
+            Lmm = cholesky(A)
+            iA = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm,EyeM))
+            Yc = solve_lower_triangular(Lmm,(phi_f.dot(Y)))
+            beta_ss = sf2M*solve_upper_triangular(Lmm.T,Yc)
 
-            nlml_ss[i] = 0.5*( Yi.dot(Yi) - sf2M_i*Yci.dot(Yci) )/sn2_i + T.sum(T.log(T.diag(Lmm[i]))) + (0.5*N - M)*T.log(sn2_i) + 0.5*N*np.log(2*np.pi)
+            nlml_ss = 0.5*( Y.dot(Y) - sf2M*Yc.dot(Yc) )/sn2 + T.sum(T.log(T.diag(Lmm))) + (0.5*N - M)*T.log(sn2) + 0.5*N*np.log(2*np.pi)
+            
+            return nlml_ss,iA,Lmm,beta_ss
+        
+        (nlml_ss,iA,Lmm,beta_ss),updts = theano.scan(fn=log_marginal_likelihood, sequences=[sf2M,sn2,phi_f,self.Y.T], non_sequences=[T.eye(Mi)], allow_gc=False)
+        
+        iA = T.unbroadcast(iA,0) if iA.broadcastable[0] else iA
+        Lmm = T.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
+        beta_ss = T.unbroadcast(beta_ss,0) if beta_ss.broadcastable[0] else beta_ss
 
-        nlml_ss = T.stack(nlml_ss)
         if cache_vars:
-            iA = T.stack(iA); iA = T.unbroadcast(iA,0) if iA.broadcastable[0] else iA
-            Lmm = T.stack(Lmm); Lmm = T.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
-            beta_ss = T.stack(beta_ss); beta_ss = T.unbroadcast(beta_ss,0) if beta_ss.broadcastable[0] else beta_ss
-    
             # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
             updts = [(self.iA,iA),(self.Lmm,Lmm),(self.beta_ss,beta_ss)]
         else:
             self.iA = iA 
             self.Lmm = Lmm 
-            beta_ss = T.stack(beta_ss); beta_ss = T.unbroadcast(beta_ss,0) if beta_ss.broadcastable[0] else beta_ss
+            self.beta_ss = beta_ss
             updts=None
 
         if self.snr_penalty is not None:
@@ -929,12 +999,16 @@ class SSGP(GP):
             self.sr = (self.w*T.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
     
     def get_params(self, symbolic=True, all_shared=False):
-        # Who commented this out before? Don't break code without asking!
          retvars = super(SSGP,self).get_params(symbolic=True)
          retvars.append(self.w)
          if not symbolic:
              retvars = [ r.get_value(borrow=True) for r in retvars]
              return retvars
+
+    def set_params(self, params):
+        super(SSGP,self).set_params(params)
+        w = params[1]
+        self.set_spectral_samples(w)
 
     def loss_ss(self, params, parameter_shapes):
         loghyp,w = utils.unwrap_params(params,parameter_shapes)

@@ -18,7 +18,7 @@ def default_params():
     #utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
     # setup learner parameters
     # general parameters
-    J = 2                                                                   # number of random initial trials
+    J = 4                                                                   # number of random initial trials
     N = 100                                                                 # learning iterations
     learner_params = {}
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean

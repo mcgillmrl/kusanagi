@@ -52,6 +52,7 @@ if __name__ == '__main__':
 
     # initialize learner
     learner = PILCO(learner_params, Cartpole, RBFPolicy, cartpole_loss, dynmodel_class=SSGP_UI)#, viz_class=CartpoleDraw)
+    learner.load()
     atexit.register(learner.stop)
     draw_cp = CartpoleDraw(learner.plant)
     draw_cp.start()

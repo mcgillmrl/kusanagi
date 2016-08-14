@@ -12,7 +12,7 @@ import theano
 import theano.tensor as T
 from theano.sandbox.linalg import psd,matrix_inverse
 import matplotlib as mpl
-mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
+#mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 
@@ -79,7 +79,7 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
                     f.truncate()
                 f.write('\r')
             f.write(out_str+os.linesep)
-        os.system('chmod 777 %s'%(logfile))
+        os.system('chmod 666 %s'%(logfile))
 
 def kmeanspp(X,k):
     import random
@@ -440,8 +440,6 @@ def plot_and_save(learner,filename,H=None, target=None):
                 for c in learner.experience.immediate_cost[i]:
                     total_c += c[0]
                 ep_sums.append(total_c)
-        print ep_nums
-        print ep_sums
         plt.figure('Total episode cost vs Iteration number')
         plt.title('Total episode cost vs Iteration number')
         plt.gca().clear()
@@ -449,9 +447,6 @@ def plot_and_save(learner,filename,H=None, target=None):
         plt.axis([0,ep_nums[-1],0,max(ep_sums)])
         pdf.savefig()
         plt.close()
-
-
-
 
 def get_logfile():
     ''' Returns the path of the file where the output of print_with_stamp wil be redirected. This can be set 

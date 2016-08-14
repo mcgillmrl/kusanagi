@@ -107,5 +107,5 @@ class Loadable(object):
             with open(path,'wb') as f:
                 utils.print_with_stamp('Saving state to %s'%(path),self.name)
                 t_dump(self.get_state(),f,2)
-            os.system('chmod 777 %s'%(path))
+            os.system('chmod 666 %s'%(path))
             self.state_changed = False
