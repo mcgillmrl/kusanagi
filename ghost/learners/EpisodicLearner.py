@@ -115,6 +115,12 @@ class EpisodicLearner(Loadable):
         # save learner state
         super(EpisodicLearner,self).save(output_folder,output_filename)
 
+    def load_snapshot(self, zip_filepath, output_folder=None, extract_folder=None):
+        output_folder = utils.get_output_dir() if output_folder is None else output_folder
+        if extract_folder is None:
+          extract_folder = output_folder
+        utils.unzip_snapshot(os.path.join(output_folder, zip_filepath),extract_folder)
+
     def get_snapshot_content_paths(self, output_folder=None):
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
         content_paths = [os.path.join(output_folder,self.policy.filename+'.zip'),

@@ -397,8 +397,11 @@ def plot_results(learner,H=None):
     plt.show(False)
     plt.waitforbuttonpress(0.05)
 
-def plot_and_save(learner,filename,H=None, target=None):
-    with PdfPages('plotting/' + filename) as pdf:
+def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
+    output_file = None
+    output_folder = get_output_dir() if output_folder is None else output_folder
+    output_file = os.path.abspath(os.path.join(output_folder, filename))
+    with PdfPages(output_file) as pdf:
         dt = learner.plant.dt
         x0 = np.array(learner.plant.x0)
         S0 = np.array(learner.plant.S0)
@@ -447,6 +450,7 @@ def plot_and_save(learner,filename,H=None, target=None):
         plt.axis([0,ep_nums[-1],0,max(ep_sums)])
         pdf.savefig()
         plt.close()
+    return output_file
 
 def get_logfile():
     ''' Returns the path of the file where the output of print_with_stamp wil be redirected. This can be set 
@@ -510,13 +514,12 @@ def sync_output_filename(output_filename, obj_filename, suffix):
   return output_filename, obj_filename
 
 def unzip_snapshot(zip_filepath, extract_path = ''):
-  try:
-    with zipfile.ZipFile(zip_filepath, 'r') as myzip:
-      myzip.extractall(extract_path)
-      print_with_stamp('Extracted %s.zip to %s'%(zip_filepath, os.path.abspath(extract_path)), 'Utils')
-  except BaseException, err:
-    print_with_stamp('unzip_snapshot exception: %s' % repr(err), 'Utils')
-    traceback.print_exc()
+  if not zip_filepath.lower().endswith('.zip'):
+    zip_filepath += '.zip'
+    
+  with zipfile.ZipFile(zip_filepath, 'r') as myzip:
+    myzip.extractall(extract_path)
+    print_with_stamp('Extracted %s to %s'%(zip_filepath, os.path.abspath(extract_path)), 'Utils')
 
 # creates zip of files: <snapshot_header>_<YYMMDD_HHMMSS.mmm>.zip
 # if filename clash, will append _#
@@ -533,31 +536,21 @@ def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timest
     time_str = time.strftime('%y%m%d_%H%M%S')
     snapshot_filename='%s_%s.%03d' % (snapshot_header, time_str, int(ms))
 
-  # Verify/append _# to filename
+  # Crash if snapshot file already exists
   repeat_counter = None
   if os.path.isfile(snapshot_filename+'.zip'):
-    repeat_counter = -1
-    while True:
-      repeat_counter += 1
-      cand_filename = '%s_%d' % (snapshot_filename, repeat_counter)
-      if not os.path.isfile(cand_filename+'.zip'):
-        break
-    snapshot_filename = cand_filename
+    raise IOError('snapshot file %s already exists' % (snapshot_filename+'.zip'))
 
   # Save files
-  try:
-    with zipfile.ZipFile(snapshot_filename+'.zip', 'w') as myzip:
-      for archived_filepath in archived_files:
-        if os.path.isfile(archived_filepath):
-          arcname = archived_filepath
-          sep_idx = arcname.rfind(os.sep)
-          if sep_idx >= 0:
-            arcname = arcname[sep_idx+1:]
-          myzip.write(archived_filepath, arcname)
-        else:
-          print_with_stamp('Snapshot cannot find %s'%(archived_filepath), 'Utils')
-      myzip.close()
-      print_with_stamp('Saved snapshot to %s.zip'%(snapshot_filename), 'Utils')
-  except BaseException, err:
-    print_with_stamp('save_snapshot_zip exception: %s' % repr(err), 'Utils')
-    traceback.print_exc()
+  with zipfile.ZipFile(snapshot_filename+'.zip', 'w') as myzip:
+    for archived_filepath in archived_files:
+      if os.path.isfile(archived_filepath):
+        arcname = archived_filepath
+        sep_idx = arcname.rfind(os.sep)
+        if sep_idx >= 0:
+          arcname = arcname[sep_idx+1:]
+        myzip.write(archived_filepath, arcname)
+      else:
+        print_with_stamp('Snapshot cannot find %s'%(archived_filepath), 'Utils')
+    myzip.close()
+    print_with_stamp('Saved snapshot to %s.zip'%(snapshot_filename), 'Utils')
