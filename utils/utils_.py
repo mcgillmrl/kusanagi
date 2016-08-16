@@ -436,9 +436,9 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
             plt.close
         ep_nums = []
         ep_sums = []
-        for i in xrange(len(learner.experience.episode_labels)):
-            if learner.experience.episode_labels[i] != 'RANDOM':
-                ep_nums.append(learner.experience.episode_labels[i])
+        for i in xrange(learner.experience.n_episodes()):
+            if not learner.experience.policy_parameters[i]:
+                ep_nums.append(i)
                 total_c = 0.0
                 for c in learner.experience.immediate_cost[i]:
                     total_c += c[0]

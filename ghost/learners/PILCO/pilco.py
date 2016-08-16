@@ -15,6 +15,7 @@ class PILCO(EpisodicLearner):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', filename_prefix=None):
         self.dynamics_model = None
         self.wrap_angles = params['wrap_angles'] if 'wrap_angles' in params else False
+        self.use_empirical_x0 = params['use_empirical_x0'] if 'use_empirical_x0' in params else False
         self.rollout_fn=None
         self.policy_gradient_fn=None
         self.angle_idims = params['angle_dims']
@@ -354,7 +355,6 @@ class PILCO(EpisodicLearner):
             for i in xrange(self.next_episode,n_episodes):
                 x = np.array(self.experience.states[i])
                 u = np.array(self.experience.actions[i])
-                x0.append(x[0])
 
                 # inputs are states, concatenated with actions ( excluding the last entry) 
                 x_ = utils.gTrig_np(x, self.angle_idims)
@@ -372,13 +372,14 @@ class PILCO(EpisodicLearner):
                 Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
 
             # get distribution of initial states
-            x0 = np.array(x0)
+            x0 = np.array([x[0] for x in self.experience.states])
             if n_episodes > 1:
                 self.mx0.set_value(x0.mean(0).astype('float64'))
                 self.Sx0.set_value(np.cov(x0.T).astype('float64'))
             else:
                 self.mx0.set_value(x0.astype('float64').flatten())
                 self.Sx0.set_value(1e-2*np.eye(x0.size).astype('float64'))
+            
 
             # append data to the dynamics model
             self.dynamics_model.append_dataset(X,Y)
@@ -387,7 +388,8 @@ class PILCO(EpisodicLearner):
             S0 = np.array(self.plant.S0, dtype='float64').squeeze()
             self.mx0.set_value(x0)
             self.Sx0.set_value(S0)
-
+        
+        #utils.print_with_stamp('%s, \n%s'%(self.mx0.get_value(), self.Sx0.get_value()),self.name)
         utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X.get_value(borrow=True).shape,self.dynamics_model.Y.get_value(borrow=True).shape),self.name)
         if self.dynamics_model.should_recompile:
             # reinitialize log likelihood
@@ -411,9 +413,13 @@ class PILCO(EpisodicLearner):
             return np.zeros((H_steps,)),np.ones((H_steps,))
 
         # setup initial state
-        mx = np.array(self.plant.x0, dtype='float64').squeeze()
-        Sx = np.array(self.plant.S0, dtype='float64').squeeze()
-        
+        if self.use_empirical_x0:
+            mx = self.mx0.get_value()
+            Sx = self.Sx0.get_value()
+        else:
+            mx = np.array(self.plant.x0, dtype='float64').squeeze()
+            Sx = np.array(self.plant.S0, dtype='float64').squeeze()
+    
         if return_grads:
             pg = self.policy_gradient(mx,Sx,H_steps,self.discount)
             # first return argument is the value of the policy, second are the gradients wrt the policy params

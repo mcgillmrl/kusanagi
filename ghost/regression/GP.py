@@ -23,7 +23,9 @@ class GP(Loadable):
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
 
         # GP options
-        self.min_method = "L-BFGS-B"
+        self.max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 150
+        self.conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
+        self.min_method = kwargs['min_method'] if 'min_method' in kwargs else "L-BFGS-B"
         self.state_changed = True
         self.should_recompile = False
         self.trained = False
@@ -325,9 +327,9 @@ class GP(Loadable):
         utils.print_with_stamp('nlml: %s'%(np.array(self.nlml())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
         try:
-            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=1e-10, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': self.max_evals})
         except ValueError:
-            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=1e-10, options={'maxiter': 500})
+            opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=self.conv_thr, options={'maxiter': self.max_evals})
         print ''
         loghyp = opt_res.x.reshape(loghyp0.shape)
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
@@ -617,7 +619,7 @@ class SPGP(GP):
                 self.init_loss()
             utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp())),self.name)
             m_loss_sp = utils.MemoizeJac(self.loss_sp)
-            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=1e-10, options={'maxiter': 750})
+            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(1.5*self.max_iters)})
             print ''
             X_sp = opt_res.x.reshape(self.X_sp.get_value(borrow=True).shape)
             self.set_X_sp(X_sp)
@@ -839,7 +841,7 @@ class SSGP(GP):
         self.nlml_ss = None
         self.dnlml_ss = None
         self.n_basis = n_basis
-        super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs, **kwargs)
+        GP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs, **kwargs)
     
     def load(self, output_folder=None,output_filename=None):
         ''' loads the state from file, and initializes additional variables'''
@@ -1011,7 +1013,7 @@ class SSGP(GP):
         p0 = [self.loghyp.get_value(),self.w.get_value()]
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = utils.MemoizeJac(self.loss_ss)
-        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=1e-10, options={'maxiter': 750})
+        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(1.5*self.max_iters)})
         print ''
         loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.set_loghyp(loghyp)
@@ -1049,7 +1051,7 @@ class SSGP(GP):
 
 class SSGP_UI(SSGP, GP_UI):
     ''' Sparse Spectral Gaussian Process Regression with Uncertain Inputs'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, **kwargs):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100, **kwargs):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True, **kwargs)
 
     def predict_symbolic(self,mx,Sx):
