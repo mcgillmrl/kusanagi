@@ -469,6 +469,8 @@ def get_run_output_dir():
         os.environ['KUSANAGI_RUN_OUTPUT'] = os.path.join(get_output_dir(),"last_run")
     try: 
         os.makedirs(os.environ['KUSANAGI_RUN_OUTPUT'])
+        chmod_cmd = 'chmod a+rwx -R ' + os.path.abspath(os.environ['KUSANAGI_RUN_OUTPUT'])
+        os.system(chmod_cmd)
     except OSError:
         if not os.path.isdir(os.environ['KUSANAGI_RUN_OUTPUT']):
             raise
@@ -482,6 +484,8 @@ def get_output_dir():
         os.environ['KUSANAGI_OUTPUT'] = os.path.join(os.path.join(os.environ['HOME'],".kusanagi"),"output")
     try: 
         os.makedirs(os.environ['KUSANAGI_OUTPUT'])
+        chmod_cmd = 'chmod a+rwx -R ' + os.path.abspath(os.environ['KUSANAGI_OUTPUT'])
+        os.system(chmod_cmd)
     except OSError:
         if not os.path.isdir(os.environ['KUSANAGI_OUTPUT']):
             raise
