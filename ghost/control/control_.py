@@ -70,11 +70,23 @@ class RBFPolicy(RBFGP):
 
 # random controller
 class RandPolicy:
-    def __init__(self, maxU=[10]):
+    def __init__(self, maxU=[10], random_walk=False):
         self.maxU = np.array(maxU)
+        #self.last_u = np.zeros_like(np.array(maxU))
+        self.last_u = 0.5*((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+        self.random_walk=random_walk
+        
 
     def evaluate(self, m, s=None, t=None, derivs=False):
-        ret = ((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+        if self.random_walk:
+            ret = self.last_u + 0.3*((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+            ret = np.min ( (ret.flatten(), self.maxU.flatten()), axis=0  ) 
+            ret = np.max ( (ret.flatten(), -self.maxU.flatten()), axis=0  ) 
+            ret = ret.reshape(self.maxU.shape)
+        else:
+            ret = ((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+
+        self.last_u = ret
         U = len(self.maxU)
         D = m.shape[0]
         return ret, np.zeros((U,U)), np.zeros((D,U))

@@ -53,6 +53,8 @@ class EpisodicLearner(Loadable):
         self.conv_thr = params['conv_thr'] if 'conv_thr' in params else 1e-12
         self.learning_rate = params['learning_rate'] if 'learning_rate' in params else 1.0
         self.min_method = params['min_method'] if 'min_method' in params else "L-BFGS-B"
+        self.random_walk = params['random_walk'] if 'random_walk' in params else False
+
         self.async_plant = async_plant
         self.learning_iteration = 0
         self.n_evals = 0
@@ -179,7 +181,7 @@ class EpisodicLearner(Loadable):
         @param random_controls Boolean flag that specifies whether to use the current policy or apply random controls
         '''
         if random_controls:
-            policy = RandPolicy(self.policy.maxU)
+            policy = RandPolicy(self.policy.maxU, self.random_walk)
             p = []
         else:
             policy = self.policy

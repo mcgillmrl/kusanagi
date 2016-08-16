@@ -17,7 +17,7 @@ import utils
 from base.Loadable import Loadable
 
 class GP(Loadable):
-    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, hyperparameter_gradients=False, snr_penalty=SNRpenalty.SEard):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, snr_penalty=SNRpenalty.SEard, **kwargs):
         # theano options
         self.profile= profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
@@ -28,7 +28,6 @@ class GP(Loadable):
         self.should_recompile = False
         self.trained = False
         self.uncertain_inputs = uncertain_inputs
-        self.hyperparameter_gradients = hyperparameter_gradients
         self.snr_penalty = snr_penalty
         self.covs = (cov.SEard, cov.Noise)
         
@@ -338,8 +337,8 @@ class GP(Loadable):
         self.trained = True
 
 class GP_UI(GP):
-    def __init__(self, X_dataset=None, Y_dataset=None, name = 'GP_UI', idims=None, odims=None, profile=False, uncertain_inputs=True, hyperparameter_gradients=False):
-        super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
+    def __init__(self, X_dataset=None, Y_dataset=None, name = 'GP_UI', idims=None, odims=None, profile=False, **kwargs):
+        super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=True, **kwargs)
 
     def predict_symbolic(self,mx,Sx):
         idims = self.D
@@ -405,7 +404,7 @@ class GP_UI(GP):
         return M,S,V
         
 class SPGP(GP):
-    def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP', idims=None, odims=None, profile=False, n_basis = 100, uncertain_inputs=False, hyperparameter_gradients=False):
+    def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP', idims=None, odims=None, profile=False, n_basis = 100, uncertain_inputs=False, **kwargs):
         self.X_sp = None # inducing inputs (symbolic variable)
         self.nlml_sp = None
         self.dnlml_sp = None
@@ -417,7 +416,7 @@ class SPGP(GP):
         self.should_recompile = False
         self.n_basis = n_basis
         # intialize parent class params
-        super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+        super(SPGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs, **kwargs)
 
     def init_pseudo_inputs(self):
         assert self.N > self.n_basis, "Dataset must have more than n_basis [ %n ] to enable inference with sparse pseudo inputs"%(self.n_basis)
@@ -626,8 +625,8 @@ class SPGP(GP):
         self.trained = True
 
 class SPGP_UI(SPGP,GP_UI):
-    def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP_UI', idims=None, odims=None,profile=False, n_basis = 100, hyperparameter_gradients=False):
-        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
+    def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP_UI', idims=None, odims=None,profile=False, n_basis = 100, **kwargs):
+        super(SPGP_UI, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True, **kwargs)
 
     def predict_symbolic(self,mx,Sx):
         if self.N <= self.n_basis:
@@ -698,12 +697,12 @@ class SPGP_UI(SPGP,GP_UI):
 
 # RBF network (GP with uncertain inputs/deterministic outputs)
 class RBFGP(GP_UI):
-    def __init__(self, X_dataset=None, Y_dataset=None, idims=None, odims=None, sat_func=None, name = 'RBFGP',profile=False):
+    def __init__(self, X_dataset=None, Y_dataset=None, idims=None, odims=None, sat_func=None, name = 'RBFGP',profile=False, **kwargs):
         self.sat_func = sat_func
         if self.sat_func is not None:
             name += '_sat'
         self.loghyp_full=None
-        super(RBFGP, self).__init__(X_dataset,Y_dataset,idims=idims,odims=odims,name=name,profile=profile,hyperparameter_gradients=True)
+        super(RBFGP, self).__init__(X_dataset,Y_dataset,idims=idims,odims=odims,name=name,profile=profile, **kwargs)
         
         # register additional variables for saving
         self.register(['sat_func'])
@@ -831,7 +830,7 @@ class RBFGP(GP_UI):
 
 class SSGP(GP):
     ''' Sparse Spectral Gaussian Process Regression'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, hyperparameter_gradients=False):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, **kwargs):
         self.w = None
         self.sr = None
         self.Lmm = None
@@ -840,7 +839,7 @@ class SSGP(GP):
         self.nlml_ss = None
         self.dnlml_ss = None
         self.n_basis = n_basis
-        super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+        super(SSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs, **kwargs)
     
     def load(self, output_folder=None,output_filename=None):
         ''' loads the state from file, and initializes additional variables'''
@@ -1050,8 +1049,8 @@ class SSGP(GP):
 
 class SSGP_UI(SSGP, GP_UI):
     ''' Sparse Spectral Gaussian Process Regression with Uncertain Inputs'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, hyperparameter_gradients=False):
-        SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True,hyperparameter_gradients=hyperparameter_gradients)
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=True, **kwargs):
+        SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=True, **kwargs)
 
     def predict_symbolic(self,mx,Sx):
         #if self.N < self.n_basis:
@@ -1136,9 +1135,9 @@ class SSGP_UI(SSGP, GP_UI):
 
 class VSSGP(SSGP):
     ''' Variational Sparse Spectral Gaussian Process Regression'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='VSSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, hyperparameter_gradients=False):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='VSSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, **kwargs):
         self.n_basis = n_basis
-        super(VSSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=uncertain_inputs,hyperparameter_gradients=hyperparameter_gradients)
+        super(VSSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=uncertain_inputs, **kwargs)
     
     def initialize_parameters(self,w=None):
         # TODO this is for a single SE kernel component
