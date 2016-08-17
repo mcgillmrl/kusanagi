@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import
+import os
 import sys
 from datetime import datetime
 
@@ -30,14 +30,18 @@ def analyse_log(logpath):
     pol_t = nan
     end_t = nan
     state = 'ini'
+    first = True
     with open(logpath, 'r') as logfile:
       for line in logfile.readlines():
         if len(line) < 29:
           continue
         if state == 'ini' and line.find('Experience > Initialising new experience dataset') >= 0:
           new_ini_t = (datetime.strptime(line[:28], '[%Y-%m-%d %H:%M:%S.%f]')-epoch).total_seconds()
-          csvfile.write('%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f\n' % (end_t-ini_t, dyn_t-ini_t, pol_t-dyn_t, end_t-pol_t, new_ini_t-end_t, ini_t, dyn_t, pol_t, end_t))
-          csvlines += 1
+          if first:
+            first = False
+          else:
+            csvfile.write('%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f\n' % (end_t-ini_t, dyn_t-ini_t, pol_t-dyn_t, end_t-pol_t, new_ini_t-end_t, ini_t, dyn_t, pol_t, end_t))
+            csvlines += 1
           ini_t = new_ini_t
           dyn_t = nan
           pol_t = nan
@@ -60,15 +64,13 @@ def analyse_log(logpath):
   print '- Wrote %d lines to %s' % (csvlines, csvpath)
   
   print '- Generating plot: %s' % (pngpath)
-  plot_cmd = 'start matlab -nosplash -nodesktop -nojvm -r "plot_learning_server_profile(%s, %s, 1, %s); exit"' % (basename, csvpath, pngpath)
+  plot_cmd = 'matlab -nosplash -nodesktop -r "plot_learner_profile(\'%s\', \'%s\', 1, \'%s\'); exit"' % (basename, csvpath, pngpath)
   print '> ' + plot_cmd
   os.system(plot_cmd)
   if os.path.isfile(pngpath):
-    print '- Wrote to %s' % plot_cmd
+    print '- Wrote to %s' % pngpath
   else:
     print '! Plotting command unsuccessful; debug by hand'
-  
-  print '- ALL DONE'
 
 if __name__=='__main__':
   if len(sys.argv) != 2:
