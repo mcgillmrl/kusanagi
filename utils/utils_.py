@@ -8,11 +8,12 @@ import traceback
 
 import random
 import numpy as np
+import csv
 import theano
 import theano.tensor as T
 from theano.sandbox.linalg import psd,matrix_inverse
 import matplotlib as mpl
-#mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
+mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 
@@ -401,55 +402,81 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
     output_file = None
     output_folder = get_output_dir() if output_folder is None else output_folder
     output_file = os.path.abspath(os.path.join(output_folder, filename))
-    with PdfPages(output_file) as pdf:
-        dt = learner.plant.dt
-        x0 = np.array(learner.plant.x0)
-        S0 = np.array(learner.plant.S0)
-        if H is None:
-            H = learner.H
-        H_steps =int( np.ceil(H/dt))
-        # plot last run cost vs predicted cost
-        plt.figure('Cost of last run and Predicted cost')
-        plt.title('Cost of last run and Predicted cost')
-        plt.gca().clear()
-        T_range = np.arange(0,H+dt,dt)
-        cost = np.array(learner.experience.immediate_cost[-1])[:,0]
-        rollout_ =  learner.rollout(x0,S0,H_steps,1)
-        plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
-        plt.plot(T_range,cost)
-        pdf.savefig()
-        plt.close()
+    with open(output_file[:-4] + ".csv", 'w') as f:
+        writer = csv.writer(f)
 
-        states = np.array(learner.experience.states[-1])
-        predicted_means = np.array(rollout_[2])
-        predicted_vars = np.array(rollout_[3])
-        
-        for d in xrange(x0.size):
-            plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
-            plt.title('Last run vs Predicted rollout for state dimension %d'%(d))
+        with PdfPages(output_file) as pdf:
+            dt = learner.plant.dt
+            x0 = np.array(learner.plant.x0)
+            S0 = np.array(learner.plant.S0)
+            if H is None:
+                H = learner.H
+            H_steps =int( np.ceil(H/dt))
+            # plot last run cost vs predicted cost
+            plt.figure('Cost of last run and Predicted cost')
             plt.gca().clear()
-            plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
-            plt.plot(T_range,states[:,d])
-            if target:
-                plt.plot(T_range, [target[d]]*len(T_range))
+            T_range = np.arange(0,H+dt,dt)
+            cost = np.array(learner.experience.immediate_cost[-1])[:,0]
+            rollout_ =  learner.rollout(x0,S0,H_steps,1)
+            plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+            plt.plot(T_range,cost)
+            plt.title('Cost of last run and Predicted cost')
+
+            header = ['T_range, actual cost, expected cost mean, expected cost error']
+            writer.writerow(header)
+            writer.writerow(T_range)
+            writer.writerow(cost)
+            writer.writerow(rollout_[0])
+            writer.writerow(2*np.sqrt(rollout_[1]))
+            endline = ['-------------------------------------------------------------']
+            writer.writerow(endline)
             pdf.savefig()
-            plt.close
-        ep_nums = []
-        ep_sums = []
-        for i in xrange(learner.experience.n_episodes()):
-            if learner.experience.policy_parameters[i]:
-                ep_nums.append(i)
-                total_c = 0.0
-                for c in learner.experience.immediate_cost[i]:
-                    total_c += c[0]
-                ep_sums.append(total_c)
-        plt.figure('Total episode cost vs Iteration number')
-        plt.title('Total episode cost vs Iteration number')
-        plt.gca().clear()
-        plt.plot(np.array(ep_nums), np.array(ep_sums))
-        plt.axis([0,ep_nums[-1],0,max(ep_sums)])
-        pdf.savefig()
-        plt.close()
+            plt.close()
+
+            states = np.array(learner.experience.states[-1])
+            predicted_means = np.array(rollout_[2])
+            predicted_vars = np.array(rollout_[3])
+            
+            for d in xrange(x0.size):
+                plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
+                plt.gca().clear()
+                plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+                plt.plot(T_range,states[:,d])
+                if target:
+                    plt.plot(T_range, [target[d]]*len(T_range))
+                plt.title('Last run vs Predicted rollout for state dimension %d'%(d))
+                header = ['T_range, actual state, expected state, expected state error. (State dimension %d)'%(d)]
+                writer.writerow(header)
+                writer.writerow(T_range)
+                writer.writerow(states[:,d])
+                writer.writerow(predicted_means[:,d])
+                writer.writerow(2*np.sqrt(predicted_vars[:,d,d]))
+                endline = ['-------------------------------------------------------------']
+                writer.writerow(endline)
+                pdf.savefig()
+                plt.close
+            ep_nums = []
+            ep_sums = []
+            for i in xrange(len(learner.experience.episode_labels)):
+                if learner.experience.episode_labels[i] != "RANDOM":
+                    ep_nums.append(learner.experience.episode_labels[i])
+                    total_c = 0.0
+                    for c in learner.experience.immediate_cost[i]:
+                        total_c += c[0]
+                    ep_sums.append(total_c)
+            plt.figure('Total episode cost vs Iteration number')
+            plt.gca().clear()
+            plt.plot(np.array(ep_nums), np.array(ep_sums))
+            plt.axis([0,ep_nums[-1],0,max(ep_sums)])
+            plt.title('Total episode cost vs Iteration number')
+            header = ['Iteration number, Total episode Cost']
+            writer.writerow(header)
+            writer.writerow(ep_nums)
+            writer.writerow(ep_sums)
+            endline = ['-------------------------------------------------------------']
+            writer.writerow(endline)
+            pdf.savefig()
+            plt.close()
     return output_file
 
 def get_logfile():
