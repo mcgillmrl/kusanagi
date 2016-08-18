@@ -281,7 +281,7 @@ class EpisodicLearner(Loadable):
         self.plant.stop()
         if self.viz is not None:
             self.viz.stop()
-        self.n_episodes += 1
+        self.n_episodes += len(self.experience.states)
         return self.experience
 
     def train_policy(self, H=None):
