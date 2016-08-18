@@ -159,7 +159,7 @@ class EpisodicLearner(Loadable):
     
     def set_cost(self, new_cost_func, new_cost_params):
         ''' Replaces the old cost function with a new one (and recompiles it)'''
-        utils.print_with_stamp('Cost parameters: %s'%(self.cost.keywords['params']),self.name)
+        utils.print_with_stamp('Cost parameters: %s'%(new_cost_params),self.name)
         if self.cost is not None:
             if self.cost.func == new_cost_func and self.cost.keywords['params'] == new_cost_params:
                 # do nothing, as the current cost has the same parameters
