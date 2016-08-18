@@ -457,13 +457,16 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
                 plt.close
             ep_nums = []
             ep_sums = []
-            for i in xrange(len(learner.experience.episode_labels)):
-                if learner.experience.episode_labels[i] != "RANDOM":
-                    ep_nums.append(learner.experience.episode_labels[i])
+            n_random = 0
+            for i in xrange(learner.experience.n_episodes()):
+                if learner.experience.policy_parameters[i]:
+                    ep_nums.append(i-n_random)
                     total_c = 0.0
                     for c in learner.experience.immediate_cost[i]:
                         total_c += c[0]
                     ep_sums.append(total_c)
+                else:
+                    n_random += 1
             plt.figure('Total episode cost vs Iteration number')
             plt.gca().clear()
             plt.plot(np.array(ep_nums), np.array(ep_sums))

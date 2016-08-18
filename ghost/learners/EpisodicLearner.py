@@ -6,7 +6,6 @@ import time
 import utils
 
 from functools import partial
-from matplotlib import pyplot as plt
 from scipy.optimize import minimize, basinhopping
 
 from ghost.learners.ExperienceDataset import ExperienceDataset

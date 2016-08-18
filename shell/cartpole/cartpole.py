@@ -3,7 +3,6 @@ import theano
 from shell.plant import ODEPlant, PlantDraw
 from ghost.cost import quadratic_saturating_loss
 from utils import print_with_stamp, gTrig_np, gTrig2
-from matplotlib import pyplot as plt
 
 def default_params():
     # setup learner parameters
