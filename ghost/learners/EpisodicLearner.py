@@ -160,7 +160,7 @@ class EpisodicLearner(Loadable):
         ''' Replaces the old cost function with a new one (and recompiles it)'''
         if 'angle_dims' not in new_cost_params:
             new_cost_params['angle_dims'] = self.angle_idims
-        utils.print_with_stamp('Cost parameters: %s'%(new_cost_params),self.name)
+        
         if self.cost is not None:
             if self.cost.func == new_cost_func and self.cost.keywords['params'] == new_cost_params:
                 # do nothing, as the current cost has the same parameters
