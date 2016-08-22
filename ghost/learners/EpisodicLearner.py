@@ -89,10 +89,8 @@ class EpisodicLearner(Loadable):
 
         # initialize policy if needed
         p = self.policy.get_params()
-        for pi in p:
-            if pi is None or pi.size == 0:
-                self.policy.set_default_parameters()
-                break
+        if len(p) == 0:
+            self.policy.set_default_parameters()
 
     def save(self, output_folder=None,output_filename=None):
         #initialize cost if neeeded
@@ -100,10 +98,8 @@ class EpisodicLearner(Loadable):
 
         # initialize policy if needed
         p = self.policy.get_params()
-        for pi in p:
-            if pi is None or pi.size == 0:
-                self.policy.set_default_parameters()
-                break
+        if len(p) == 0:
+            self.policy.set_default_parameters()
 
         policy_filename = None
         if output_filename is not None:
@@ -198,10 +194,8 @@ class EpisodicLearner(Loadable):
             policy = self.policy
             # initialize policy if needed
             p = policy.get_params()
-            for pi in p:
-                if pi is None or pi.size == 0:
-                    policy.set_default_parameters()
-                    break
+            if len(p) == 0:
+                policy.set_default_parameters()
 
         #initialize cost if neeeded
         self.init_cost()

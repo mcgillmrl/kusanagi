@@ -13,7 +13,7 @@ import theano
 import theano.tensor as T
 from theano.sandbox.linalg import psd,matrix_inverse
 import matplotlib as mpl
-mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
+#mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 

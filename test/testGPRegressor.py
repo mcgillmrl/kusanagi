@@ -38,7 +38,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     #s_test = convolve2d(np.eye(idims),kk,'same')
     s_test = input_noise*np.eye(idims)
     s_test = np.tile(s_test,(n_test,1)).reshape(n_test,idims,idims)
-    x_test = 120*(np.random.rand(n_test,idims) - 0.5)
+    x_test = 60*(np.random.rand(n_test,idims) - 0.5)
     # generate the output at the test points
     y_test = np.empty((n_test,odims))
     for i in xrange(odims):

@@ -32,6 +32,19 @@ class RBFPolicy(RBFGP):
             policy_idims = len(self.m0) + len(self.angle_dims)
             policy_odims = len(self.maxU)
             super(RBFPolicy, self).__init__(idims=policy_idims, odims=policy_odims, sat_func=sat_func, name=self.name)
+        
+        # make sure we always get the parameters in the same order
+        self.param_names = ['X','Y','loghyp_full']
+
+    def load(self, output_folder=None,output_filename=None):
+        ''' loads the state from file, and initializes additional variables'''
+        # load state
+        super(RBFGP,self).load(output_folder,output_filename)
+        
+        # initialize mising variables
+        self.loghyp = theano.tensor.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
+        # loghyp is no longer the trainable paramter
+        if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
 
     def set_default_parameters(self):
         # init policy inputs near the given initial state
@@ -52,7 +65,13 @@ class RBFPolicy(RBFGP):
 
         # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
         l0 = np.hstack([np.ones(self.m0.size-len(self.angle_dims)),0.7*np.ones(2*len(self.angle_dims)),1,0.01])
-        self.set_loghyp(np.log(np.tile(l0,(self.maxU.size,1))))
+        self.set_params( {'loghyp_full': np.log(np.tile(l0,(self.maxU.size,1)))} )
+        
+        # don't optimize the signal and noise variances
+        self.loghyp = theano.tensor.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
+        # loghyp is no longer the trainable paramter
+        if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
+
         self.init_loss(cache_vars=False)
         self.init_predict()
 

@@ -300,6 +300,7 @@ class PILCO(EpisodicLearner):
         p = self.policy.get_params(symbolic=True)
         # the policy gradients will have the same shape as the policy parameters (i.e. this returns a list
         # of theano tensor variables with the same dtype and ndim as the parameters in p )
+        print p
         dJdp = self.get_policy_gradients(expected_accumulated_cost,p)
         retvars = [expected_accumulated_cost]
         retvars.extend(dJdp)
