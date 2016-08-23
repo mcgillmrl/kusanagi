@@ -1,4 +1,5 @@
 import os,sys
+import theano
 import utils
 from base.Loadable import Loadable
 
@@ -27,6 +28,19 @@ class ExperienceDataset(Loadable):
 
         self.register_types([list])
         self.register(['curr_episode'])
+    
+    def load(self, output_folder=None,output_filename=None):
+        ''' loads the state from file, and initializes additional variables'''
+        # load state
+        super(ExperienceDataset,self).load(output_folder,output_filename)
+
+        # if the policy parameters were saved as shared variables
+        for i in xrange(len(self.policy_parameters)):
+            pi = self.policy_parameters[i]
+            for j in xrange(len(pi)):
+                pij = self.policy_parameters[i][j]
+                if isinstance(pij, theano.tensor.sharedvar.SharedVariable):
+                    self.policy_parameters[i][j] = pij.get_value()
 
     def add_sample(self,t,x_t=None,u_t=None,c_t=None, policy_parameters=None):
         curr_episode = self.curr_episode

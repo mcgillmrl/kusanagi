@@ -3,6 +3,7 @@ import numpy as np
 import theano
 import theano.tensor as T
 
+from collections import OrderedDict
 from functools import partial
 from scipy.optimize import minimize, basinhopping
 from scipy.cluster.vq import kmeans
@@ -168,7 +169,7 @@ class GP(Loadable):
                 pv = params[pname].reshape(p.get_value(borrow=True).shape)
                 p.set_value(pv,borrow=True)
 
-    def get_params(self, symbolic=True, asdict=False):
+    def get_params(self, symbolic=False, asdict=False):
         params = [ self.__dict__[pname] for pname in self.param_names if (pname in self.__dict__ and self.__dict__[pname]) ]
         if not symbolic:
             params = [ p.get_value() for p in params]
@@ -1091,14 +1092,8 @@ class VSSGP(SSGP):
 	logp = np.log(np.random.uniform(0,1e6,size=(nc,D)))
 
         # create shared variables for every parameters
-	params = dict(zip(('mw','logsw','alpha','beta','z','md','logsd','logsf','logsn','logL','logp'),(mw,logsw,alpha,beta,z,md,logsd,logsf,logsn,logL,logp)))
-	params = {}
-        for pname in params_dict:
-            p = S(params_dict[pname],'%s>%s'%(self.name,pname))
-            params[pname] = p
-            # make this parameter a class atrribute
-            self.__dict__[pname] = p
-
+	params = OrderedDict(zip(('mw','logsw','alpha','beta','z','md','logsd','logsf','logsn','logL','logp'),(mw,logsw,alpha,beta,z,md,logsd,logsf,logsn,logL,logp)))
+        self.set_params(params)
         return params
 
     def compute_feature_matrix(self,X,params):
@@ -1143,9 +1138,8 @@ class VSSGP(SSGP):
     def init_loss(self):
         super(VSSGP, self).init_loss()
         utils.print_with_stamp('Initialising expression graph for sparse spectral training loss function',self.name)
-
-        # this initializes the inducing frequencies as self.w ( and scaled inducing frequencies as self.w_scaled )
-        # the inducing inputs as self.z and the inducing phases as self.ba
+        
+        # intialize parameters of the model
         X,Y = self.X,self.Y
         params = self.init_params(X.get_value(),Y.get_value(),self.n_components,self.n_basis)
 	mw,logsw,alpha,beta,z,md,logsd,logsf,logsn,logL,logp = params

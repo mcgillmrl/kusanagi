@@ -193,7 +193,7 @@ class EpisodicLearner(Loadable):
         else:
             policy = self.policy
             # initialize policy if needed
-            p = policy.get_params()
+            p = policy.get_params(symbolic=False)
             if len(p) == 0:
                 policy.set_default_parameters()
 
