@@ -33,6 +33,7 @@ class GP(Loadable):
         self.uncertain_inputs = uncertain_inputs
         self.snr_penalty = snr_penalty
         self.covs = (cov.SEard, cov.Noise)
+        self.fixed_params = []
         
         # dimension related variables
         self.N = 0
@@ -48,11 +49,11 @@ class GP(Loadable):
 
         #symbolic varianbles
         self.param_names = []
-        self.loghyp = None; self.logsn2 = None
+        self.loghyp = None; self.logsn = None
         self.X = None; self.Y = None
         self.iK = None; self.L = None; self.beta = None;
         self.kernel_func = None
-        self.nlml_fn = None; self.dnlml_fn=None
+        self.loss_fn = None; self.dloss_fn=None
 
         # compiled functions
         self.predict_fn = None
@@ -67,7 +68,7 @@ class GP(Loadable):
         # register theanno functions and shared variables for saving
         self.register_types([T.sharedvar.SharedVariable, theano.compile.function_module.Function])
         # register additional variables for saving
-        self.register(['trained', 'param_names'])
+        self.register(['trained', 'param_names', 'fixed_params'])
         
         # initialize the class if no pickled version is available
         if X_dataset is not None and Y_dataset is not None:
@@ -87,7 +88,7 @@ class GP(Loadable):
             self.N = self.X.get_value(borrow=True).shape[0]
 
         if self.loghyp is not None:
-            self.logsn2 = 2*self.loghyp[:,-1]
+            self.logsn = self.loghyp[:,-1]
     
     def get_dataset(self):
         return self.X.get_value(), self.Y.get_value()
@@ -141,16 +142,16 @@ class GP(Loadable):
         # initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
         X = self.X.get_value(); Y = self.Y.get_value()
         loghyp = np.zeros((odims,idims+2))
-        loghyp[:,:idims] = 0.1*X.std(0,ddof=1)
-        loghyp[:,idims] = 0.1*Y.std(0,ddof=1)
-        loghyp[:,idims+1] = 0.01*loghyp[:,idims]
+        loghyp[:,:idims] = 0.5*X.std(0,ddof=1)
+        loghyp[:,idims] = 0.5*Y.std(0,ddof=1)
+        loghyp[:,idims+1] = 0.1*loghyp[:,idims]
         loghyp = np.log(loghyp)
         
         # set params will either create the loghyp attribute, or update its value
         self.set_params({'loghyp': loghyp})
-        # create logsn2 (used in PILCO)
-        if self.logsn2 is None:
-            self.logsn2 = 2*self.loghyp[:,-1]
+        # create logsn (used in PILCO)
+        if self.logsn is None:
+            self.logsn = self.loghyp[:,-1]
         self.trained = False
 
     def set_params(self, params):
@@ -159,7 +160,7 @@ class GP(Loadable):
         for pname in params.keys():
             # create shared variable if it doesn't exist
             if pname not in self.__dict__ or self.__dict__[pname] is None:
-                p = S(params[pname],name='%s>loghyp'%(self.name),borrow=True)
+                p = S(params[pname],name='%s>%s'%(self.name,pname),borrow=True)
                 self.__dict__[pname] = p
                 if pname not in self.param_names:
                     self.param_names.append(pname)
@@ -169,10 +170,16 @@ class GP(Loadable):
                 pv = params[pname].reshape(p.get_value(borrow=True).shape)
                 p.set_value(pv,borrow=True)
 
-    def get_params(self, symbolic=False, asdict=False):
-        params = [ self.__dict__[pname] for pname in self.param_names if (pname in self.__dict__ and self.__dict__[pname]) ]
+    def get_params(self, symbolic=False, as_dict=False, ignore_fixed=True):
+        if ignore_fixed:
+            params = [ self.__dict__[pname] for pname in self.param_names if (pname in self.__dict__ and self.__dict__[pname] and not pname in self.fixed_params) ]
+        else:
+            params = [ self.__dict__[pname] for pname in self.param_names if (pname in self.__dict__ and self.__dict__[pname]) ]
+
         if not symbolic:
             params = [ p.get_value() for p in params]
+        if as_dict:
+            params = dict(zip(self.param_names,params))
         return params
 
     def get_all_shared_vars(self, as_dict=False):
@@ -209,11 +216,11 @@ class GP(Loadable):
 
             # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
             # the loghyperparameters across all output dimensions and train the GPs jointly)
-            nlml = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(L))) + N*T.log(2*np.pi) )
+            loss = 0.5*(Yc.T.dot(Yc) + 2*T.sum(T.log(T.diag(L))) + N*T.log(2*np.pi) )
 
-            return nlml,iK,L,beta
+            return loss,iK,L,beta
         
-        (nlml,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,T.eye(self.X.shape[0])], allow_gc=False)
+        (loss,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,T.eye(self.X.shape[0])], allow_gc=False)
 
         iK = T.unbroadcast(iK,0) if iK.broadcastable[0] else iK
         L = T.unbroadcast(L,0) if L.broadcastable[0] else L
@@ -231,20 +238,20 @@ class GP(Loadable):
         # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
             penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
-            nlml += self.snr_penalty(self.loghyp)
+            loss += self.snr_penalty(self.loghyp)
 
-        # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml = T.grad(nlml.sum(),self.loghyp)
+        # Compute the gradients for the sum of loss for all output dimensions
+        dloss = T.grad(loss.sum(),self.loghyp)
 
         # Compile the theano functions
         utils.print_with_stamp('Compiling full GP training loss function',self.name)
-        self.nlml_fn = F((),nlml,name='%s>nlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        self.loss_fn = F((),loss,name='%s>loss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         utils.print_with_stamp('Compiling gradient of full GP training loss function',self.name)
-        self.dnlml_fn = F((),(nlml,dnlml),name='%s>dnlml'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        self.dloss_fn = F((),(loss,dloss),name='%s>dloss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         self.state_changed = True # for saving
     
     def init_predict(self):
-        if self.nlml_fn is None:
+        if self.loss_fn is None:
             self.init_loss()
 
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
@@ -314,22 +321,21 @@ class GP(Loadable):
     
     def loss(self,loghyp):
         self.set_params({'loghyp': loghyp})
-        nlml,dnlml = self.dnlml_fn()
-        nlml = nlml.sum()
-        dnlml = dnlml.flatten()
+        loss,dloss = self.dloss_fn()
+        loss = loss.sum()
+        dloss = dloss.flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
-        res = (nlml.astype(np.float64), dnlml.astype(np.float64))
-        #utils.print_with_stamp('%s, %s'%(str(res[0]),str(np.exp(loghyp))),self.name,True)
+        res = (loss.astype(np.float64), dloss.astype(np.float64))
         utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
         return res
 
     def train(self):
-        if self.nlml_fn is None or self.should_recompile:
+        if self.loss_fn is None or self.should_recompile:
             self.init_loss()
 
         loghyp0 = self.loghyp.eval()
         utils.print_with_stamp('Current hyperparameters:\n%s'%(loghyp0),self.name)
-        utils.print_with_stamp('nlml: %s'%(np.array(self.nlml_fn())),self.name)
+        utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
         try:
             opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': self.max_evals})
@@ -340,7 +346,7 @@ class GP(Loadable):
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
         self.set_params({'loghyp': loghyp})
         utils.print_with_stamp('New hyperparameters:\n%s'%(self.loghyp.eval()),self.name)
-        utils.print_with_stamp('nlml: %s'%(np.array(self.nlml_fn())),self.name)
+        utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
         self.trained = True
 
 class GP_UI(GP):
@@ -413,8 +419,8 @@ class GP_UI(GP):
 class SPGP(GP):
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP', idims=None, odims=None, profile=False, n_basis = 100, uncertain_inputs=False, **kwargs):
         self.X_sp = None # inducing inputs (symbolic variable)
-        self.nlml_sp_fn = None
-        self.dnlml_sp_fn = None
+        self.loss_sp_fn = None
+        self.dloss_sp_fn = None
         self.beta_sp = None
         self.iKmm = None
         self.iBmm = None
@@ -444,8 +450,8 @@ class SPGP(GP):
         if self.N <= self.n_basis:
             utils.print_with_stamp('Dataset is not large enough for using pseudo inputs. Training full GP.',self.name)
             self.X_sp = None
-            self.nlml_sp_fn = None
-            self.dnlml_sp_fn = None
+            self.loss_sp_fn = None
+            self.dloss_sp_fn = None
             self.beta_sp = None
             self.Lmm = None
             self.Amm = None
@@ -460,7 +466,7 @@ class SPGP(GP):
     def init_loss(self, cache_vars=True):
         # initialize the training loss function of the GP class
         super(SPGP, self).init_loss(cache_vars)
-        # here nlml and dnlml have already been innitialised, sow e can replace nlml and dnlml
+        # here loss and dloss have already been innitialised, sow e can replace loss and dloss
         # only if we have enough data to train the pseudo inputs ( i.e. self.N > self.n_basis)
         if self.N > self.n_basis:
             utils.print_with_stamp('Initialising FITC training loss function',self.name)
@@ -517,11 +523,11 @@ class SPGP(GP):
 
                 log_det_K_sp = T.sum(T.log(Gamma)) - 2*T.sum(T.log(T.diag(Lmm))) + 2*T.sum(T.log(T.diag(Amm)))
 
-                nlml_sp = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) + log_det_K_sp + N*np.log(2*np.pi) )
+                loss_sp = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) + log_det_K_sp + N*np.log(2*np.pi) )
 
-                return nlml_sp, iKmm, Lmm, Amm, iBmm, beta_sp
+                return loss_sp, iKmm, Lmm, Amm, iBmm, beta_sp
             
-            (nlml_sp, iKmm, Lmm, Amm, iBmm, beta_sp),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,self.X_sp,T.eye(self.X_sp.shape[0])],allow_gc=False)
+            (loss_sp, iKmm, Lmm, Amm, iBmm, beta_sp),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,self.X_sp,T.eye(self.X_sp.shape[0])],allow_gc=False)
             
             iKmm = T.unbroadcast(iKmm,0) if iKmm.broadcastable[0] else iKmm
             Lmm = T.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
@@ -543,13 +549,13 @@ class SPGP(GP):
 
             # TODO include the log hyperparameters in the optimization
             # TODO give the option for separate inducing inputs for every output dimension
-            dnlml_sp = T.grad(nlml_sp.sum(),self.X_sp)
+            dloss_sp = T.grad(loss_sp.sum(),self.X_sp)
 
             # Compile the theano functions
             utils.print_with_stamp('Compiling FITC training loss function',self.name)
-            self.nlml_sp_fn = F((),nlml_sp,name='%s>nlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+            self.loss_sp_fn = F((),loss_sp,name='%s>loss_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
             utils.print_with_stamp('Compiling gradient of FITC training loss function',self.name)
-            self.dnlml_sp_fn = F((),(nlml_sp,dnlml_sp),name='%s>dnlml_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True,updates=updts)
+            self.dloss_sp_fn = F((),(loss_sp,dloss_sp),name='%s>dloss_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True,updates=updts)
             
     def predict_symbolic(self,mx,Sx):
         if self.N <= self.n_basis:
@@ -585,31 +591,31 @@ class SPGP(GP):
     
     def loss_sp(self,X_sp):
         self.set_params({'X_sp': X_sp})
-        res = self.dnlml_sp_fn()
-        nlml = np.array(res[0]).sum()
-        dnlml = np.array(res[1]).flatten()
+        res = self.dloss_sp_fn()
+        loss = np.array(res[0]).sum()
+        dloss = np.array(res[1]).flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
-        res = (nlml.astype(np.float64),dnlml.astype(np.float64))
+        res = (loss.astype(np.float64),dloss.astype(np.float64))
         utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
         return res
 
     def train(self):
-        if self.nlml_sp_fn is None or self.should_recompile:
+        if self.loss_sp_fn is None or self.should_recompile:
             self.init_loss()
         # train the full GP
         super(SPGP, self).train()
 
         if self.N > self.n_basis:
             # train the pseudo input locations
-            if self.nlml_sp_fn is None:
+            if self.loss_sp_fn is None:
                 self.init_loss()
-            utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp_fn())),self.name)
+            utils.print_with_stamp('loss SP: %s'%(np.array(self.loss_sp_fn())),self.name)
             m_loss_sp = utils.MemoizeJac(self.loss_sp)
-            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(1.5*self.max_evals)})
+            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(2*self.max_evals)})
             print ''
             X_sp = opt_res.x.reshape(self.X_sp.get_value(borrow=True).shape)
             self.set_params({'X_sp': X_sp})
-            utils.print_with_stamp('nlml SP: %s'%(np.array(self.nlml_sp_fn())),self.name)
+            utils.print_with_stamp('loss SP: %s'%(np.array(self.loss_sp_fn())),self.name)
         self.trained = True
 
 class SPGP_UI(SPGP,GP_UI):
@@ -788,8 +794,8 @@ class SSGP(GP):
         self.Lmm = None
         self.iA = None
         self.beta_ss = None
-        self.nlml_ss_fn = None
-        self.dnlml_ss_fn = None
+        self.loss_ss_fn = None
+        self.dloss_ss_fn = None
         self.n_basis = n_basis
         GP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs, **kwargs)
     
@@ -825,7 +831,6 @@ class SSGP(GP):
         phi_f = T.concatenate( [T.sin(srdotX), T.cos(srdotX)], axis=1 ).astype('float64') # E x 2*n_basis x N
         
         # TODO vectorize these ops
-        phi_f.ndim
         def log_marginal_likelihood(sf2M, sn2, phi_f, Y, EyeM):
             phi_f.ndim
             A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM
@@ -834,11 +839,11 @@ class SSGP(GP):
             Yc = solve_lower_triangular(Lmm,(phi_f.dot(Y)))
             beta_ss = sf2M*solve_upper_triangular(Lmm.T,Yc)
 
-            nlml_ss = 0.5*( Y.dot(Y) - sf2M*Yc.dot(Yc) )/sn2 + T.sum(T.log(T.diag(Lmm))) + (0.5*N - M)*T.log(sn2) + 0.5*N*np.log(2*np.pi)
+            loss_ss = 0.5*( Y.dot(Y) - sf2M*Yc.dot(Yc) )/sn2 + T.sum(T.log(T.diag(Lmm))) + (0.5*N - M)*T.log(sn2) + 0.5*N*np.log(2*np.pi)
             
-            return nlml_ss,iA,Lmm,beta_ss
+            return loss_ss,iA,Lmm,beta_ss
         
-        (nlml_ss,iA,Lmm,beta_ss),updts = theano.scan(fn=log_marginal_likelihood, sequences=[sf2M,sn2,phi_f,self.Y.T], non_sequences=[T.eye(Mi)], allow_gc=False)
+        (loss_ss,iA,Lmm,beta_ss),updts = theano.scan(fn=log_marginal_likelihood, sequences=[sf2M,sn2,phi_f,self.Y.T], non_sequences=[T.eye(Mi)], allow_gc=False)
         
         iA = T.unbroadcast(iA,0) if iA.broadcastable[0] else iA
         Lmm = T.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
@@ -855,15 +860,15 @@ class SSGP(GP):
 
         if self.snr_penalty is not None:
             penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': T.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
-            nlml_ss += self.snr_penalty(self.loghyp)
+            loss_ss += self.snr_penalty(self.loghyp)
 
-        # Compute the gradients for the sum of nlml for all output dimensions
-        dnlml_ss = T.grad(nlml_ss.sum(),[self.loghyp,self.w])
+        # Compute the gradients for the sum of loss for all output dimensions
+        dloss_ss = T.grad(loss_ss.sum(),[self.loghyp,self.w])
 
         utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
-        self.nlml_ss_fn = F((),nlml_ss,name='%s>nlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        self.loss_ss_fn = F((),loss_ss,name='%s>loss_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         utils.print_with_stamp('Compiling gradient of sparse spectral training loss function',self.name)
-        self.dnlml_ss_fn = F((),(nlml_ss,dnlml_ss[0],dnlml_ss[1]),name='%s>dnlml_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        self.dloss_ss_fn = F((),(loss_ss,dloss_ss[0],dloss_ss[1]),name='%s>dloss_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
     def set_spectral_samples(self,w=None):
         idims = self.D
@@ -881,14 +886,14 @@ class SSGP(GP):
     def loss_ss(self, params, parameter_shapes):
         loghyp,w = utils.unwrap_params(params,parameter_shapes)
         self.set_params({'loghyp': loghyp, 'w': w})
-        nlml,dnlml_lh,dnlml_sr = self.dnlml_ss_fn()
-        nlml = np.array(nlml)
-        dnlml_lh = np.array(dnlml_lh)
-        dnlml_sr = np.array(dnlml_sr)
-        nlml = nlml.sum()
-        dnlml = utils.wrap_params([dnlml_lh,dnlml_sr])
+        loss,dloss_lh,dloss_sr = self.dloss_ss_fn()
+        loss = np.array(loss)
+        dloss_lh = np.array(dloss_lh)
+        dloss_sr = np.array(dloss_sr)
+        loss = loss.sum()
+        dloss = utils.wrap_params([dloss_lh,dloss_sr])
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
-        res = (nlml.astype(np.float64), dnlml.astype(np.float64))
+        res = (loss.astype(np.float64), dloss.astype(np.float64))
         utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
         return res
 
@@ -916,35 +921,35 @@ class SSGP(GP):
         idims = self.D
         odims = self.E
 
-        if self.nlml_ss_fn is None or self.should_recompile:
+        if self.loss_ss_fn is None or self.should_recompile:
             self.init_loss()
 
         # initialize spectral samples
-        nlml = self.nlml_ss_fn()
+        loss = self.loss_ss_fn()
         best_w = self.w.get_value()
 
-        # try a couple spectral samples and pick the one with the lowest nlml
+        # try a couple spectral samples and pick the one with the lowest loss
         for i in xrange(100):
             self.set_spectral_samples()
-            nlml_i = self.nlml_ss_fn()
+            loss_i = self.loss_ss_fn()
             for d in xrange(odims):
-                if np.all(nlml_i[d] < nlml[d]):
-                    nlml[d] = nlml_i[d]
+                if np.all(loss_i[d] < loss[d]):
+                    loss[d] = loss_i[d]
                     best_w[:,d,:] = self.w.get_value()[:,d,:]
 
         self.set_spectral_samples( best_w )
 
         # train the pseudo input locations
-        utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss_fn())),self.name)
+        utils.print_with_stamp('loss SS: %s'%(np.array(self.loss_ss_fn())),self.name)
         # wrap loghyp plus sr (save shapes)
         p0 = [self.loghyp.get_value(),self.w.get_value()]
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = utils.MemoizeJac(self.loss_ss)
-        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(1.5*self.max_evals)})
+        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(2*self.max_evals)})
         print ''
         loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.set_params({'loghyp': loghyp, 'w': w})
-        utils.print_with_stamp('nlml SS: %s'%(np.array(self.nlml_ss_fn())),self.name)
+        utils.print_with_stamp('loss SS: %s'%(np.array(self.loss_ss_fn())),self.name)
         self.trained = True
 
     def predict_symbolic(self,mx,Sx):
@@ -1061,101 +1066,212 @@ class SSGP_UI(SSGP, GP_UI):
 
         return M,S,V
 
-class VSSGP(SSGP):
+class VSSGP(GP):
     ''' Variational Sparse Spectral Gaussian Process Regression'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='VSSGP', idims=None, odims=None, profile=False, n_basis=100,  uncertain_inputs=False, **kwargs):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='VSSGP', idims=None, odims=None, profile=False, n_basis=100, n_components=2, uncertain_inputs=False, **kwargs):
         self.n_basis = n_basis
         self.n_components = n_components
+        self.opt_A = True
+        self.randomised_phases = True
         super(VSSGP, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_basis=n_basis,uncertain_inputs=uncertain_inputs, **kwargs)
     
     def init_params(self):
 	''' initializes the parameter set for VSSGP. Some parameters are stored as 
-	    their logarithms, to ensure they are always positive when optimizing '''
+	    their logarithms (or tangent ), to ensure they always fall within the valid 
+	    bounds when optimizing '''
 	X,Y = self.X.get_value(), self.Y.get_value()
 	D,E = X.shape[-1], Y.shape[-1]
 	nb,nc = self.n_basis, self.n_components
 	# mean and covariances of basis frequencies
-	mw = np.random.randn(nc,nb,D); logsw = np.log((1e-9*np.random.randn(nc,nb,D))**2)
-	# parameters of the uniform distributions for the basis phases
-	b = np.random.uniform(0,2*np.pi,size=(2,nc,nb)); alpha, beta = b.min(axis=0), b.max(axis=0) 
+	mw = np.random.randn(nc,nb,D); logsw = np.log(1e-2*(np.random.randn(nc,nb,D))**2)
 	# inducing inputs
-	z = np.random.randn(nc,nb,D)
-	# mean and covariances of the fourier coefficients
-	md = np.random.randn(nc,nb,E); logsd = np.log((1e-9*np.random.randn(nc,nb,D))**2)
+	z = np.random.multivariate_normal(X.mean(0),1.25*np.atleast_2d(np.cov(X.T)),(nc,nb))
 	# signal std (one per component)
-	logsf = np.log( Y.std(ddof=1)*(np.random.randn(nc)**2) )
-	# noise std (one per output dimension)
-	logsn = np.log(0.1*Y.std(0,ddof=1))
+	logsf = np.log(1 + 1e-2*np.random.randn(nc,)) + np.log(Y.std(ddof=1))
+	# noise std
+	logsn = np.log(0.1*Y.std(ddof=1))
 	# feature lengthscales ( nc x D )
-	logL = np.log( X.std(0,ddof=1)*(np.random.randn(nc,D)**2) )
+        logL = np.log(1 + 1e-2*np.random.randn(nc,1)) + np.log(X.std(0,ddof=1))[None,:]
 	# spectral mixture periods
-	logp = np.log(np.random.uniform(0,1e6,size=(nc,D)))
+	logp = np.log(np.random.uniform(0,1e32,size=(nc,D)))
 
-        # create shared variables for every parameters
-	params = OrderedDict(zip(('mw','logsw','alpha','beta','z','md','logsd','logsf','logsn','logL','logp'),(mw,logsw,alpha,beta,z,md,logsd,logsf,logsn,logL,logp)))
+        # create shared variables for every parameter
+        params = OrderedDict(zip(('mw','logsw','z','logsf','logsn','logL','logp'),(mw,logsw,z,logsf,logsn,logL,logp)))
+	# parameters of the uniform distributions for the basis phases
+        b = np.random.uniform(0,2*np.pi,size=(2,nc,nb))
+        if self.randomised_phases:
+            tanb = np.tan(0.5*(b[0,:,:]-np.pi))
+            params['tanb'] = tanb
+            self.fixed_params.append('tanb')
+        else:
+            b_lo, b_hi = b.min(axis=0), b.max(axis=0) 
+            tanb = np.tan(0.5*(b_lo-np.pi))
+            tanb_delta = np.tan(0.5*((b_hi-b_lo)-np.pi))
+            params['tanb'] = tanb
+            params['tanb_delta'] = tanb_delta
+        if not self.opt_A:
+            # mean and covariances of the fourier coefficients
+            md = np.random.randn(nc,nb,E); logsd = np.log(1e-2*np.ones((nc,nb,E)))
+            params['md'] = md
+            params['logsd'] = logsd
         self.set_params(params)
-        return params
 
-    def compute_feature_matrix(self,X,params):
-	mw,logsw,alpha,beta,z,md,logsd,logsf,logsn,logL,logp = params
+    def compute_feature_matrix(self,X):
+        mw,logsw,tanb,z,logsf,logsn,logL,logp = self.mw,self.logsw,self.tanb,self.z,self.logsf,self.logsn,self.logL,self.logp
 	nc,nb,D = mw.shape
 	N,D = X.shape
-	iL = 2*np.pi*T.exp(-logL)
+	iL = T.exp(-logL)/(2*np.pi)
 	ip = T.exp(-logp) 
 	sf2 = T.exp(2*logsf)
 	sn2 = T.exp(2*logsn)
 	sw = T.exp(logsw)
-	sd = T.exp(logsd)
-	# center the dataset around each inducing input 
-	Xc = X[None,:,:] - z[:,:,None,:]
-	# scale the centered dataset
-	Xsc = 2*np.pi*Xc*iL[:,None,None,:]
-	# get the centered phases
-	bc = 2*np.pi*(ip[:,None,None,:]*Xc).sum(-1)
-	alpha_c = alpha[:,:,None] + bc
-	beta_c = beta[:,:,None] + bc
+        b = 2*T.arctan(tanb) + np.pi
+
+	# scale and center the dataset around each inducing input 
+	Xsc = 2*np.pi*(X[None,:,:] - z[:,:,None,:])
 	# compute the expected value of the cos term wrt the phases b
-	w_dot_x = (mw[:,:,None,:]*Xsc).sum(-1)
-	a = w_dot_x + alpha_c
-	b = w_dot_x + beta_c
-	mcos = ( T.sin(b) - T.sin(a) )/(beta_c-alpha_c) 
+        Ew = iL[:,None,:]*mw + ip[:,None,:]
+        w_dot_x = (Ew[:,:,None,:]*Xsc).sum(-1)
+        
+        # compute the cos term
+        if self.randomised_phases:
+            a = w_dot_x + b[:,:,None]
+	    mcos = T.cos(a)
+            mcos2 = T.cos(2*a)
+        else:
+            b_hi = b + (2*T.arctan(self.tanb_delta) + np.pi)
+            alpha = b[:,:,None] 
+            beta = b_hi[:,:,None]
+            a = w_dot_x + alpha
+            b = w_dot_x + beta
+	    mcos = ( T.sin(b) - T.sin(a) )/(beta-alpha) 
+            mcos2 = ( T.sin(2*b) - T.sin(2*a) )/(beta-alpha) 
+
 	# compute the expected value wrt w
-	e = T.exp( -0.5*((Xsc**2)*sw[:,:,None,:]).sum(-1) )
-	mcos = e*mcos
+	e = T.exp( -0.5*(((iL[:,None,None,:]*Xsc)**2)*sw[:,:,None,:]).sum(-1) )
 	# get the expected value of the feature vector phi
 	sf2K = 2*sf2/nb
-	mphi = (sf2K**0.5)[:,None,None]*mcos
+	mphi = (sf2K**0.5)[:,None,None]*e*mcos
 	# reshape into an N x (nc*nb) matrix
-	mphi = mphi.transpose(2,0,1).reshape(N,nc*nb)
+	mphi = mphi.transpose(2,0,1).reshape((N,nc*nb))
 	# get the expected value of phi.T.dot(phi) (second moment of phi)
-	mcos2 = ( T.sin(2*b) - T.sin(2*a) )/(beta_c-alpha_c) 
 	mcos2 = sf2K[:,None,None]*(0.5 + 0.5*(e**4)*mcos2)
-	mcos2 = mcos2.sum(-1).flatten()
 	mphiTphi = mphi.T.dot(mphi)
-	mphiTphi = mphiTphi + T.diag( mcos2 - T.diag(mphiTmphi))
+	mphiTphi = mphiTphi - T.diag(T.diag(mphiTphi)) + T.diag(mcos2.sum(-1).flatten())
 	return mphi, mphiTphi, mcos2
 
     def init_loss(self):
-        super(VSSGP, self).init_loss()
         utils.print_with_stamp('Initialising expression graph for sparse spectral training loss function',self.name)
+
+        if not hasattr(self,'iA'):
+            self.iA = S(np.zeros((self.n_basis*self.n_components,self.n_basis*self.n_components),dtype='float64'), name="%s>iA"%(self.name))
+        if not hasattr(self,'Lmm'):
+            self.Lmm = S(np.zeros((self.n_basis*self.n_components,self.n_basis*self.n_components),dtype='float64'), name="%s>Lmm"%(self.name))
+        if not hasattr(self,'beta_ss'):
+            self.beta_ss = S(np.zeros((self.n_basis*self.n_components,self.E),dtype='float64'), name="%s>beta_ss"%(self.name))
         
         # intialize parameters of the model
         X,Y = self.X,self.Y
-        params = self.init_params(X.get_value(),Y.get_value(),self.n_components,self.n_basis)
-	mw,logsw,alpha,beta,z,md,logsd,logsf,logsn,logL,logp = params
-	mphi,mphiTphi,mcos2 = self.compute_feature_matrix(X,params)
-	
-        K = mphiTmphi.shape[0]
+        self.init_params()
+	mphi,mphiTphi,mcos2 = self.compute_feature_matrix(self.X)
+
+        K = mphiTphi.shape[0]
         N,E = Y.shape
         EyeK = T.eye(K)
-        A = mphiTphi + sn2*EyeK
-        Lmm = cholesky(A)
-        iA = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm,EyeK))
-        Y = Y*T.exp(-logsn)
-        Yc = solve_lower_triangular(Lmm,(mphi.T.dot(Y)))
-        beta_ss = solve_upper_triangular(Lmm.T,Yc)
+        sn2 = T.exp(2*self.logsn)
+        tau = T.exp(-2*self.logsn)
         
-        # log |sn2_d*A| = log sn2_d^LK | A | = LK*log(sn2_d) + log|A|
-        nlml_ss = 0.5*( (Y*Y).sum() - (Yc*Yc).sum() ) - E*T.sum(T.log(T.diag(Lmm)))+ (N-K)*T.sum(logsn) + 0.5*N*E*np.log(2*np.pi)
-        
+        # log likelihood term
+        if self.opt_A:
+            iSig = mphiTphi*tau + EyeK
+            choliSig = cholesky(iSig)
+            Sig = solve_upper_triangular(choliSig.T, solve_lower_triangular(choliSig,EyeK)) # sn2*Sig
+            mphiTY = mphi.T.dot(Y)
+            M = tau*solve_upper_triangular(choliSig.T, solve_lower_triangular(choliSig,mphiTY)) # Sig*EPhi.T*Y
+            L_vb = - 0.5*N*E*T.log(tau) + 0.5*N*E*np.log(2*np.pi) + 0.5*tau*(Y**2).sum() - 0.5*tau*(mphiTY*M).sum() + 0.5*E*T.sum(2*T.log(T.diag(choliSig))) 
+            updts = [(self.iA,Sig),(self.Lmm,choliSig),(self.beta_ss,M)]
+        else:
+            M,Sig = self.md.transpose(2,0,1).reshape((E,K)).T, T.exp(self.logsd).transpose(2,0,1).reshape((E,K)).T
+            mphiTY = mphi.T.dot(Y)
+            L_vb = - 0.5*N*E*T.log(tau) + 0.5*N*E*np.log(2*np.pi) + 0.5*tau*(Y**2).sum() - tau*(mphiTY*M).sum() + 0.5*tau*T.sum(mphiTphi*(T.diag(Sig.sum(-1)) + (M[None,:,:]*M[:,None,:]).sum(-1)))
+            updts = [(self.iA,Sig),(self.beta_ss,M)]
 
+        # KL divergence for spectral basis frequencies
+        L_vb += 0.5 * (T.exp(self.logsw) + self.mw**2 - self.logsw - 1).sum()
+        if not self.randomised_phases:
+            b = 2*np.arctan(self.tanb) + np.pi 
+            bdelta =2*np.arctan(self.tanb_delta) + np.pi 
+            # KL divergence for spectral basis phases
+            L_vb +=  (T.log(2*np.pi/(bdelta))).sum() 
+            # Contrainte penalty barriers ( to keep b > 0 and b+b_delta < 2*pi
+            L_vb +=  -1e-9*(T.log( 2*np.pi + (b+bdelta) ) + T.log(b)).sum()
+
+        if not self.opt_A:
+            # KL divergence for fourier coefficients
+            L_vb += 0.5 * (T.exp(self.logsd) + self.md**2 - self.logsd - 1).sum()
+
+        # snr penalty ( This helps to prevent overfitting )
+        L_vb += (((self.logsf - self.logsn)/np.log(1000))**30).sum()
+        # lengthscale penalty ( we don't want them to grow too large as that would make the gradients go to zero )
+        L_vb += (((self.logL - np.log(self.X.std(0)))/np.log(100))**30).sum()
+        # penalty for large sn. helps escapipng local minima for small datasets.
+        L_vb += 100*self.logsn
+
+        # Compute the gradients for the sum of loss for all output dimensions
+        dL_vb = T.grad(L_vb.sum(),self.get_params(symbolic=True))
+        dretvars = [L_vb]
+        dretvars.extend(dL_vb)
+        utils.print_with_stamp('Compiling training loss function',self.name)
+        self.loss_fn = F((),L_vb,name='%s>loss_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True,updates=updts, on_unused_input='ignore')
+        utils.print_with_stamp('Compiling gradient of training loss function',self.name)
+        self.dloss_fn = F((),dretvars,name='%s>dloss_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True,updates=updts, on_unused_input='ignore')
+    
+    def loss(self,new_p,parameter_shapes):
+        p=utils.unwrap_params(new_p,parameter_shapes)
+        param_names = [pname for pname in self.param_names if pname not in self.fixed_params]
+        pdict = dict(zip(param_names,p))
+        self.set_params(pdict)
+        ret = self.dloss_fn()
+        loss,dloss = ret[0], utils.wrap_params(ret[1:])
+        # on a 64bit system, scipy optimize complains if we pass a 32 bit float
+        res = (loss.astype(np.float64), dloss.astype(np.float64))
+        self.n_evals+=1
+        utils.print_with_stamp('loss: %s    \t n_evals: %d'%(str(res[0]), self.n_evals),self.name,True)
+        return res
+
+    def train(self):
+        if self.loss_fn is None or self.should_recompile:
+            self.init_loss()
+
+        p0 = self.get_params()
+        parameter_shapes = [p.shape for p in p0]
+        #utils.print_with_stamp('Current hyperparameters:\n%s'%(p0),self.name)
+        utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
+        m_loss = utils.MemoizeJac(self.loss)
+        p0 = utils.wrap_params(p0)
+        self.n_evals=0
+        opt_res = minimize(m_loss, p0, jac=m_loss.derivative, args=parameter_shapes, method=self.min_method, tol=self.conv_thr, options={'maxiter': self.max_evals})
+        print ''
+        new_p = opt_res.x 
+        self.state_changed = not np.allclose(p0,new_p,1e-6,1e-9)
+        #utils.print_with_stamp('New hyperparameters:\n%s'%(new_p),self.name)
+        p=utils.unwrap_params(new_p,parameter_shapes)
+        param_names = [pname for pname in self.param_names if pname not in self.fixed_params]
+        pdict = dict(zip(param_names,p))
+        self.set_params(pdict)
+        utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
+        self.trained = True
+    
+    def predict_symbolic(self,mx,Sx):
+        odims = self.E
+        idims = self.D
+	mphi,mphiTphi,mcos2 = self.compute_feature_matrix(mx[None,:])
+	M = mphi.dot(self.beta_ss).flatten()
+	sn2 = T.exp(2*self.logsn)
+        if self.opt_A:
+            S = sn2*T.eye(M.shape[0]) + T.sum(mphiTphi*self.iA)*T.eye(M.shape[0]) + self.beta_ss.T.dot(mphiTphi - mphi.T.dot(mphi)).dot(self.beta_ss)
+        else:
+            S = sn2*T.eye(M.shape[0]) + T.diag((T.diag(mphiTphi)[:,None]*self.iA).sum(0)) + self.beta_ss.T.dot(mphiTphi - mphi.T.dot(mphi)).dot(self.beta_ss)
+        V = T.zeros((self.D,self.E))
+
+        return M,S,V

@@ -59,8 +59,8 @@ class PDDP(EpisodicLearner):
         def rollout_single_step(mx,Sx, eval_t = None, u=None, use_gTrig = False):
             D = Sx.shape[1]
             # compute distribution of control signal
-            logsn2 = self.dynamics_model.logsn2
-            Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(logsn2))# noisy state measurement
+            sn2 = theano.tensor.exp(2*self.dynamics_model.logsn)
+            Sx_ = Sx + theano.tensor.diag(0.5*sn2)# noisy state measurement
             u_prev, Su, Cu = self.policy.evaluate(mx, Sx_,symbolic=True, t = eval_t, u=u, use_gTrig = use_gTrig)
             if u is not None:
                 u_prev = u

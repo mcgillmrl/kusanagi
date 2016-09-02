@@ -287,7 +287,7 @@ def unwrap_params(P,parameter_shapes):
     i = 0
     for pshape in parameter_shapes:
         # get the number of elemebt for current parameter
-        npi = reduce(lambda x,y: x*y, pshape)
+        npi = reduce(lambda x,y: x*y, pshape) if len(pshape)>0 else 1
         # select corresponding elements and reshape into appropriate shape
         p.append( P[i:i+npi].reshape(pshape) )
         # set index to the beginning  of next parameter

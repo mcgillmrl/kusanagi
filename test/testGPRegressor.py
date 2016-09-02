@@ -1,26 +1,36 @@
-from ghost.regression.GP import *
 import argparse
+import inspect
+import numpy as np
+import theano
 from matplotlib import pyplot as plt
-from utils import gTrig_np, gTrig2_np, print_with_stamp
 from scipy.signal import convolve2d
 from scipy.stats import multivariate_normal
 from time import time
 from theano import d3viz
 from theano.printing import pydotprint
 
+import ghost.regression.GP
+import utils
+from utils import gTrig_np, gTrig2_np, print_with_stamp
+
 np.set_printoptions(linewidth=500, precision=17, suppress=True)
 
-def test_func1(X,ftype=1):
-    if ftype==1:
+def test_func1(X,ftype=0):
+    if ftype==0:
         ret = 100*np.exp(-0.05*(np.sum((X**2),1)))*np.sin(2.5*X.sum(1))
-    else:
+    elif ftype==1:
         ret=np.zeros((X.shape[0]))
         ret[X.max(1)>0]=1
         ret -= 0.5
         ret = 10*(ret + 0.1*np.sin(2.5*X.sum(1)))
+    elif ftype==2:
+        a, b, c, d, e, f = 0.6, -1.8, -0.5, -0.5, 1.7, 0
+        ret = a*np.sin(b*X.sum(1)+c) + d*np.sin(e*X.sum(1)+f)
+    else:
+        ret = X[:,0]
     return ret
 
-def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, input_noise=0.01, output_noise=0.01,rand_seed=None):
+def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, input_noise=0.01, output_noise=0.01, f_type=0,rand_seed=None):
     if rand_seed is not None:
         np.random.seed(rand_seed)
     #  ================== train dataset ==================
@@ -29,7 +39,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     # generate the output at the training points
     y_train = np.empty((n_train,odims))
     for i in xrange(odims):
-        y_train[:,i] =  (i+1)*f(x_train) + output_noise*(np.random.randn(n_train))
+        y_train[:,i] =  (i+1)*f(x_train, f_type) + output_noise*(np.random.randn(n_train))
     x_train = gTrig_np(x_train, angi)
     
     #  ================== test  dataset ==================
@@ -38,31 +48,19 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     #s_test = convolve2d(np.eye(idims),kk,'same')
     s_test = input_noise*np.eye(idims)
     s_test = np.tile(s_test,(n_test,1)).reshape(n_test,idims,idims)
-    x_test = 60*(np.random.rand(n_test,idims) - 0.5)
+    x_test = 75*(np.random.rand(n_test,idims) - 0.5)
     # generate the output at the test points
     y_test = np.empty((n_test,odims))
     for i in xrange(odims):
-        y_test[:,i] =  (i+1)*f(x_test)
+        y_test[:,i] =  (i+1)*f(x_test, f_type)
     if len(angi)>0:
         x_test,s_test = gTrig2_np(x_test,s_test, angi, idims)
 
     return (x_train,y_train),(x_test,y_test,s_test)
 
-def build_GP(idims=9, odims=6, gp_type='GP', profile=theano.config.profile):
-    if gp_type == 'GP_UI':
-        gp = GP_UI(idims=idims,odims=odims,profile=profile)
-    elif gp_type == 'RBFGP':
-        gp = RBFGP(idims=idims,odims=odims,profile=profile)
-    elif gp_type == 'SPGP':
-        gp = SPGP(idims=idims,odims=odims,profile=profile,n_basis=100)
-    elif gp_type == 'SPGP_UI':
-        gp = SPGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
-    elif gp_type == 'SSGP':
-        gp = SSGP(idims=idims,odims=odims,profile=profile,n_basis=100)
-    elif gp_type == 'SSGP_UI':
-        gp = SSGP_UI(idims=idims,odims=odims,profile=profile,n_basis=100)
-    else:
-        gp = GP(idims=idims,odims=odims,profile=profile)
+def build_GP(idims=9, odims=6, gp_class='GP', profile=theano.config.profile):
+    gp_classes = dict(inspect.getmembers(ghost.regression.GP, inspect.isclass))
+    gp = gp_classes[gp_class](idims=idims,odims=odims, profile=profile)
     return gp
 
 def write_profile_files(gp):
@@ -71,13 +69,14 @@ def write_profile_files(gp):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gp_type', nargs='?', help='the name of the GP regressor class (GP,GP_UI,SPGP,SPGP_UI,SSGP,SSGP_UI). Default: GP_UI.', default='GP_UI')
+    parser.add_argument('--gp_class', nargs='?', help='the name of the GP regressor class (GP,GP_UI,SPGP,SPGP_UI,SSGP,SSGP_UI). Default: GP_UI.', default='GP_UI')
     parser.add_argument('--n_train', nargs='?', type=int, help='Number of training samples. Default: 500.', default=500)
     parser.add_argument('--n_test', nargs='?', type=int, help='Number of testing samples. Default: 200', default=200)
     parser.add_argument('--idims', nargs='?', type=int, help='Input dimensions. Default: 4', default=4)
     parser.add_argument('--odims', nargs='?', type=int, help='Output dimensions. Default: 2', default=2)
     parser.add_argument('--noise1', nargs='?', type=float, help='Measurement noise of training targets. Default: 0.01', default=0.01)
     parser.add_argument('--noise2', nargs='?', type=float, help='Noise on test inputs. Default: 0.01', default=0.01)
+    parser.add_argument('--func', nargs='?', type=int, help='Test function to use (default 0)', default=0)
     args = parser.parse_args()
 
     idims = args.idims
@@ -85,9 +84,9 @@ if __name__=='__main__':
     n_train = args.n_train
     n_test = args.n_test
     utils.print_with_stamp("Building test dataset",'main')
-    train_dataset,test_dataset = build_dataset(idims=idims,odims=odims,n_train=n_train,n_test=n_test, output_noise=args.noise1, input_noise=args.noise2, rand_seed=31337)
+    train_dataset,test_dataset = build_dataset(idims=idims,odims=odims,n_train=n_train,n_test=n_test, output_noise=args.noise1, input_noise=args.noise2, f_type=args.func, rand_seed=31337)
     utils.print_with_stamp("Building regressor",'main')
-    gp = build_GP(idims,odims,gp_type=args.gp_type,profile=theano.config.profile)
+    gp = build_GP(idims,odims,gp_class=args.gp_class,profile=theano.config.profile)
     gp.load()
     gp.set_dataset(train_dataset[0],train_dataset[1])
 

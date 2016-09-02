@@ -17,7 +17,7 @@ class NN(Loadable):
         self.should_recompile = False
         
         ls2 = np.ones((self.E,))*np.log(1e-3)
-        self.logsn2 = theano.shared(np.array(ls2,dtype=theano.config.floatX))
+        self.logsn = theano.shared(np.array(ls2,dtype=theano.config.floatX))
         self.lscale2 = 10
 
         self.learning_params = {'iters': 25000, 'batch_size': 500}
@@ -85,7 +85,7 @@ class NN(Loadable):
             self.Ys.set_value(3*Y_dataset.std(0),borrow=True)
 
         self.lscale2 = 1e-7*self.X.get_value(borrow=True).var(0).sum()
-        self.logsn2.set_value(np.log(1e-2*self.Y.get_value(borrow=True).var(0)).astype(theano.config.floatX))
+        self.logsn.set_value(np.log(1e-2*self.Y.get_value(borrow=True).std(0)).astype(theano.config.floatX))
 
     def append_dataset(self,X_dataset,Y_dataset):
         if self.X is None:
@@ -144,8 +144,8 @@ class NN(Loadable):
         l2_penalty = lasagne.regularization.regularize_network_params(self.network, lasagne.regularization.l2)
         l2_weight = self.lscale2*(1.0-self.drop_hidden)/(2.0*N)
         if self.learn_noise:
-            error = ((delta_y*theano.tensor.exp(-0.5*self.logsn2))**2).sum(1)
-            loss = 0.5*error.mean() + l2_weight*l2_penalty + 0.5*self.logsn2.sum()
+            error = ((delta_y*theano.tensor.exp(-self.logsn))**2).sum(1)
+            loss = 0.5*error.mean() + l2_weight*l2_penalty + self.logsn.sum()
         else:
             error = (delta_y**2).sum(1)
             loss = error.mean() + l2_weight*l2_penalty 
@@ -154,7 +154,7 @@ class NN(Loadable):
         # build the updates dictionary ( sets the optimization algorithm for the network parameters)
         params = lasagne.layers.get_all_params(self.network, trainable=True)
         if self.learn_noise:
-            params.append(self.logsn2)
+            params.append(self.logsn)
         #updates = lasagne.updates.nesterov_momentum(loss,params,learning_rate=self.learning_params['rate'],momentum=self.learning_params['momentum'])
         #updates = lasagne.updates.adadelta(loss,params,learning_rate=1e-1)
         updates = lasagne.updates.adam(loss,params,learning_rate=1e-3)
@@ -240,7 +240,7 @@ class NN(Loadable):
         # empirical mean
         M = y.mean(axis=0)
         # empirical covariance
-        S = theano.tensor.diag(theano.tensor.exp(self.logsn2)) + y.T.dot(y)/n - theano.tensor.outer(M,M)
+        S = theano.tensor.diag(theano.tensor.exp(2*self.logsn)) + y.T.dot(y)/n - theano.tensor.outer(M,M)
         # Sx^-1 times empirical input output covariance
         if Sx is not None:
             C = x.T.dot(y)/n - theano.tensor.outer(mx,M)
@@ -280,5 +280,5 @@ class NN(Loadable):
             for x,y in utils.iterate_minibatches(self.X.get_value(borrow=True), self.Y.get_value(borrow=True), batch_size, shuffle=True):
                 ret = self.train_fn(x,y)
             elapsed_time = time.time() - start_time
-            utils.print_with_stamp('iter: %d, loss: %E, elapsed: %E, sn2: %s'%(i,ret,elapsed_time, np.exp(self.logsn2.get_value())),self.name,True)
+            utils.print_with_stamp('iter: %d, loss: %E, elapsed: %E, sn2: %s'%(i,ret,elapsed_time, np.exp(self.logsn.get_value())),self.name,True)
         print ''

@@ -26,7 +26,7 @@ double control_dt = 1e-6*CONTROL_SAMPLING_PERIOD;
 
 // Encoder params
 #define N_joints 2
-Encoder* encoders[] = {new Encoder(16, 17),new Encoder(14, 15)};
+Encoder* encoders[] = {new Encoder(14, 15),new Encoder(16, 17)};
 double units_per_count[] = {0.32*twopi/30000, twopi/2000};
 bool new_measurement=true;
 union joint_states_type{
@@ -94,7 +94,7 @@ void setup() {
   Timer1.attachInterrupt(controlLoop);
   Timer3.initialize(ENCODER_SAMPLING_PERIOD);
   Timer3.attachInterrupt(readEncoders);
-
+  
   // setup serial command interface
   cmd.printLfCr();
   cmd.attach(onUnknownCommand);
@@ -109,7 +109,6 @@ void setup() {
 void loop() {
   // read incoming commands
   cmd.feedinSerialData();
-  
   // compute virtual force to avoid exceeding limit angles
   min_angle_diff = max(1e-6,10*(joint_states.as_double[0]-angle_limits[0]));
   max_angle_diff = min(-1e-6,10*(joint_states.as_double[0]-angle_limits[1]));

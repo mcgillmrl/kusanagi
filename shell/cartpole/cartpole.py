@@ -37,7 +37,7 @@ def default_params():
     cost_params['pendulum_length'] = plant_params['params']['l']
 
     learner_params['max_evals'] = 125
-    learner_params['conv_thr'] = 1e-10
+    learner_params['conv_thr'] = 1e-12
     learner_params['min_method'] = 'L-BFGS-B'
     learner_params['realtime'] = True
 
@@ -151,6 +151,7 @@ class CartpoleDraw(PlantDraw):
         self.center_y = 0
 
         # initialize the patches to draw the cartpole
+        from matplotlib import pyplot as plt
         self.body_rect = plt.Rectangle( (self.center_x-0.5*self.body_h, self.center_y-0.125*self.body_h), self.body_h, 0.25*self.body_h, facecolor='black')
         self.pole_line = plt.Line2D((self.center_x, 0), (self.center_y, l), lw=2, c='r')
         self.mass_circle = plt.Circle((0, l), self.mass_r, fc='y')

@@ -4,7 +4,7 @@ import numpy as np
 import utils
 from shell.cartpole import default_params
 from ghost.learners.PILCO import PILCO
-from ghost.regression.GP import SPGP_UI,SSGP_UI
+from ghost.regression.GP import SPGP_UI,SSGP_UI,VSSGP
 from ghost.regression.NN import NN
 from ghost.control import NNPolicy
 from utils import plot_results
@@ -13,14 +13,14 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     # setup output directory
-    utils.set_run_output_dir(os.path.join(utils.get_output_dir(),'cartpole_serial'))
+    utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
 
     J = 4                                                                   # number of random initial trials
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
-    learner_params['dynmodel_class'] = SSGP_UI
+    learner_params['dynmodel_class'] = VSSGP
     learner_params['params']['dynmodel']['n_basis'] = 100
     #learner_params['min_method'] = 'ADAM'
     #learner_params['dynmodel_class'] = NN

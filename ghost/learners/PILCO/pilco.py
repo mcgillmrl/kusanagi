@@ -144,8 +144,8 @@ class PILCO(EpisodicLearner):
         mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,D_)
 
         # compute distribution of control signal
-        logsn2 = self.dynamics_model.logsn2
-        Sx_ = Sx + theano.tensor.diag(0.5*theano.tensor.exp(logsn2))# noisy state measurement
+        sn2 = theano.tensor.exp(2*self.dynamics_model.logsn)
+        Sx_ = Sx + theano.tensor.diag(0.5*sn2)# noisy state measurement
         #Sx_ = theano.printing.Print('Sx_\n')(Sx_)
         mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
         mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
@@ -300,7 +300,6 @@ class PILCO(EpisodicLearner):
         p = self.policy.get_params(symbolic=True)
         # the policy gradients will have the same shape as the policy parameters (i.e. this returns a list
         # of theano tensor variables with the same dtype and ndim as the parameters in p )
-        print p
         dJdp = self.get_policy_gradients(expected_accumulated_cost,p)
         retvars = [expected_accumulated_cost]
         retvars.extend(dJdp)
