@@ -88,7 +88,14 @@ if __name__=='__main__':
     utils.print_with_stamp("Building regressor",'main')
     gp = build_GP(idims,odims,gp_class=args.gp_class,profile=theano.config.profile)
     gp.load()
-    gp.set_dataset(train_dataset[0],train_dataset[1])
+    kk = args.noise2*convolve2d(np.array([[1,2,3,2,1]]),np.array([[1,2,3,2,1]]).T)/9.0;
+    s_train = convolve2d(np.eye(idims),kk,'same')
+    #s_train = args.noise2*np.eye(idims)
+    s_train = np.tile(s_train,(n_train,1)).reshape(n_train,idims,idims)
+    s_train = s_train*(1-np.exp(-0.25*train_dataset[0][:,0]**2))
+
+    gp.set_dataset(train_dataset[0],train_dataset[1],s_train)
+    #gp.set_dataset(train_dataset[0],train_dataset[1])
 
     gp.train()
     gp.save()

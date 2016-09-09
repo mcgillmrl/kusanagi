@@ -1,10 +1,10 @@
 import numpy as np 
 import utils
-from ghost.regression.GP import GP_UI
+from ghost.regression import GP
 from ghost.learners.EpisodicLearner import EpisodicLearner
 
 class TrajectoryMatching(EpisodicLearner):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='TrajectoryMatching', wrap_angles=False, filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='TrajectoryMatching', wrap_angles=False, filename_prefix=None):
         self.mx0 = np.array(params['x0']).squeeze()
         self.Sx0 = np.array(params['S0']).squeeze()
         self.angle_idims = params['angle_dims']
@@ -78,7 +78,7 @@ class TrajectoryMatching(EpisodicLearner):
             self.mx0 = np.array(self.plant.x0).squeeze()
             self.Sx0 = np.array(self.plant.S0).squeeze()
 
-        utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.inverse_dynamics_model.X_.shape,self.inverse_dynamics_model.Y_.shape),self.name)
+        utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.inverse_dynamics_model.X.get_value().shape,self.inverse_dynamics_model.Y.get_value().shape),self.name)
         if self.inverse_dynamics_model.should_recompile:
             # reinitialize log likelihood
             self.inverse_dynamics_model.init_loss()
@@ -87,10 +87,11 @@ class TrajectoryMatching(EpisodicLearner):
         utils.print_with_stamp('Done training inverse dynamics model',self.name)
 
     def train_adjustment(self):
-        n_trajectories=10
+        n_trajectories=5
         total_trajectories=len(self.source_experience.states)
         X = []
         Y = []
+        Y_var = []
         
         for i in xrange(max(0,total_trajectories-n_trajectories),total_trajectories):
             # for every state transition in the source experience, use the target inverse dynamics
@@ -102,19 +103,31 @@ class TrajectoryMatching(EpisodicLearner):
             # source actions
             u_s = np.array(self.source_experience.actions[i])
             # target actions
-            u_t = np.stack([ self.inverse_dynamics_model.predict(t_s_i)[0] for t_s_i in t_s ])
+            u_t = []
+            Su_t = []
+            for t_s_i in t_s:
+                # get prediction from inverse dynamics model
+                u, Su, Cu = self.inverse_dynamics_model.predict(t_s_i)
+                #u_t.append(np.random.multivariate_normal(u,Su))
+                u_t.append(u)
+                Su_t.append(np.diag(np.maximum(Su,1e-9)))
+
+            u_t = np.stack(u_t)
+            Su_t = np.stack(Su_t)
             
             if self.policy.use_control_input:
                 X.append( np.hstack( [x_s[:-1] , u_s[:-1]] ))
             else:
                 X.append( x_s[:-1] )
 
-            Y.append( u_t )
+            Y.append( u_t-u_s[:-1] )
+            Y_var.append( Su_t )
 
         X = np.vstack(X)
         Y = np.vstack(Y)
+        Y_var = np.vstack(Y_var)
 
-        self.policy.adjustment_model.set_dataset(X,Y)
+        self.policy.adjustment_model.set_dataset(X,Y)#,Y_var=Y_var)
         self.policy.adjustment_model.train()
 
     def sample_trajectory_source(self, N=1):

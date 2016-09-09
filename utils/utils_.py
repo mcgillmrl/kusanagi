@@ -370,6 +370,7 @@ def plot_results(learner,H=None):
     rollout_ =  learner.rollout(x0,S0,H_steps,1)
     plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
     plt.plot(T_range,cost)
+    print_with_stamp('Predicted value: [%f]'%(np.array(rollout_[0]).sum()),'plot_results')
 
     states = np.array(learner.experience.states[-1])
     predicted_means = np.array(rollout_[2])

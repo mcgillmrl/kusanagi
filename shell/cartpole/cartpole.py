@@ -32,11 +32,11 @@ def default_params():
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
-    cost_params['width'] = 0.25
+    cost_params['width'] = 0.15
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
 
-    learner_params['max_evals'] = 125
+    learner_params['max_evals'] = 150
     learner_params['conv_thr'] = 1e-12
     learner_params['min_method'] = 'L-BFGS-B'
     learner_params['realtime'] = True

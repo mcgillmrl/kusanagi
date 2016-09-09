@@ -192,13 +192,14 @@ class EpisodicLearner(Loadable):
             p = []
         else:
             policy = self.policy
-            # initialize policy if needed
-            p = policy.get_params(symbolic=False)
-            if len(p) == 0:
-                policy.set_default_parameters()
 
         #initialize cost if neeeded
         self.init_cost()
+        
+        # initialize policy if needed
+        p = self.policy.get_params()
+        if len(p) == 0:
+            self.policy.set_default_parameters()
 
         # mark the start of the episode
         self.experience.new_episode(policy_params=p)
@@ -281,6 +282,7 @@ class EpisodicLearner(Loadable):
     def train_policy(self, H=None):
         if H is not None:
             self.H = H
+        
         # optimize value wrt to the policy parameters
         self.learning_iteration+=1
         self.n_evals=0
@@ -351,7 +353,7 @@ class EpisodicLearner(Loadable):
             error_str = 'Unknown minimization method %s' % (self.min_method)
             utils.print_with_stamp(error_str,self.name)
             raise ValueError(error_str)
-        
+     
         print '' 
 
         v,p = self.best_p

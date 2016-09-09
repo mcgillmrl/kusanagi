@@ -21,9 +21,7 @@ class RBFPolicy(RBFGP):
 
         if filename is not None:
             # try loading from file
-            self.uncertain_inputs = True
-            self.filename = filename
-            self.sat_func = sat_func
+            super(RBFPolicy, self).__init__(idims=0, odims=0, sat_func=sat_func, name=self.name, filename=filename)
             self.load()
         else:
             self.m0 = np.array(m0)
@@ -236,19 +234,25 @@ class LocalLinearPolicy(Loadable):
         return [attr for attr in self.__dict__.values() if isinstance(attr,theano.tensor.sharedvar.SharedVariable)]
 
 class AdjustedPolicy:
-    def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI, use_control_input=True):
+    def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI, use_control_input=True, **kwargs):
         self.use_control_input = use_control_input
-        self.source_policy = source_policy
         self.angle_dims = angle_dims
         self.name = name
         self.maxU=maxU
+        
+        self.source_policy = source_policy
+        #self.source_policy.init_loss(cache_vars=False)
+        #self.source_policy.init_predict()
+        
         self.adjustment_model = adjustment_model_class(idims=self.source_policy.D, odims=self.source_policy.E) #TODO we may add a saturatinig function here
+    
+    def set_default_parameters(self):
+        pass
 
     def evaluate(self, m, S=None, t=None, derivs=False, symbolic=False):
         T = theano.tensor if symbolic else np
         # get the output of the source policy
         ret = self.source_policy.evaluate(m,S,t,derivs,symbolic)
-        
         # initialize the inputs to the policy adjustment function
         adj_input_m = m
         if self.use_control_input:
@@ -263,7 +267,12 @@ class AdjustedPolicy:
                 adj_ret = self.adjustment_model.predict(adj_input_m,adj_input_S) #TODO change predict symbolic to evaluate
             #adj_ret = self.adjustment_model.evaluate(t,m,S,derivs,symbolic)
             # TODO fill the output covariance correctly
+            print m,ret[0], adj_ret[0]
+
             ret[0] += adj_ret[0]
+        else:
+            print m,ret[0]
+
         return ret
 
     def get_params(self, symbolic=False):

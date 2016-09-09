@@ -69,9 +69,15 @@ class Loadable(object):
             self.registered_types.remove(type_)
         
     def load(self, output_folder=None,output_filename=None):
+        if not hasattr(self,'registered_types'):
+            self.registered_types = set()
+        if not hasattr(self,'registered_keys'):
+            self.registered_keys = set()
+        
         output_folder = utils.get_output_dir() if output_folder is None else output_folder
         [output_filename, self.filename] = utils.sync_output_filename(output_filename, self.filename, '.zip')
         path = os.path.join(output_folder,output_filename)
+        
         # append the zip extension
         if not path.endswith('.zip'):
             path = path+'.zip'

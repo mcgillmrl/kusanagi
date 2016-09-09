@@ -18,7 +18,7 @@ import utils
 from base.Loadable import Loadable
 
 class GP(Loadable):
-    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, snr_penalty=SNRpenalty.SEard, **kwargs):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, snr_penalty=SNRpenalty.SEard, filename=None, **kwargs):
         # theano options
         self.profile= profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
@@ -50,8 +50,8 @@ class GP(Loadable):
         #symbolic varianbles
         self.param_names = []
         self.loghyp = None; self.logsn = None
-        self.X = None; self.Y = None
-        self.iK = None; self.L = None; self.beta = None;
+        self.X = None; self.Y = None;
+        self.iK = None; self.L = None; self.beta = None; self.nigp=None; self.Y_var=None
         self.kernel_func = None
         self.loss_fn = None; self.dloss_fn=None
 
@@ -63,8 +63,14 @@ class GP(Loadable):
         self.name = name
         # filename for saving
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX)
-        Loadable.__init__(self,name=name,filename=self.filename)
+        if filename is not None:
+            self.filename = filename
+            Loadable.__init__(self,name=name,filename=self.filename)
+            self.load()
+        else:
+            Loadable.__init__(self,name=name,filename=self.filename)
         
+
         # register theanno functions and shared variables for saving
         self.register_types([T.sharedvar.SharedVariable, theano.compile.function_module.Function])
         # register additional variables for saving
@@ -84,21 +90,24 @@ class GP(Loadable):
         super(GP,self).load(output_folder,output_filename)
         
         # initialize missing variables
-        if self.X is not None:
+        if hasattr(self,'X') and self.X:
             self.N = self.X.get_value(borrow=True).shape[0]
+            self.D = self.X.get_value(borrow=True).shape[1]
+        if hasattr(self,'Y') and self.Y:
+            self.E = self.Y.get_value(borrow=True).shape[1]
 
-        if self.loghyp is not None:
+        if hasattr(self,'loghyp') and self.loghyp:
             self.logsn = self.loghyp[:,-1]
     
     def get_dataset(self):
         return self.X.get_value(), self.Y.get_value()
 
-    def set_dataset(self,X_dataset,Y_dataset):
+    def set_dataset(self,X_dataset,Y_dataset,X_cov=None,Y_var=None):
         # ensure we don't change the number of input and output dimensions ( the number of samples can change)
         assert X_dataset.shape[0] == Y_dataset.shape[0], "X_dataset and Y_dataset must have the same number of rows"
-        if self.X is not None:
+        if hasattr(self,'X') and self.X:
             assert self.X.get_value(borrow=True).shape[1] == X_dataset.shape[1]
-        if self.Y is not None:
+        if hasattr(self,'Y') and self.Y:
             assert self.Y.get_value(borrow=True).shape[1] == Y_dataset.shape[1]
         
         # first, convert numpy arrays to appropriate type
@@ -118,6 +127,13 @@ class GP(Loadable):
             self.Y = S(Y_dataset,name='%s>Y'%(self.name),borrow=True)
         else:
             self.Y.set_value(Y_dataset,borrow=True)
+        
+        self.X_cov = X_cov
+        if Y_var is not None:
+            if self.Y_var is None:
+                self.Y_var = S(Y_var,name='%s>Y'%(self.name),borrow=True)
+            else:
+                self.Y_var.set_value(Y_var,borrow=True)
 
         if not self.trained:
             # init log hyperparameters
@@ -129,13 +145,20 @@ class GP(Loadable):
             self.ready = True
         self.trained = False
 
-    def append_dataset(self,X_dataset,Y_dataset):
+    def append_dataset(self,X_dataset,Y_dataset,X_cov=None,Y_var=None):
         if self.X is None:
-            self.set_dataset(X_dataset,Y_dataset)
+            self.set_dataset(X_dataset,Y_dataset,X_cov,Y_var)
         else:
             X_ = np.vstack((self.X.get_value(), X_dataset.astype(self.X.dtype)))
             Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(self.Y.dtype)))
-            self.set_dataset(X_,Y_)
+            X_cov_ = None
+            if X_cov and hasattr(self,'X_cov') and self.X_cov:
+                X_cov_ = np.vstack((self.X_cov, X_cov.astype(self.X_cov.dtype)))
+            Y_var_ = None
+            if Y_var and hasattr(self,'Y_var') and self.Y_var:
+                Y_var_ = np.vstack((self.Y_var, X_cov.astype(self.Y_var.dtype)))
+            
+            self.set_dataset(X_,Y_,X_cov_,Y_var_)
 
     def init_params(self):
         idims = self.D; odims = self.E; 
@@ -200,15 +223,24 @@ class GP(Loadable):
             self.L = S(np.zeros((self.E,self.N,self.N),dtype='float64'), name="%s>L"%(self.name))
         if self.beta is None:
             self.beta = S(np.zeros((self.E,self.N),dtype='float64'), name="%s>beta"%(self.name))
+        if self.X_cov is not None and self.nigp is None:
+            self.nigp = S(np.zeros((self.E,self.N),dtype='float64'), name="%s>nigp"%(self.name))
+
         N = self.X.shape[0].astype('float64')
         
-        def log_marginal_likelihood(Y,loghyp,X,EyeN):
+        def log_marginal_likelihood(Y,loghyp,i,X,EyeN,nigp=None,y_var=None):
             # initialise the (before compilation) kernel function
             loghyps = (loghyp[:idims+1],loghyp[idims+1])
             kernel_func = partial(cov.Sum, loghyps, self.covs)
 
             # We initialise the kernel matrices (one for each output dimension)
             K = kernel_func(X)
+            # add the contribution from the input noise
+            if nigp:
+                K += T.diag(nigp[i])
+            # add the contribution from the output uncertainty (acts as weight)
+            if y_var:
+                K += T.diag(y_var[i])
             L = cholesky(K)
             iK = solve_upper_triangular(L.T, solve_lower_triangular(L,EyeN))
             Yc = solve_lower_triangular(L,Y)
@@ -220,7 +252,12 @@ class GP(Loadable):
 
             return loss,iK,L,beta
         
-        (loss,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,T.eye(self.X.shape[0])], allow_gc=False)
+        nseq = [self.X,T.eye(self.X.shape[0])]
+        if self.nigp:
+            nseq.append(self.nigp)
+        if self.Y_var:
+            nseq.append(self.Y_var.T)
+        (loss,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp,T.arange(self.X.shape[0])], non_sequences=nseq, allow_gc=False)
 
         iK = T.unbroadcast(iK,0) if iK.broadcastable[0] else iK
         L = T.unbroadcast(L,0) if L.broadcastable[0] else L
@@ -321,22 +358,53 @@ class GP(Loadable):
     
     def loss(self,loghyp):
         self.set_params({'loghyp': loghyp})
+        if self.nigp:
+            # update the nigp parameter using the derivative of the mean function
+            dM2 = self.dM2_fn()
+            nigp = ((dM2[:,:,:,None]*self.X_cov[None]).sum(2)*dM2).sum(-1)
+            self.nigp.set_value(nigp)
+
         loss,dloss = self.dloss_fn()
         loss = loss.sum()
         dloss = dloss.flatten()
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (loss.astype(np.float64), dloss.astype(np.float64))
         utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
+
         return res
 
     def train(self):
         if self.loss_fn is None or self.should_recompile:
             self.init_loss()
 
+        if self.nigp and not hasattr(self, 'dM2_fn'):
+            idims = self.D
+            utils.print_with_stamp('Compiling derivative of mean function at training inputs',self.name)
+            # we need to evaluate the derivative of the mean function at the training inputs
+            def dM2_f_i(mx,beta,loghyp,X):
+                loghyps = (loghyp[:idims+1],loghyp[idims+1])
+                kernel_func = partial(cov.Sum, loghyps, self.covs)
+                k = kernel_func(mx[None,:],X).flatten()
+                mean = k.dot(beta)
+                dmean = theano.tensor.jacobian(mean.flatten(),mx)
+                return dmean.flatten()**2
+            
+            def dM2_f(beta,loghyp,X):
+                # iterate over training inputs
+                dM2_o, updts = theano.scan(fn=dM2_f_i, sequences=[X], non_sequences=[beta,loghyp,X], allow_gc = False)
+                return dM2_o
+
+            # iterate over output dimensions
+            dM2, updts = theano.scan(fn=dM2_f, sequences=[self.beta,self.loghyp], non_sequences=[self.X], allow_gc = False)
+
+            self.dM2_fn = F((),dM2,name='%s>dM2'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+
+
         loghyp0 = self.loghyp.eval()
         utils.print_with_stamp('Current hyperparameters:\n%s'%(loghyp0),self.name)
         utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
+        self.n_evals=0
         try:
             opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': self.max_evals})
         except ValueError:

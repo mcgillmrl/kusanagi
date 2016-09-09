@@ -4,7 +4,7 @@ import numpy as np
 import utils
 from shell.cartpole import default_params
 from ghost.learners.PILCO import PILCO
-from ghost.regression.GP import SPGP_UI,SSGP_UI,VSSGP
+import ghost.regression.GP as GP
 from ghost.regression.NN import NN
 from ghost.control import NNPolicy
 from utils import plot_results
@@ -20,7 +20,7 @@ if __name__ == '__main__':
     learner_params = default_params()
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
-    learner_params['dynmodel_class'] = VSSGP
+    learner_params['dynmodel_class'] = GP.SSGP_UI
     learner_params['params']['dynmodel']['n_basis'] = 100
     #learner_params['min_method'] = 'ADAM'
     #learner_params['dynmodel_class'] = NN
@@ -37,11 +37,11 @@ if __name__ == '__main__':
 
     if learner.experience.n_samples() == 0: #if we have no prior data
         # gather data with random trials
-        for i in xrange(J-1):
+        for i in xrange(J):
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
-        learner.plant.reset_state()
-        learner.apply_controller()
+        #learner.plant.reset_state()
+        #learner.apply_controller()
     else:
         learner.plant.reset_state()
         learner.apply_controller()
