@@ -138,19 +138,14 @@ class PILCO(EpisodicLearner):
         D = mx.shape[0]
         D_ = self.mx0.get_value().size
 
-        #mx = theano.printing.Print('mx\n')(mx)
-        #Sx = theano.printing.Print('Sx\n')(Sx)
         # convert angles from input distribution to its complex representation
         mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,D_)
 
         # compute distribution of control signal
         sn2 = theano.tensor.exp(2*self.dynamics_model.logsn)
         Sx_ = Sx + theano.tensor.diag(0.5*sn2)# noisy state measurement
-        #Sx_ = theano.printing.Print('Sx_\n')(Sx_)
         mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
         mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
-        #mu = theano.printing.Print('mu\n')(mu)
-        #Su = theano.printing.Print('Su\n')(Su)
         
         # compute state control joint distribution
         n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
@@ -170,8 +165,6 @@ class PILCO(EpisodicLearner):
 
         #  predict the change in state given current state-action
         # C_deltax = inv (Sxu) dot Sxu_deltax
-        #mxu = theano.printing.Print('mxu\n')(mxu)
-        #Sxu = theano.printing.Print('Sxu\n')(Sxu)
         m_deltax, S_deltax, C_deltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
 
         # compute the successor state distribution

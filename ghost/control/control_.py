@@ -73,7 +73,7 @@ class RBFPolicy(RBFGP):
         self.init_loss(cache_vars=False)
         self.init_predict()
 
-    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False):
+    def evaluate(self, m, s=None, t=None, symbolic=False):
         D = m.shape[0]
         if symbolic:
             if s is None:
@@ -82,7 +82,7 @@ class RBFPolicy(RBFGP):
         else:
             if s is None:
                 s = np.zeros((D,D))
-            ret = self.predict(m,s) if not derivs else self.predict_d(m,s)
+            ret = self.predict(m,s)
         return ret 
 
 # random controller
@@ -94,7 +94,7 @@ class RandPolicy:
         self.random_walk=random_walk
         
 
-    def evaluate(self, m, s=None, t=None, derivs=False):
+    def evaluate(self, m, s=None, t=None, symbolic=False):
         if self.random_walk:
             ret = self.last_u + 0.3*((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
             ret = np.min ( (ret.flatten(), self.maxU.flatten()), axis=0  ) 
@@ -108,15 +108,9 @@ class RandPolicy:
         D = m.shape[0]
         return ret, np.zeros((U,U)), np.zeros((D,U))
 
-    def save(self):
-        pass # nothing to save
-
-    def load(self):
-        pass # nothing to load
-
 # linear time varying policy
 class LocalLinearPolicy(Loadable):
-    def __init__(self, H, dt, m0, S0=None, maxU=[10], angle_dims=[], name='LocalLinearPolicy'):
+    def __init__(self, H, dt, m0, S0=None, maxU=[10], angle_dims=[], name='LocalLinearPolicy', **kwargs):
         self.maxU = np.array(maxU)
         self.angle_dims = angle_dims
         self.H = H
@@ -125,110 +119,77 @@ class LocalLinearPolicy(Loadable):
         D = len(self.m0)
         self.S0 = S0 if S0 is not None else np.zeros((D,D))
         self.t = 0
+        self.noise = 0
         self.name = name
-        self.add_noise = True
         self.set_default_parameters()
 
         Loadable.__init__(self,name=name,filename=self.filename)
         # register theano functions and shared variables for saving
-        self.register_types([T.sharedvar.SharedVariable, theano.compile.function_module.Function])
+        self.register_types([theano.tensor.sharedvar.SharedVariable, theano.compile.function_module.Function])
 
     def set_default_parameters(self):
         H_steps = int(np.ceil(self.H/self.dt))
         self.state_changed = False
+
         # set random (uniform distribution) controls
-        self.u_nominal_ = self.maxU*(2*np.random.random((H_steps,len(self.maxU))) - 1)
+        u = self.maxU*(2*np.random.random((H_steps,len(self.maxU))) - 1)
+        self.u_nominal = theano.shared(u)
+
+        # intialize the nominal states to the appropriate size
         m0, S0 = utils.gTrig2_np(np.array(self.m0)[None,:], np.array(self.S0)[None,:,:], self.angle_dims, len(self.m0))
+        self.triu_indices = np.triu_indices(m0.size)
+        z0 = np.concatenate([m0.flatten(),S0[0][self.triu_indices]])
+        z = np.tile(z0,(H_steps,1))
+        self.z_nominal = theano.shared(z)
+
+        # initialize the open loop and feedback matrices 
+        I = np.zeros( (H_steps, len(self.maxU)) )
+        L = np.zeros( (H_steps, len(self.maxU), z0.size) )
+        self.I = theano.shared(I)
+        self.L = theano.shared(L)
+        
+        # set a meaningful filename
         self.filename = self.name+'_'+str(len(self.m0))+'_'+str(len(self.maxU))
-        z0 = np.concatenate([m0.flatten(),S0.flatten()])
-        self.z_nominal_ = np.tile(z0,(H_steps,1))
 
-        self.b_ = np.zeros( (H_steps, len(self.maxU)) )
-        self.A_ = np.zeros( (H_steps, len(self.maxU), z0.size) )
-
-        self.A = theano.shared(self.A_,borrow=True)
-        self.b = theano.shared(self.b_,borrow=True)
-        self.u_nominal = theano.shared(self.u_nominal_,borrow=True)
-        self.z_nominal = theano.shared(self.z_nominal_,borrow=True)
-
-	self.alpha = theano.shared(np.asarray(1,dtype=theano.config.floatX))
-
-    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False, u = None, use_gTrig = False):
+    def evaluate(self, m, s=None, t=None, symbolic=False):
         D = m.shape[0]
         if t is not None:
             self.t = t
         t = self.t
+
+        u,z,I,L = self.u_nominal,self.z_nominal,self.I,self.L
+
         if symbolic:
-            alpha = self.alpha
-            u_t = self.u_nominal[t]
-            z_t = self.z_nominal[t]
-            A_t = self.A[t]
-            b_t = self.b[t]
-            if s is None:
-                s = theano.tensor.zeros((D,D))
-            z = theano.tensor.concatenate([m.flatten(),s.flatten()])
-            if theano.tensor.neq(z.shape[0],z_t.shape[0]):
-                m,s,_ =  gTrig2(m, s, self.angle_dims, len(self.m0))
-                z = theano.tensor.concatenate([m.flatten(),s.flatten()])
+            T = theano.tensor
         else:
-            H = self.u_nominal.get_value().shape[0]
-            t = t%H
-            alpha = self.alpha.get_value()
-            u_t = self.u_nominal.get_value()[t]
-            z_t = self.z_nominal.get_value()[t]
-            A_t = self.A.get_value()[t]
-            b_t = self.b.get_value()[t]
-            if s is None:
-                s = np.zeros((D,D))
-            if use_gTrig:
-                m,s,_ = gTrig2_np(m, s, self.angle_dims, D)
-            z = np.concatenate([m.flatten(),s.flatten()])
-        self.t+=1
-        if u is not None:
-            u_t = u
+            T = np
+            u,z,I,L=u.get_value(),z.get_value(),I.get_value(),L.get_value()
+            
+        if s is None:
+            s = T.zeros((D,D))
+        
+        # construct flattened state covariance vector
+        z_t = T.concatenate([m.flatten(),s[self.triu_indices]])
+        # compute control
+        u_t = u[t] + I[t] + L[t].dot(z_t - z[t])
+        # add random noise if requested (only for non symbolic)
+        if not symbolic and self.noise and self.noise > 0:
+            u_t += self.noise*T.random.randn(*u_t.shape)
+
+        # limit the controller output
+        #u_t = T.maximum(u_t, -self.maxU)
+        #u_t = T.minimum(u_t, self.maxU)
+
         U = u_t.shape[0]
-        new_action  = u_t + alpha*(b_t + A_t.dot(z - z_t))
-        if symbolic:
-            new_action = theano.tensor.maximum(new_action, -self.maxU)
-            new_action = theano.tensor.minimum(new_action, self.maxU)
-            return new_action, theano.tensor.zeros((U,U)), theano.tensor.zeros((D,U))
-        else:
-            new_action[new_action>self.maxU] = self.maxU[new_action>self.maxU]
-            new_action[new_action<-self.maxU] = self.maxU[new_action<-self.maxU]
-            if self.add_noise:
-                new_action = new_action + np.random.multivariate_normal(np.zeros(new_action.shape), 0.001*np.eye(new_action.size))
-            return new_action, np.zeros((U,U)), np.zeros((D,U))
+        self.t+=1
+        return u_t, T.zeros((U,U)), T.zeros((D,U))
 
     def get_params(self, symbolic=False, t=None):
-        if symbolic:
-            if t is None:
-                return (self.u_nominal,self.z_nominal,self.A,self.b)
-            else:
-                return (self.u_nominal[t],self.z_nominal[t],self.A[t],self.b[t])
-        else:
-            return (self.u_nominal.get_value(),self.z_nominal.get_value(),self.A.get_value(),self.b.get_value())
+        params = [self.u_nominal,self.z_nominal,self.I,self.L]
 
-    def set_params(self,Ain = None,Bin = None ,uin = None,zin = None, alpha=None):
-        if Ain is not None:
-            self.A_= Ain.astype(theano.config.floatX)
-            self.A.set_value(self.A_,borrow=True)
-
-        if Bin is not None:
-            self.B_= Bin.astype(theano.config.floatX)
-            self.b.set_value(self.B_,borrow=True)
-
-        if uin is not None:
-            self.u_= uin.astype(theano.config.floatX)
-            self.u_nominal.set_value(self.u_,borrow=True)
-
-        if zin is not None:
-            self.z_= zin.astype(theano.config.floatX)
-            self.z_nominal.set_value(self.z_,borrow=True)
-
-        if alpha is not None:
-            self.alpha_= np.array(alpha).astype(theano.config.floatX)
-            self.alpha.set_value(self.alpha_,borrow=True)
-
+        if not symbolic:
+            params = [ p.get_value() for p in params]
+        return params
 
     def get_all_shared_vars(self):
         return [attr for attr in self.__dict__.values() if isinstance(attr,theano.tensor.sharedvar.SharedVariable)]
@@ -249,10 +210,10 @@ class AdjustedPolicy:
     def set_default_parameters(self):
         pass
 
-    def evaluate(self, m, S=None, t=None, derivs=False, symbolic=False):
+    def evaluate(self, m, S=None, t=None, symbolic=False):
         T = theano.tensor if symbolic else np
         # get the output of the source policy
-        ret = self.source_policy.evaluate(m,S,t,derivs,symbolic)
+        ret = self.source_policy.evaluate(m,S,t,symbolic)
         # initialize the inputs to the policy adjustment function
         adj_input_m = m
         if self.use_control_input:

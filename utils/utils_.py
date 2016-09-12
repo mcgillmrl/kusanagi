@@ -10,7 +10,8 @@ import random
 import numpy as np
 import csv
 import theano
-import theano.tensor as T
+from theano import tensor as T, ifelse
+from theano.gof import Variable
 from theano.sandbox.linalg import psd,matrix_inverse
 import matplotlib as mpl
 #mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
@@ -48,6 +49,41 @@ def maha(X1,X2=None,M=None, all_pairs=True):
             deltaM = delta.dot(M)
         D = T.sum(deltaM*delta,1)
     return D
+
+def fast_jacobian(expr, wrt, chunk_size=16, func=None):
+    assert isinstance(expr, Variable), \
+        "tensor.jacobian expects a Variable as `expr`"
+    assert expr.ndim < 2, \
+        ("tensor.jacobian expects a 1 dimensional variable as "
+         "`expr`. If not use flatten to make it a vector")
+
+    num_chunks = T.ceil(1.0 * expr.shape[0] / chunk_size)
+    num_chunks = T.cast(num_chunks, 'int32')
+    steps = T.arange(num_chunks)
+    remainder = expr.shape[0] % chunk_size
+
+    def chunk_grad(i):
+        wrt_rep = T.tile(wrt, (chunk_size, 1))
+        if func is not None:
+            expr_rep = func(wrt_rep)
+        else:
+            expr_rep, _ = theano.scan(
+                fn=lambda wrt_: theano.clone(expr, {wrt: wrt_}),
+                sequences=wrt_rep)
+        chunk_expr_grad = T.roll(
+            T.identity_like(expr_rep),
+            i * chunk_size,
+            axis=1)
+        return T.grad(cost=None,
+                      wrt=wrt_rep,
+                      known_grads={
+                          expr_rep: chunk_expr_grad
+                      })
+
+    grads, _ = theano.scan(chunk_grad, sequences=steps)
+    grads = grads.reshape((chunk_size * grads.shape[0], wrt.shape[0]))
+    jac = ifelse.ifelse(T.eq(remainder, 0), grads, grads[:expr.shape[0], :])
+    return jac
 
 def print_with_stamp(message, name=None, same_line=False, use_log=True):
     out_str = ''

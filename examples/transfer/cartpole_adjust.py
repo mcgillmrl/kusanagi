@@ -3,6 +3,7 @@ import os, sys
 import numpy as np
 from functools import partial
 
+import ghost
 from ghost.regression.GP import SSGP_UI,SSGP,GP,GP_UI
 from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.transfer.trajectory_matching import TrajectoryMatching
@@ -22,9 +23,9 @@ if __name__ == '__main__':
     N = 100
     J = 2
     simulation = True
-    base_dir = utils.get_output_dir()
-    source_dir = os.path.join(base_dir,'cartpole')
-    target_dir = os.path.join(base_dir,'target')
+    base_dir = os.path.dirname(ghost.__file__).rsplit('/',1)[0]
+    source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole')
+    target_dir = os.path.join(base_dir,'examples/learned_policies/target')
     # SOURCE DOMAIN 
     utils.set_output_dir(source_dir)
     # load source experience
@@ -39,7 +40,6 @@ if __name__ == '__main__':
     target_params['dynmodel_class'] = GP
     target_params['policy_class'] = AdjustedPolicy
     target_params['params']['policy']['adjustment_model_class'] = GP
-    print target_params.keys()
 
     # initialize target plant
     if not simulation:
