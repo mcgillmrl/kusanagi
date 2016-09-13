@@ -4,7 +4,8 @@ import numpy as np
 from functools import partial
 
 import ghost
-from ghost.regression.GP import SSGP_UI,SSGP,GP,GP_UI
+from ghost.regression import GP
+from ghost import control
 from ghost.learners.ExperienceDataset import ExperienceDataset
 from ghost.transfer.trajectory_matching import TrajectoryMatching
 from ghost.control import RBFPolicy
@@ -21,7 +22,6 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     N = 100
-    J = 2
     simulation = True
     base_dir = os.path.dirname(ghost.__file__).rsplit('/',1)[0]
     source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole')
@@ -37,9 +37,14 @@ if __name__ == '__main__':
     utils.set_output_dir(target_dir)
     target_params = shell.cartpole.default_params()
     # policy
-    target_params['dynmodel_class'] = GP
+    target_params['dynmodel_class'] = GP.GP
     target_params['policy_class'] = AdjustedPolicy
-    target_params['params']['policy']['adjustment_model_class'] = GP
+    #target_params['params']['policy']['adjustment_model_class'] = GP.GP
+    target_params['params']['policy']['adjustment_model_class'] = control.RBFPolicy
+    target_params['params']['policy']['sat_func'] = None # this is because we probably need bigger controls for heavier pendulums
+    target_params['params']['policy']['max_evals'] = 1000
+    target_params['params']['policy']['m0'] = np.zeros(source_policy.D+source_policy.E)
+    target_params['params']['policy']['S0'] = 1e-2*np.eye(source_policy.E)
 
     # initialize target plant
     if not simulation:

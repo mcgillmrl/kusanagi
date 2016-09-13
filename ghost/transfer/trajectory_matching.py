@@ -2,8 +2,9 @@ import numpy as np
 import utils
 from ghost.regression import GP
 from ghost.learners.EpisodicLearner import EpisodicLearner
+from ghost.learners.PILCO import PILCO
 
-class TrajectoryMatching(EpisodicLearner):
+class TrajectoryMatching(PILCO):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='TrajectoryMatching', wrap_angles=False, filename_prefix=None):
         self.mx0 = np.array(params['x0']).squeeze()
         self.Sx0 = np.array(params['S0']).squeeze()
@@ -20,14 +21,14 @@ class TrajectoryMatching(EpisodicLearner):
         # output dimensions are state dims
         dyn_odims = len(self.mx0)
         # initialize dynamics model (TODO pass this as argument to constructor)
-        if 'dynmodel' not in params:
-            params['dynmodel'] = {}
-        params['dynmodel']['idims'] = 2*dyn_odims
-        params['dynmodel']['odims'] = len(self.maxU)#dyn_odims
+        if 'inv_dynmodel' not in params:
+            params['inv_dynmodel'] = {}
+        params['inv_dynmodel']['idims'] = 2*dyn_odims
+        params['inv_dynmodel']['odims'] = len(self.maxU)#dyn_odims
 
-        self.inverse_dynamics_model = dynmodel_class(**params['dynmodel'])
+        self.inverse_dynamics_model = dynmodel_class(**params['inv_dynmodel'])
         self.next_episode = 0
-        super(TrajectoryMatching, self).__init__(params, plant_class, policy_class, cost_func,viz_class, experience, async_plant, name, filename_prefix)
+        super(TrajectoryMatching, self).__init__(params, plant_class, policy_class, cost_func,viz_class, dynmodel_class,  experience, async_plant, name, filename_prefix)
     
     def set_source_domain(self):
         # TODO Set the source dynamics
@@ -108,8 +109,8 @@ class TrajectoryMatching(EpisodicLearner):
             for t_s_i in t_s:
                 # get prediction from inverse dynamics model
                 u, Su, Cu = self.inverse_dynamics_model.predict(t_s_i)
-                #u_t.append(np.random.multivariate_normal(u,Su))
-                u_t.append(u)
+                u_t.append(np.random.multivariate_normal(u,Su))
+                #u_t.append(u)
                 Su_t.append(np.diag(np.maximum(Su,1e-9)))
 
             u_t = np.stack(u_t)
@@ -127,7 +128,7 @@ class TrajectoryMatching(EpisodicLearner):
         Y = np.vstack(Y)
         Y_var = np.vstack(Y_var)
 
-        self.policy.adjustment_model.set_dataset(X,Y)#,Y_var=Y_var)
+        self.policy.adjustment_model.set_dataset(X,Y,Y_var=Y_var)
         self.policy.adjustment_model.train()
 
     def sample_trajectory_source(self, N=1):

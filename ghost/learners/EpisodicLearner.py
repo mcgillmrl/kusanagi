@@ -90,7 +90,7 @@ class EpisodicLearner(Loadable):
         # initialize policy if needed
         p = self.policy.get_params()
         if len(p) == 0:
-            self.policy.set_default_parameters()
+            self.policy.init_params()
 
     def save(self, output_folder=None,output_filename=None):
         #initialize cost if neeeded
@@ -99,7 +99,7 @@ class EpisodicLearner(Loadable):
         # initialize policy if needed
         p = self.policy.get_params()
         if len(p) == 0:
-            self.policy.set_default_parameters()
+            self.policy.init_params()
 
         policy_filename = None
         if output_filename is not None:
@@ -174,7 +174,7 @@ class EpisodicLearner(Loadable):
             utils.print_with_stamp('Setting current episode to %d'%(episode), self.name)
             if episode == 0:
                 self.experience.reset()
-                self.policy.set_default_parameters()
+                self.policy.init_params()
             elif episode <= self.experience.current_episode:
                 self.experience.truncate(episode)
                 self.policy.set_params(self.experience_dataset.policy_parameters[episode])
@@ -199,7 +199,7 @@ class EpisodicLearner(Loadable):
         # initialize policy if needed
         p = self.policy.get_params()
         if len(p) == 0:
-            self.policy.set_default_parameters()
+            self.policy.init_params()
 
         # mark the start of the episode
         self.experience.new_episode(policy_params=p)

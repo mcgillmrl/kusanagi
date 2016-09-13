@@ -131,7 +131,7 @@ class GP(Loadable):
         self.X_cov = X_cov
         if Y_var is not None:
             if self.Y_var is None:
-                self.Y_var = S(Y_var,name='%s>Y'%(self.name),borrow=True)
+                self.Y_var = S(Y_var,name='%s>Y_var'%(self.name),borrow=True)
             else:
                 self.Y_var.set_value(Y_var,borrow=True)
 
@@ -152,11 +152,11 @@ class GP(Loadable):
             X_ = np.vstack((self.X.get_value(), X_dataset.astype(self.X.dtype)))
             Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(self.Y.dtype)))
             X_cov_ = None
-            if X_cov and hasattr(self,'X_cov') and self.X_cov:
+            if X_cov is not None and hasattr(self,'X_cov') and self.X_cov:
                 X_cov_ = np.vstack((self.X_cov, X_cov.astype(self.X_cov.dtype)))
             Y_var_ = None
-            if Y_var and hasattr(self,'Y_var') and self.Y_var:
-                Y_var_ = np.vstack((self.Y_var, X_cov.astype(self.Y_var.dtype)))
+            if Y_var is not None and hasattr(self,'Y_var'):
+                Y_var_ = np.vstack((self.Y_var.get_value(), Y_var.astype(self.Y_var.dtype)))
             
             self.set_dataset(X_,Y_,X_cov_,Y_var_)
 
@@ -211,7 +211,7 @@ class GP(Loadable):
         else:
             return [attr for attr in self.__dict__.values() if isinstance(attr,T.sharedvar.SharedVariable)]
 
-    def init_loss(self, cache_vars=True):
+    def init_loss(self, cache_vars=True, compile_funcs=True):
         utils.print_with_stamp('Initialising expression graph for full GP training loss function',self.name)
         idims = self.D
         odims = self.E
@@ -281,14 +281,15 @@ class GP(Loadable):
         dloss = T.grad(loss.sum(),self.loghyp)
 
         # Compile the theano functions
-        utils.print_with_stamp('Compiling full GP training loss function',self.name)
-        self.loss_fn = F((),loss,name='%s>loss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-        utils.print_with_stamp('Compiling gradient of full GP training loss function',self.name)
-        self.dloss_fn = F((),(loss,dloss),name='%s>dloss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+        if compile_funcs:
+            utils.print_with_stamp('Compiling full GP training loss function',self.name)
+            self.loss_fn = F((),loss,name='%s>loss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+            utils.print_with_stamp('Compiling gradient of full GP training loss function',self.name)
+            self.dloss_fn = F((),(loss,dloss),name='%s>dloss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         self.state_changed = True # for saving
     
-    def init_predict(self):
-        if self.loss_fn is None:
+    def init_predict(self, init_loss=True):
+        if init_loss and self.loss_fn is None:
             self.init_loss()
 
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
@@ -316,9 +317,6 @@ class GP(Loadable):
         odims = self.E
 
         # compute the mean and variance for each output dimension
-        mean = [[]]*odims
-        variance = [[]]*odims
-        
         def predict_odim(L,beta,loghyp,X,mx):
             loghyps = (loghyp[:idims+1],loghyp[idims+1])
             kernel_func = partial(cov.Sum, loghyps, self.covs)
