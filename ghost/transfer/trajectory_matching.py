@@ -3,11 +3,10 @@ import utils
 from ghost.regression import GP
 from ghost.learners.EpisodicLearner import EpisodicLearner
 from ghost.learners.PILCO import PILCO
+import theano
 
 class TrajectoryMatching(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='TrajectoryMatching', wrap_angles=False, filename_prefix=None):
-        self.mx0 = np.array(params['x0']).squeeze()
-        self.Sx0 = np.array(params['S0']).squeeze()
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, invdynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='TrajectoryMatching', wrap_angles=False, filename_prefix=None):
         self.angle_idims = params['angle_dims']
         self.maxU = params['policy']['maxU']
         # initialize source policy
@@ -17,17 +16,21 @@ class TrajectoryMatching(PILCO):
         
         # initialize dynamics model
         # input dimensions to the dynamics model are (state dims - angle dims) + 2*(angle dims) + control dims
-        dyn_idims = len(self.mx0) + len(self.angle_idims) + len(self.maxU)
+        x0 = np.array(params['x0'],dtype='float64').squeeze()
+        S0 = np.array(params['S0'],dtype='float64').squeeze()
+        self.mx0 = theano.shared(x0.astype('float64'))
+        self.Sx0 = theano.shared(S0.astype('float64'))
+        dyn_idims = len(x0) + len(self.angle_idims) + len(self.maxU)
         # output dimensions are state dims
-        dyn_odims = len(self.mx0)
+        dyn_odims = len(x0)
         # initialize dynamics model (TODO pass this as argument to constructor)
         if 'inv_dynmodel' not in params:
             params['inv_dynmodel'] = {}
         params['inv_dynmodel']['idims'] = 2*dyn_odims
         params['inv_dynmodel']['odims'] = len(self.maxU)#dyn_odims
 
-        self.inverse_dynamics_model = dynmodel_class(**params['inv_dynmodel'])
-        self.next_episode = 0
+        self.inverse_dynamics_model = invdynmodel_class(**params['inv_dynmodel'])
+        self.next_episode_inv = 0
         super(TrajectoryMatching, self).__init__(params, plant_class, policy_class, cost_func,viz_class, dynmodel_class,  experience, async_plant, name, filename_prefix)
     
     def set_source_domain(self):
@@ -43,15 +46,13 @@ class TrajectoryMatching(PILCO):
 
         X = []
         Y = []
-        x0 = []
         n_episodes = len(self.experience.states)
         
         if n_episodes>0:
             # construct training dataset
-            for i in xrange(self.next_episode,n_episodes):
+            for i in xrange(self.next_episode_inv,n_episodes):
                 x = np.array(self.experience.states[i])
                 u = np.array(self.experience.actions[i])
-                x0.append(x[0])
 
                 # inputs are pairs of consecutive states < x_{t}, x_{t+1} >
                 x_ = utils.gTrig_np(x, self.angle_idims)
@@ -60,24 +61,26 @@ class TrajectoryMatching(PILCO):
                 # outputs are the actions that produced the input state transition
                 Y.append( u[:-1] )
 
-            self.next_episode = n_episodes 
+            self.next_episode_inv = n_episodes 
             X = np.vstack(X)
             Y = np.vstack(Y)
             
             # get distribution of initial states
-            x0 = np.array(x0)
+            x0 = np.array([x[0] for x in self.experience.states])
             if n_episodes > 1:
-                self.mx0 = x0.mean(0)[None,:]
-                self.Sx0 = np.cov(x0.T)[None,:,:]
+                self.mx0.set_value(x0.mean(0).astype('float64'))
+                self.Sx0.set_value(np.cov(x0.T).astype('float64'))
             else:
-                self.mx0 = x0[None,:]
-                self.Sx0 = 1e-2*np.eye(self.mx0.size)[None,:,:]
+                self.mx0.set_value(x0.astype('float64').flatten())
+                self.Sx0.set_value(1e-2*np.eye(x0.size).astype('float64'))
 
             # append data to the dynamics model
             self.inverse_dynamics_model.append_dataset(X,Y)
         else:
-            self.mx0 = np.array(self.plant.x0).squeeze()
-            self.Sx0 = np.array(self.plant.S0).squeeze()
+            x0 = np.array(self.plant.x0, dtype='float64').squeeze()
+            S0 = np.array(self.plant.S0, dtype='float64').squeeze()
+            self.mx0.set_value(x0)
+            self.Sx0.set_value(S0)
 
         utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.inverse_dynamics_model.X.get_value().shape,self.inverse_dynamics_model.Y.get_value().shape),self.name)
         if self.inverse_dynamics_model.should_recompile:

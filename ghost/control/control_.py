@@ -8,6 +8,7 @@ from ghost.regression import cov
 from ghost.control.saturation import gSat
 from functools import partial
 from scipy.optimize import minimize
+from scipy.cluster.vq import kmeans2,vq
 from utils import gTrig2, gTrig2_np
 from base.Loadable import Loadable
 
@@ -34,7 +35,6 @@ class RBFPolicy(RBFGP):
                 idims = len(self.m0) + len(self.angle_dims)
             if not odims:
                 odims = len(self.maxU)
-            print self.m0
             super(RBFPolicy, self).__init__(idims=idims, odims=odims, sat_func=sat_func, max_evals=max_evals, name=self.name)
         
         # make sure we always get the parameters in the same order
@@ -55,17 +55,23 @@ class RBFPolicy(RBFGP):
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
 
     def init_params(self,compile_funcs=True):
-        if hasattr(self,'X_train'):
+        if hasattr(self,'X_train') and self.X_train is not None:
             # initialize tthe mean and covariance of the inputs
             X = self.X_train.get_value(); Y = self.Y_train.get_value()
             idims = X.shape[1]; odims = Y.shape[1]; 
             m0,S0 = X.mean(0), np.cov(X.T,ddof=1);
+
+            # init inputs and targets as subset of dataset
+            #idx = np.arange(X.shape[0]); np.random.shuffle(idx); idx= idx[:self.n_basis]
+            inputs = utils.kmeanspp(X,self.n_basis)
+            inputs,idx = kmeans2(X,inputs)
+            targets = np.vstack([ Y[idx==i].mean() for i in xrange(self.n_basis) ])
             
             # initialize log hyper parameters
             l0 = np.zeros((odims,idims+2))
-            l0[:,:idims] = 1.0#*X.std(0,ddof=1)
-            l0[:,idims] = 1.0
-            l0[:,idims+1] = 0.01
+            l0[:,:idims] = X.std(0,ddof=1)
+            l0[:,idims] = 1.0#Y.std(0,ddof=1)
+            l0[:,idims+1] = 0.01#*Y.std(0,ddof=1)
             l0 = np.log(l0)
 
             # init policy targets according to output distribution
@@ -77,6 +83,9 @@ class RBFPolicy(RBFGP):
             if len(self.angle_dims)>0:
                 m0, S0 = utils.gTrig2_np(np.array(m0)[None,:], np.array(S0)[None,:,:], self.angle_dims, len(m0))
                 m0 = m0.squeeze(); S0 = S0.squeeze();
+            # init inputs
+            L_noise = np.linalg.cholesky(S0)
+            inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(self.n_basis)]);
 
             # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
             l0 = np.hstack([np.ones(self.m0.size-len(self.angle_dims)),0.7*np.ones(2*len(self.angle_dims)),1,0.01])
@@ -85,9 +94,6 @@ class RBFPolicy(RBFGP):
             # init policy targets close to zero
             targets = 0.1*np.random.randn(self.n_basis,self.maxU.size)
         
-        # init inputs
-        L_noise = np.linalg.cholesky(S0)
-        inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(self.n_basis)]);
         
         self.trained = False
 
@@ -146,7 +152,6 @@ class RBFPolicy(RBFGP):
             self.set_dataset(X_,Y_,X_cov_,Y_var_)
 
     def init_loss(self,compile_funcs=True):
-        utils.print_with_stamp('RBFPolicy init_loss',self.name)
         self.init_params(compile_funcs=False)
         if not self.X_train or not self.Y_train:
             return
@@ -174,7 +179,7 @@ class RBFPolicy(RBFGP):
                                     allow_gc=False)
 
         # compute euclidean loss
-        loss = 0.5*(((Y_pred.T-Y_train)**2)/Y_train_var).sum(-1).mean()
+        loss = 0.5*(((Y_pred.T-Y_train)**2)/(Y_train_var+1e-6)).sum(-1).mean() + 1e-6*(self.beta**2).sum()
         
         #compute gradients
         dloss = theano.tensor.grad(loss,self.get_params(symbolic=True))
@@ -351,46 +356,51 @@ class AdjustedPolicy:
         self.source_policy = source_policy
         #self.source_policy.init_loss(cache_vars=False)
         #self.source_policy.init_predict()
-        print 'la la la la'
-        print kwargs
-        self.adjustment_model = adjustment_model_class(idims=self.source_policy.D, odims=self.source_policy.E,**kwargs) #TODO we may add a saturating function here
+        self.adjustment_model = adjustment_model_class(idims=self.source_policy.D, odims=self.source_policy.E, name='AdjustmentModel',**kwargs) #TODO we may add a saturating function here
     
     def init_params(self):
+        #self.source_policy.init_params() TODO
         pass
 
     def evaluate(self, m, S=None, t=None, symbolic=False):
         T = theano.tensor if symbolic else np
         # get the output of the source policy
-        ret = self.source_policy.evaluate(m,S,t,symbolic)
-        # initialize the inputs to the policy adjustment function
-        adj_input_m = m
-        if self.use_control_input:
-            adj_input_m = T.concatenate([adj_input_m,ret[0]])
-        adj_D = adj_input_m.size
-        adj_input_S = T.zeros((adj_D,adj_D))
-        # TODO fill the covariance matrix appropriately if S is not None
+        mu,Su,Cu = self.source_policy.evaluate(m,S,t,symbolic)
+
         if self.adjustment_model.trained == True:
+            # initialize the inputs to the policy adjustment function
+            adj_input_m = m
+            adj_input_S = S if S is not None else T.zeros((m.size,m.size))
+
+            if self.use_control_input:
+                adj_input_m = T.concatenate([adj_input_m,mu])
+                # fill input convariance matrix
+                q = adj_input_S.dot(Cu)
+                Sxu_up = T.concatenate([adj_input_S,q],axis=1)
+                Sxu_lo = T.concatenate([q.T,Su],axis=1)
+                adj_input_S = T.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
+
             if symbolic:
-                adj_ret = self.adjustment_model.predict_symbolic(adj_input_m,adj_input_S) #TODO change predict symbolic to evaluate
+                madj,Sadj,Cadj = self.adjustment_model.predict_symbolic(adj_input_m,adj_input_S)
             else:
-                adj_ret = self.adjustment_model.predict(adj_input_m,adj_input_S) #TODO change predict symbolic to evaluate
-            #adj_ret = self.adjustment_model.evaluate(t,m,S,derivs,symbolic)
-            # TODO fill the output covariance correctly
-            print m,ret[0], adj_ret[0]
+                madj,Sadj,Cadj = self.adjustment_model.predict(adj_input_m,adj_input_S)
 
-            ret[0] += adj_ret[0]
-        else:
-            print m,ret[0]
+            # compute the adjusted control distribution
+            mu = mu + madj
+            Su_adj = adj_input_S[:mu.size].dot(Cadj)
+            Su = Su + Sadj + Su_adj + Su_adj.T
+            Cu = Cu + Cadj[:m.size]
 
-        return ret
+        return mu,Su,Cu
 
     def get_params(self, symbolic=False):
-        if symbolic:
-            pass
         return self.adjustment_model.get_params(symbolic)
 
     def set_params(self,params):
-        return self.adjustment_model.set_params(symbolic)
+        return self.adjustment_model.set_params(params)
+
+    def get_all_shared_vars(self):
+        return self.source_policy.get_all_shared_vars()+self.adjustment_model.get_all_shared_vars()
 
     def load(self, output_folder=None,output_filename=None):
         self.adjustment_model.load(output_folder,output_filename)

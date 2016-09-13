@@ -22,6 +22,7 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     N = 100
+    J = 4
     simulation = True
     base_dir = os.path.dirname(ghost.__file__).rsplit('/',1)[0]
     source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole')
@@ -36,13 +37,15 @@ if __name__ == '__main__':
     # TARGET DOMAIN
     utils.set_output_dir(target_dir)
     target_params = shell.cartpole.default_params()
+    target_params['params']['max_evals'] = 50
     # policy
-    target_params['dynmodel_class'] = GP.GP
+    target_params['dynmodel_class'] = GP.SSGP_UI
+    target_params['invdynmodel_class'] = GP.GP_UI
     target_params['policy_class'] = AdjustedPolicy
     #target_params['params']['policy']['adjustment_model_class'] = GP.GP
     target_params['params']['policy']['adjustment_model_class'] = control.RBFPolicy
     target_params['params']['policy']['sat_func'] = None # this is because we probably need bigger controls for heavier pendulums
-    target_params['params']['policy']['max_evals'] = 1000
+    target_params['params']['policy']['max_evals'] = 5000
     target_params['params']['policy']['m0'] = np.zeros(source_policy.D+source_policy.E)
     target_params['params']['policy']['S0'] = 1e-2*np.eye(source_policy.E)
 
@@ -72,8 +75,14 @@ if __name__ == '__main__':
         # sample target trajecotry
         tm.plant.reset_state()
         tm.apply_controller()
-
+        
+        # training the adjustment (supervised)
         tm.train_inverse_dynamics()
         tm.train_adjustment()
+        
+        if i >= J:
+            # fine tuning the adjustment (RL)
+            tm.train_dynamics()
+            tm.train_policy()
 
     sys.exit(0)

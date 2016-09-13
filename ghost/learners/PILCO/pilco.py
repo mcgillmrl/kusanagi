@@ -339,7 +339,6 @@ class PILCO(EpisodicLearner):
 
         X = []
         Y = []
-        x0 = []
         n_episodes = len(self.experience.states)
         
         if n_episodes>0:
