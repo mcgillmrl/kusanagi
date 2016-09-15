@@ -50,7 +50,8 @@ class RBFPolicy(RBFGP):
         super(RBFGP,self).load(output_folder,output_filename)
         
         # initialize mising variables
-        self.loghyp = theano.tensor.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
+        self.loghyp = theano.tensor.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=np.array(1,dtype='int64'))
+
         # loghyp is no longer the trainable paramter
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
 
@@ -69,9 +70,9 @@ class RBFPolicy(RBFGP):
             
             # initialize log hyper parameters
             l0 = np.zeros((odims,idims+2))
-            l0[:,:idims] = X.std(0,ddof=1)
+            l0[:,:idims] = 0.5*X.std(0,ddof=1)
             l0[:,idims] = 1.0#Y.std(0,ddof=1)
-            l0[:,idims+1] = 0.01#*Y.std(0,ddof=1)
+            l0[:,idims+1] = 0.1#*Y.std(0,ddof=1) + 1e-2
             l0 = np.log(l0)
 
             # init policy targets according to output distribution
@@ -106,7 +107,7 @@ class RBFPolicy(RBFGP):
         self.set_params( {'loghyp_full': l0} )
         
         # don't optimize the signal and noise variances
-        self.loghyp = theano.tensor.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=1)
+        self.loghyp = theano.tensor.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=np.array(1,dtype='int64'))
 
         # loghyp is no longer the trainable paramter
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
@@ -178,8 +179,10 @@ class RBFPolicy(RBFGP):
                                     strict=True, 
                                     allow_gc=False)
 
+        N = self.X_train.shape[0].astype('float64')
         # compute euclidean loss
-        loss = 0.5*(((Y_pred.T-Y_train)**2)/(Y_train_var+1e-6)).sum(-1).mean() + 1e-6*(self.beta**2).sum()
+        delta = Y_pred.T-Y_train
+        loss = (0.5*((delta**2)/(Y_train_var+1e-6)).sum() + 1e-3*(self.beta**2).sum())/N
         
         #compute gradients
         dloss = theano.tensor.grad(loss,self.get_params(symbolic=True))
@@ -208,7 +211,9 @@ class RBFPolicy(RBFGP):
 
         p0 = self.get_params()
         parameter_shapes = [p.shape for p in p0]
-        #utils.print_with_stamp('Current hyperparameters:\n%s'%(p0),self.name)
+        utils.print_with_stamp('Current hyperparameters:\n',self.name)
+        for p in p0:
+            print p
         utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
         p0 = utils.wrap_params(p0)
@@ -217,10 +222,12 @@ class RBFPolicy(RBFGP):
         print ''
         new_p = opt_res.x 
         self.state_changed = not np.allclose(p0,new_p,1e-6,1e-9)
-        #utils.print_with_stamp('New hyperparameters:\n%s'%(new_p),self.name)
-        p=utils.unwrap_params(new_p,parameter_shapes)
+        new_p=utils.unwrap_params(new_p,parameter_shapes)
+        utils.print_with_stamp('New hyperparameters:\n',self.name)
+        for p in new_p:
+            print p
         param_names = [pname for pname in self.param_names if pname not in self.fixed_params]
-        pdict = dict(zip(param_names,p))
+        pdict = dict(zip(param_names,new_p))
         self.set_params(pdict)
         utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
         self.trained = True
@@ -387,9 +394,14 @@ class AdjustedPolicy:
 
             # compute the adjusted control distribution
             mu = mu + madj
-            Su_adj = adj_input_S[:mu.size].dot(Cadj)
+            Sxu_adj = adj_input_S.dot(Cadj)
+            Su_adj = Sxu_adj[m.size:]
             Su = Su + Sadj + Su_adj + Su_adj.T
-            Cu = Cu + Cadj[:m.size]
+            if S is not None:
+                if symbolic:
+                    Cu = Cu + theano.tensor.nlinalg.matrix_inverse(S).dot(Sxu_adj[:m.size])
+                else:
+                    Cu = Cu + np.linalg.pinv(S).dot(Sxu_adj[:m.size])
 
         return mu,Su,Cu
 

@@ -95,10 +95,9 @@ class GP(Loadable):
             self.D = self.X.get_value(borrow=True).shape[1]
         if hasattr(self,'Y') and self.Y:
             self.E = self.Y.get_value(borrow=True).shape[1]
-
         if hasattr(self,'loghyp') and self.loghyp:
             self.logsn = self.loghyp[:,-1]
-    
+
     def get_dataset(self):
         return self.X.get_value(), self.Y.get_value()
 
@@ -677,7 +676,7 @@ class SPGP(GP):
                 self.init_loss()
             utils.print_with_stamp('loss SP: %s'%(np.array(self.loss_sp_fn())),self.name)
             m_loss_sp = utils.MemoizeJac(self.loss_sp)
-            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(2*self.max_evals)})
+            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(self.max_evals)})
             print ''
             X_sp = opt_res.x.reshape(self.X_sp.get_value(borrow=True).shape)
             self.set_params({'X_sp': X_sp})
@@ -865,11 +864,6 @@ class SSGP(GP):
         self.n_basis = n_basis
         GP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs, **kwargs)
     
-    def load(self, output_folder=None,output_filename=None):
-        ''' loads the state from file, and initializes additional variables'''
-        # load state
-        super(SSGP,self).load(output_folder,output_filename)
-        
     def init_loss(self,cache_vars=True):
         super(SSGP, self).init_loss()
         utils.print_with_stamp('Initialising expression graph for sparse spectral training loss function',self.name)
@@ -1011,7 +1005,7 @@ class SSGP(GP):
         p0 = [self.loghyp.get_value(),self.w.get_value()]
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = utils.MemoizeJac(self.loss_ss)
-        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(2*self.max_evals)})
+        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(self.max_evals)})
         print ''
         loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.set_params({'loghyp': loghyp, 'w': w})
@@ -1081,7 +1075,7 @@ class SSGP_UI(SSGP, GP_UI):
         sin_srdotx_e_r = sin_srdotx_e.dimshuffle(0,'x',1); cos_srdotx_e_r = cos_srdotx_e.dimshuffle(0,'x',1)
         c = T.concatenate([ mx_c*sin_srdotx_e_r + srdotSx.transpose(0,2,1)*cos_srdotx_e_r, mx_c*cos_srdotx_e_r - srdotSx.transpose(0,2,1)*sin_srdotx_e_r ], axis=2) # E x D x 2*Ms
         beta_ss_r = self.beta_ss.dimshuffle(0,'x',1)
-        V = matrix_inverse(Sx).dot(T.sum( c*beta_ss_r, 2 ).T - T.outer(mx,M))
+        V = T.sum( c*beta_ss_r, 2 ).T - T.outer(mx,M) # input outout covariance (notice this is not premultiplied by the input covariance inverse)
         
         srdotSxdotsr_c = srdotSxdotsr.dimshuffle(0,1,'x')
         srdotSxdotsr_r = srdotSxdotsr.dimshuffle(0,'x',1)

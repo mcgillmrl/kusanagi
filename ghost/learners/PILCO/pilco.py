@@ -5,13 +5,14 @@ import theano
 import utils
 import time
 
+from theano.tensor.nlinalg import matrix_inverse
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.compile.nanguardmode import NanGuardMode
 from ghost.learners.EpisodicLearner import *
-from ghost.regression.GP import GP_UI, SPGP_UI, SSGP_UI
+import ghost.regression.GP as GP
 
 class PILCO(EpisodicLearner):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PILCO', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='PILCO', filename_prefix=None):
         self.dynamics_model = None
         self.wrap_angles = params['wrap_angles'] if 'wrap_angles' in params else False
         self.use_empirical_x0 = params['use_empirical_x0'] if 'use_empirical_x0' in params else False
@@ -143,25 +144,17 @@ class PILCO(EpisodicLearner):
 
         # compute distribution of control signal
         sn2 = theano.tensor.exp(2*self.dynamics_model.logsn)
-        Sx_ = Sx + theano.tensor.diag(0.5*sn2)# noisy state measurement
+        Sx_ = Sx + theano.tensor.diag(0.25*sn2)# noisy state measurement
         mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
         mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
         
         # compute state control joint distribution
-        n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
+        n = Sxa.shape[0]; U = Su.shape[1]
         mxu = theano.tensor.concatenate([mxa,mu])
         q = Sxa.dot(Cu)
         Sxu_up = theano.tensor.concatenate([Sxa,q],axis=1)
         Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
         Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
-
-        # state control covariance without angle dimensions
-        if Ca is not None:
-            na_dims = list(set(range(D_)).difference(self.angle_idims))
-            Sx_xa = theano.tensor.concatenate([Sx[:,na_dims],Sx.dot(Ca)],axis=1)  # [D] x [Da] 
-            Sxu_ =  theano.tensor.concatenate([Sx_xa,Sx_xa.dot(Cu)],axis=1) # [D] x [Da+U]
-        else:
-            Sxu_ = Sxu[:D,:] # [D] x [D+U]
 
         #  predict the change in state given current state-action
         # C_deltax = inv (Sxu) dot Sxu_deltax
@@ -169,7 +162,30 @@ class PILCO(EpisodicLearner):
 
         # compute the successor state distribution
         mx_next = mx + m_deltax
-        Sx_deltax = Sxu_.dot(C_deltax)
+
+        # SSGP returns C_delta as the input-output covariance. All the others do it as (input covariance)^-1 dot (input-output covariance)
+        if isinstance(self.dynamics_model,GP.SSGP):
+            Sxu_deltax = C_deltax
+        else:
+            Sxu_deltax = Sxu.dot(C_deltax)
+
+        if Ca is not None:
+            Da = Sxa.shape[1]; Dna = D-len(self.angle_idims)
+            non_angle_dims = list(set(range(D_)).difference(self.angle_idims))
+            Sxa_deltax = Sxu_deltax[:Da] # this contains the covariance between the previous state (with angles as [sin,cos]), and the next state (with angles inr radians)
+            sxna_deltax = Sxa_deltax[:Dna]      # first come the non angle dimensions  [D-len(angi)] x [D] 
+            sxsc_deltax = Sxa_deltax[Dna:]      # then angles as [sin,cos]             [2*len(angi)] x [D]
+            #here we undo the [sin,cos] parametrization for the angle dimensions
+            Sx_sc = Sx.dot(Ca)[self.angle_idims]                                     # [len(angi)] x [2*len(angi)] 
+            Sa = Sxa[Dna:,Dna:]+1e-6*theano.tensor.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
+            sxa_deltax = Sx_sc.dot(matrix_inverse(Sa).dot(sxsc_deltax))  # [len(angi] x [D]
+            # now we create Sx_deltax and fill it with the appropriate values (i.e. in the correct order)
+            Sx_deltax = theano.tensor.zeros((D,D))
+            Sx_deltax = theano.tensor.set_subtensor(Sx_deltax[non_angle_dims,:], sxna_deltax)
+            Sx_deltax = theano.tensor.set_subtensor(Sx_deltax[self.angle_idims,:], sxa_deltax)
+        else:
+            Sx_deltax = Sxu_deltax[:D]
+
         Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
         #  get cost:

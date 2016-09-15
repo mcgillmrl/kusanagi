@@ -22,7 +22,7 @@ if __name__ == '__main__':
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
-    #learner_params['dynmodel_class'] = SSGP_UI
+    learner_params['dynmodel_class'] = SSGP_UI
     learner_params['params']['dynmodel']['n_basis'] = 100
     learner_params['plant_class'] = SerialPlant
     learner_params['params']['plant']['maxU'] = learner_params['params']['policy']['maxU']

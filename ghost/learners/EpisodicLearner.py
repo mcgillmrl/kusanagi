@@ -187,19 +187,20 @@ class EpisodicLearner(Loadable):
         @param H Horizon for applying controller (in seconds)
         @param random_controls Boolean flag that specifies whether to use the current policy or apply random controls
         '''
+
+        #initialize cost if neeeded
+        self.init_cost()
+
         if random_controls:
             policy = RandPolicy(self.policy.maxU, self.random_walk)
             p = []
         else:
             policy = self.policy
-
-        #initialize cost if neeeded
-        self.init_cost()
+            # initialize policy if needed
+            p = self.policy.get_params()
+            if len(p) == 0:
+                self.policy.init_params()
         
-        # initialize policy if needed
-        p = self.policy.get_params()
-        if len(p) == 0:
-            self.policy.init_params()
 
         # mark the start of the episode
         self.experience.new_episode(policy_params=p)
@@ -307,7 +308,7 @@ class EpisodicLearner(Loadable):
 
             # keep on trying to optimize with all the methods, until one succeds, or we go through all of them
             for i in range(len(min_methods)):
-                try:
+                #try:
                     utils.print_with_stamp("Using %s optimizer"%(min_methods[i]),self.name)
                     opt_res = minimize(m_loss, utils.wrap_params(p0),
                                        jac=m_loss.derivative, 
@@ -318,10 +319,13 @@ class EpisodicLearner(Loadable):
                     # break the loop since we succeeded
                     self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
                     break
-                except ValueError:
-                    utils.print_with_stamp("Optimization using %s failed"%(min_methods[i]),self.name)
-                    v0,p0 = self.best_p
-                    self.policy.set_params(p0)
+                #except ValueError:
+                #    utils.print_with_stamp("Optimization using %s failed"%(min_methods[i]),self.name)
+                #    v0,p0 = self.best_p
+                #    print v0
+                #    for p in p0:
+                #        print p
+                #    self.policy.set_params(p0)
 
         # stochastic gradients
         elif min_method in STOCHASTIC_MIN_METHODS.keys():

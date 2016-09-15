@@ -5,7 +5,7 @@ from ghost.cost import quadratic_saturating_loss
 from utils import print_with_stamp, gTrig_np, gTrig2
 from matplotlib import pyplot as plt
 
-def default_parameters():
+def default_params():
     # setup learner parameters
     # general parameters
     J = 2                                                                   # number of random initial trials
@@ -29,7 +29,7 @@ def default_parameters():
     policy_params['maxU'] = [20]
     # dynamics model
     dynmodel_params = {}
-    dynmodel_params['n_basis'] = 150
+    dynmodel_params['n_basis'] = 100
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,0,0,0]
@@ -162,7 +162,7 @@ class DoubleCartpole(ODEPlant):
 
 
 class DoubleCartpoleDraw(PlantDraw):
-    def __init__(self, cartpole_plant, refresh_period=100, name='DoubleCartpoleDraw'):
+    def __init__(self, cartpole_plant, refresh_period=(1.0/24), name='DoubleCartpoleDraw'):
         super(DoubleCartpoleDraw, self).__init__(cartpole_plant, refresh_period,name)
         m1 = self.plant.params['m1']
         m2 = self.plant.params['m2']
