@@ -25,11 +25,11 @@ class TrajectoryMatching(PILCO):
         dyn_odims = len(x0)
         # initialize dynamics model (TODO pass this as argument to constructor)
         if 'inv_dynmodel' not in params:
-            params['inv_dynmodel'] = {}
-        params['inv_dynmodel']['idims'] = 2*dyn_odims
-        params['inv_dynmodel']['odims'] = len(self.maxU)#dyn_odims
+            params['invdynmodel'] = {}
+        params['invdynmodel']['idims'] = 2*dyn_odims
+        params['invdynmodel']['odims'] = len(self.maxU)#dyn_odims
 
-        self.inverse_dynamics_model = invdynmodel_class(**params['inv_dynmodel'])
+        self.inverse_dynamics_model = invdynmodel_class(**params['invdynmodel'])
         self.next_episode_inv = 0
         super(TrajectoryMatching, self).__init__(params, plant_class, policy_class, cost_func,viz_class, dynmodel_class,  experience, async_plant, name, filename_prefix)
     

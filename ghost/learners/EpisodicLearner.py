@@ -232,6 +232,7 @@ class EpisodicLearner(Loadable):
             #  get command from policy (this should be fast, or at least account for delays in processing):
             u_t = policy.evaluate(x_t_)[0].flatten()
             #  send command to robot:
+            print u_t
             self.plant.apply_control(u_t)
             if self.evaluate_cost is not None:
                 #  get cost:
