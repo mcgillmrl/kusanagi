@@ -28,7 +28,7 @@ if __name__ == '__main__':
     base_dir = os.path.dirname(ghost.__file__).rsplit('/',1)[0]
     #source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole')
     source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole_serial')
-    target_dir = os.path.join(base_dir,'examples/learned_policies/target_90g_run_1')
+    target_dir = os.path.join(base_dir,'examples/learned_policies/target_90g_run_5')
     # SOURCE DOMAIN 
     utils.set_output_dir(source_dir)
     # load source experience
