@@ -1,16 +1,16 @@
 import numpy as np
 import theano
-import utils
 
-from ghost.regression.GP import RBFGP, SSGP_UI,GP
-from ghost.regression.NN import NN
-from ghost.regression import cov
-from ghost.control.saturation import gSat
+from kusanagi import utils
+from kusanagi.ghost.regression.GP import RBFGP, SSGP_UI,GP
+from kusanagi.ghost.regression.NN import NN
+from kusanagi.ghost.regression import cov
+from kusanagi.ghost.control.saturation import gSat
+from kusanagi.utils import gTrig2, gTrig2_np
+from kusanagi.base.Loadable import Loadable
 from functools import partial
 from scipy.optimize import minimize
 from scipy.cluster.vq import kmeans2,vq
-from utils import gTrig2, gTrig2_np
-from base.Loadable import Loadable
 
 # GP based controller
 class RBFPolicy(RBFGP):
@@ -19,6 +19,10 @@ class RBFPolicy(RBFGP):
         self.n_basis = n_basis
         self.angle_dims = angle_dims
         self.name = name
+        self.X_train = None
+        self.Y_train = None
+        self.Y_train_var = None
+        self.X_cov = None
         if sat_func:
             # set the model to be a RBF with saturated outputs
             sat_func = partial(sat_func, e=maxU)
@@ -36,13 +40,10 @@ class RBFPolicy(RBFGP):
             if not odims:
                 odims = len(self.maxU)
             super(RBFPolicy, self).__init__(idims=idims, odims=odims, sat_func=sat_func, max_evals=max_evals, name=self.name)
+            self.init_params()
         
         # make sure we always get the parameters in the same order
         self.param_names = ['X','Y','loghyp_full']
-        self.X_train = None
-        self.Y_train = None
-        self.Y_train_var = None
-        self.X_cov = None
 
     def load(self, output_folder=None,output_filename=None):
         ''' loads the state from file, and initializes additional variables'''
@@ -55,7 +56,8 @@ class RBFPolicy(RBFGP):
         # loghyp is no longer the trainable paramter
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
 
-    def init_params(self,compile_funcs=True):
+    def init_params(self,compile_funcs=False):
+        utils.print_with_stamp('Initializing parameters',self.name)
         if hasattr(self,'X_train') and self.X_train is not None:
             # initialize tthe mean and covariance of the inputs
             X = self.X_train.get_value(); Y = self.Y_train.get_value()

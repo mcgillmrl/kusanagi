@@ -1,8 +1,10 @@
 import numpy as np
 import theano
-from shell.plant import ODEPlant, PlantDraw
-from ghost.cost import quadratic_saturating_loss
-from utils import print_with_stamp, gTrig_np, gTrig2
+from kusanagi.shell.plant import ODEPlant, PlantDraw
+from kusanagi.ghost.cost import quadratic_saturating_loss
+from kusanagi.utils import print_with_stamp, gTrig_np, gTrig2
+from kusanagi.ghost.control import RBFPolicy
+from kusanagi.ghost.regression.GP import GP_UI
 
 def default_params():
     # setup learner parameters
@@ -45,8 +47,6 @@ def default_params():
     learner_params['policy'] = policy_params
     learner_params['dynmodel'] = dynmodel_params
     learner_params['cost'] = cost_params
-    from ghost.control import RBFPolicy
-    from ghost.regression.GP import GP_UI
 
     return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': GP_UI}
 

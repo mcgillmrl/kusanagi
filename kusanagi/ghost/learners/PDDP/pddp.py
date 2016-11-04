@@ -4,14 +4,14 @@ from time import time
 from ghost.learners.EpisodicLearner import EpisodicLearner
 from ghost.learners.PILCO import PILCO
 from ghost.learners.ExperienceDataset import ExperienceDataset
-from ghost.regression.GP import GP_UI
+import ghost.regression.GP as GP
 from ghost.control import LocalLinearPolicy
 from theano.tensor.nlinalg import matrix_inverse, pinv
 import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
 class PDDP(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP_UI, experience = None, async_plant=False, name='PDDP', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='PDDP', filename_prefix=None):
         params['policy']['H'] = params['H']
         params['policy']['dt'] = params['plant']['dt']
         params['angle_dims'] = []
@@ -48,30 +48,44 @@ class PDDP(PILCO):
         Sxu = theano.tensor.zeros((Da+U,Da+U))
         Sxu = theano.tensor.set_subtensor(Sxu[:Da,:Da],Sxa)
 
-        # state control covariance without angle dimensions
-        if Ca is not None:
-            na_dims = list(set(range(D_)).difference(self.angle_idims))
-            Sx_xa = theano.tensor.concatenate([Sx[:,na_dims],Sx.dot(Ca)],axis=1)  # [D] x [Da] 
-            Sxu_ =  theano.tensor.concatenate([Sx_xa,Sx_xa.dot(Cu)],axis=1) # [D] x [Da+U]
-        else:
-            Sxu_ = Sxu[:D,:] # [D] x [D+U]
-
         #  predict the change in state given current state-action
         # C_deltax = inv (Sxu) dot Sxu_deltax
         m_deltax, S_deltax, C_deltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
 
         # compute the successor state distribution
         mx_next = mx + m_deltax
-        Sx_deltax = Sxu_.dot(C_deltax)
+
+        # SSGP returns C_delta as the input-output covariance. All the others do it as (input covariance)^-1 dot (input-output covariance)
+        if isinstance(self.dynamics_model,GP.SSGP):
+            Sxu_deltax = C_deltax
+        else:
+            Sxu_deltax = Sxu.dot(C_deltax)
+
+        if Ca is not None:
+            Da = Sxa.shape[1]; Dna = D-len(self.angle_idims)
+            non_angle_dims = list(set(range(D_)).difference(self.angle_idims))
+            Sxa_deltax = Sxu_deltax[:Da]        # this contains the covariance between the previous state (with angles as [sin,cos]), and the next state (with angles in radians)
+            sxna_deltax = Sxa_deltax[:Dna]      # first come the non angle dimensions  [D-len(angi)] x [D] 
+            sxsc_deltax = Sxa_deltax[Dna:]      # then angles as [sin,cos]             [2*len(angi)] x [D]
+            #here we undo the [sin,cos] parametrization for the angle dimensions
+            Sx_sc = Sx.dot(Ca)[self.angle_idims]                                     # [len(angi)] x [2*len(angi)] 
+            Sa = Sxa[Dna:,Dna:]#+1e-12*theano.tensor.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
+            sxa_deltax = Sx_sc.dot(matrix_inverse(Sa).dot(sxsc_deltax))  # [len(angi] x [D]
+            # now we create Sx_deltax and fill it with the appropriate values (i.e. in the correct order)
+            Sx_deltax = theano.tensor.zeros((D,D))
+            Sx_deltax = theano.tensor.set_subtensor(Sx_deltax[non_angle_dims,:], sxna_deltax)
+            Sx_deltax = theano.tensor.set_subtensor(Sx_deltax[self.angle_idims,:], sxa_deltax)
+        else:
+            Sx_deltax = Sxu_deltax[:D]
+
         Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
-        #  get cost at previoues time step
+        #  get cost at previous time step
         mcost, Scost = self.cost(mx,Sx)
         cost_params = self.cost.keywords['params']
         # add a term for the action
         R = T.constant(cost_params['R'],dtype=mx.dtype) if 'R' in cost_params else theano.tensor.zeros((mu.size,mu.size))
         mcost += mu.dot(R).dot(mu)
-
 
         # check if dynamics model has an updates dictionary
         updates = theano.updates.OrderedUpdates()
@@ -99,9 +113,9 @@ class PDDP(PILCO):
 
     def compute_derivs(self,z,t,*args):
         # split z into the mean and covariance of the state
-        D = ((theano.tensor.sqrt(8*z.shape[0]+9) - 3)/2).astype('int64')
-        D_ = self.mx0.get_value().size
-        triu_indices = self.policy.triu_indices
+        #D = ((theano.tensor.sqrt(8*z.shape[0]+9) - 3)/2).astype('int64')
+        D = self.mx0.get_value().size
+        triu_indices = np.triu_indices(D)
 
         mx, Sx_triu = z[:D], z[D:]
         Sx = theano.tensor.zeros((D,D))
@@ -114,7 +128,7 @@ class PDDP(PILCO):
         z_next = theano.tensor.concatenate([mx_next.flatten(),Sx_next[triu_indices]])
 
         # compute all the required derivatives
-        Fu,Fx = zip(*[theano.tensor.jacobian(z_next[i:i+D_],[mu,z]) for i in xrange(0,D_+len(triu_indices[0]),D_)])
+        Fu,Fx = zip(*[theano.tensor.jacobian(z_next[i:i+D],[mu,z]) for i in xrange(0,D+len(triu_indices[0]),D)])
         Fu,Fx = theano.tensor.concatenate(Fu,axis=0), theano.tensor.concatenate(Fx,axis=0)
         lu,lx = theano.tensor.grad(mcost,[mu,mx])
         luu,lux = theano.tensor.jacobian(lu.flatten(),[mu,mx], disconnected_inputs='ignore')

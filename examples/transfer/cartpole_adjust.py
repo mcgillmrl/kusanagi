@@ -27,8 +27,9 @@ if __name__ == '__main__':
     simulation = False
     base_dir = os.path.dirname(ghost.__file__).rsplit('/',1)[0]
     #source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole')
-    source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole_serial')
-    target_dir = os.path.join(base_dir,'examples/learned_policies/target_180g_run_1')
+    #source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole_serial')
+    source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole_serial')
+    target_dir = os.path.join(base_dir,'examples/learned_policies/target_video')
     # SOURCE DOMAIN 
     utils.set_output_dir(source_dir)
     # load source experience
@@ -40,6 +41,7 @@ if __name__ == '__main__':
     # TARGET DOMAIN
     utils.set_output_dir(target_dir)
     target_params = shell.cartpole.default_params()
+    target_params['params']['H'] = 5.0                                               # control horizon
     target_params['params']['max_evals'] = 125
     # policy
     target_params['dynmodel_class'] = GP.SSGP_UI
@@ -47,7 +49,7 @@ if __name__ == '__main__':
     target_params['params']['invdynmodel'] = {}
     target_params['params']['invdynmodel']['max_evals'] = 1000
     target_params['policy_class'] = AdjustedPolicy
-    #target_params['params']['policy']['adjustment_model_class'] = GP.GP
+    target_params['params']['policy']['adjustment_model_class'] = GP.GP
     #target_params['params']['policy']['adjustment_model_class'] = control.RBFPolicy
     #target_params['params']['policy']['n_basis'] = 20
     target_params['params']['policy']['sat_func'] = None # this is because we probably need bigger controls for heavier pendulums
@@ -58,9 +60,7 @@ if __name__ == '__main__':
     # initialize target plant
     if not simulation:
         target_params['plant_class'] = SerialPlant
-        target_params['params']['plant']['maxU'] = np.array(target_params['params']['policy']['maxU'])*0.75/0.4
-        print target_params['params']['policy']['maxU']
-        print target_params['params']['plant']['maxU']
+        target_params['params']['plant']['maxU'] = np.array(target_params['params']['policy']['maxU'])*1.0/0.4
         target_params['params']['plant']['state_indices'] = [0,2,3,1]
         target_params['params']['plant']['baud_rate'] = 4000000
         target_params['params']['plant']['port'] = '/dev/ttyACM0'
@@ -95,6 +95,6 @@ if __name__ == '__main__':
             tm.train_dynamics()
             tm.train_policy()
 
-        tm.save()
+        #tm.save()
 
     sys.exit(0)

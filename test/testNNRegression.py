@@ -1,10 +1,9 @@
 import numpy as np
 import argparse
-import utils
 
-from ghost.regression.NN import NN
+from kusanagi.ghost.regression.NN import NN
+from kusanagi import utils
 from matplotlib import pyplot as plt
-from utils import gTrig_np, gTrig2_np, print_with_stamp
 from scipy.signal import convolve2d
 from scipy.stats import multivariate_normal
 from time import time
@@ -33,7 +32,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     y_train = np.empty((n_train,odims))
     for i in xrange(odims):
         y_train[:,i] =  (i+1)*f(x_train) + output_noise*(np.random.randn(n_train))
-    x_train = gTrig_np(x_train, angi)
+    x_train = utils.gTrig_np(x_train, angi)
     
     #  ================== test  dataset ==================
     # generate testing points
@@ -47,7 +46,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     for i in xrange(odims):
         y_test[:,i] =  (i+1)*f(x_test)
     if len(angi)>0:
-        x_test,s_test = gTrig2_np(x_test,s_test, angi, idims)
+        x_test,s_test = utils.gTrig2_np(x_test,s_test, angi, idims)
 
     return (x_train,y_train),(x_test,y_test,s_test)
 

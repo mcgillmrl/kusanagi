@@ -3,14 +3,14 @@ import numpy as np
 import os
 import theano
 import time
-import utils
 
 from functools import partial
 from scipy.optimize import minimize, basinhopping
 
-from ghost.learners.ExperienceDataset import ExperienceDataset
-from ghost.control import RandPolicy
-from base.Loadable import Loadable
+from kusanagi import utils
+from kusanagi.ghost.learners.ExperienceDataset import ExperienceDataset
+from kusanagi.ghost.control import RandPolicy
+from kusanagi.base.Loadable import Loadable
 
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
@@ -232,7 +232,6 @@ class EpisodicLearner(Loadable):
             #  get command from policy (this should be fast, or at least account for delays in processing):
             u_t = policy.evaluate(x_t_)[0].flatten()
             #  send command to robot:
-            print u_t
             self.plant.apply_control(u_t)
             if self.evaluate_cost is not None:
                 #  get cost:

@@ -1,5 +1,6 @@
-import os,sys,utils,stat
+import os,sys,stat
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
+from kusanagi import utils
 
 class Loadable(object):
     def __init__(self,name,filename,*args,**kwargs):

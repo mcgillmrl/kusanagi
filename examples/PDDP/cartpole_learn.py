@@ -17,7 +17,7 @@ if __name__ == '__main__':
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     learner_params['policy_class'] = LocalLinearPolicy
-    learner_params['dynmodel_class'] = GP.GP_UI
+    learner_params['dynmodel_class'] = GP.SSGP_UI
     # initialize learner
     learner = PDDP(**learner_params)
     try:

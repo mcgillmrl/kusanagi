@@ -3,8 +3,8 @@ import theano
 import lasagne
 import numpy as np
 import time
-import utils
-from base.Loadable import Loadable
+from kusanagi import utils
+from kusanagi.base.Loadable import Loadable
 
 class NN(Loadable):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
@@ -39,10 +39,10 @@ class NN(Loadable):
         self.learn_noise = True
         
         # filename for saving
-        self.filename = '%s_%d_%d_%s_%s'%(self.name,self.idims,self.odims,theano.config.device,theano.config.floatX)
+        self.filename = '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX)
         Loadable.__init__(self,name=name,filename=self.filename)
         # register theanno functions and shared variables for saving
-        self.register_types([T.sharedvar.SharedVariable, theano.compile.function_module.Function])
+        self.register_types([theano.tensor.sharedvar.SharedVariable, theano.compile.function_module.Function])
     
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:

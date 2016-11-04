@@ -1,8 +1,11 @@
 import numpy as np
 import theano
-from shell.plant import ODEPlant, PlantDraw
-from ghost.cost import quadratic_saturating_loss
-from utils import print_with_stamp, gTrig_np, gTrig2
+
+from kusanagi.ghost.control import RBFPolicy
+from kusanagi.ghost.regression.GP import GP_UI
+from kusanagi.shell.plant import ODEPlant, PlantDraw
+from kusanagi.ghost.cost import quadratic_saturating_loss
+from kusanagi.utils import print_with_stamp, gTrig_np, gTrig2
 from matplotlib import pyplot as plt
 
 def default_params():
@@ -18,7 +21,7 @@ def default_params():
     learner_params['discount'] = 1.0                                        # discoutn factor
     # plant
     plant_params = {}
-    plant_params['dt'] = 0.05
+    plant_params['dt'] = 0.1
     plant_params['params'] = {'m1': 0.5, 'm2': 0.5, 'm3': 0.5, 'l2': 0.6, 'l3': 0.6, 'b': 0.1, 'g': 9.82}
     plant_params['noise'] = np.diag(np.ones(len(learner_params['x0']))*0.01**2)   # model measurement noise (randomizes the output of the plant)
     # policy
@@ -41,9 +44,6 @@ def default_params():
     learner_params['policy'] = policy_params
     learner_params['dynmodel'] = dynmodel_params
     learner_params['cost'] = cost_params
-
-    from ghost.control import RBFPolicy
-    from ghost.regression.GP import GP_UI
 
     return {'params': learner_params, 'plant_class': DoubleCartpole, 'policy_class': RBFPolicy, 'cost_func': double_cartpole_loss, 'dynmodel_class': GP_UI}
 

@@ -24,7 +24,7 @@ if __name__ == '__main__':
     learner_params['dynmodel_class'] = SSGP_UI
     learner_params['params']['dynmodel']['n_basis'] = 100
     learner_params['plant_class'] = SerialPlant
-    learner_params['params']['plant']['maxU'] = learner_params['params']['policy']['maxU']
+    learner_params['params']['plant']['maxU'] = np.array(learner_params['params']['policy']['maxU'])*1.0/0.4
     learner_params['params']['plant']['state_indices'] = [0,2,3,1]
     learner_params['params']['plant']['baud_rate'] = 4000000
     learner_params['params']['plant']['port'] = '/dev/ttyACM0'

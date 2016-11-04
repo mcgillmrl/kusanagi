@@ -1,13 +1,13 @@
 import atexit
 import signal,sys,os
 import numpy as np
-import utils
-from shell.cartpole import default_params
-from ghost.learners.PILCO import PILCO
-import ghost.regression.GP as GP
-from ghost.regression.NN import NN
-from ghost.control import NNPolicy
-from utils import plot_results
+from kusanagi import utils
+from kusanagi.shell.cartpole import default_params
+from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.ghost.regression import GP
+from kusanagi.ghost.regression.NN import NN
+from kusanagi.ghost.control import NNPolicy
+from kusanagi.utils import plot_results
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 

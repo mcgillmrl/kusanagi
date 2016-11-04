@@ -1,6 +1,6 @@
 import theano
 import theano.tensor as T
-from utils import *
+from kusanagi import utils
 
 def SEard(loghyp,X1,X2=None, all_pairs=True):
     ''' Squared exponential kernel with diagonal scaling matrix (one lengthscale per dimension)'''
@@ -16,7 +16,7 @@ def SEard(loghyp,X1,X2=None, all_pairs=True):
         K = T.tile(T.exp(2*loghyp[idims]), (n,))
         return K
 
-    D = maha(X1,X2,T.diag(T.exp(-2*loghyp[:idims])),all_pairs=all_pairs)
+    D = utils.maha(X1,X2,T.diag(T.exp(-2*loghyp[:idims])),all_pairs=all_pairs)
     K = T.exp(2*loghyp[idims] - 0.5*D) 
     return K
 

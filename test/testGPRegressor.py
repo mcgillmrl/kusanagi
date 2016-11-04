@@ -9,9 +9,8 @@ from time import time
 from theano import d3viz
 from theano.printing import pydotprint
 
-import ghost.regression.GP
-import utils
-from utils import gTrig_np, gTrig2_np, print_with_stamp
+from kusanagi.ghost.regression import GP
+from kusanagi import utils
 
 np.set_printoptions(linewidth=500, precision=17, suppress=True)
 
@@ -40,7 +39,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     y_train = np.empty((n_train,odims))
     for i in xrange(odims):
         y_train[:,i] =  (i+1)*f(x_train, f_type) + output_noise*(np.random.randn(n_train))
-    x_train = gTrig_np(x_train, angi)
+    x_train = utils.gTrig_np(x_train, angi)
     
     #  ================== test  dataset ==================
     # generate testing points
@@ -54,12 +53,12 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     for i in xrange(odims):
         y_test[:,i] =  (i+1)*f(x_test, f_type)
     if len(angi)>0:
-        x_test,s_test = gTrig2_np(x_test,s_test, angi, idims)
+        x_test,s_test = utils.gTrig2_np(x_test,s_test, angi, idims)
 
     return (x_train,y_train),(x_test,y_test,s_test)
 
 def build_GP(idims=9, odims=6, gp_class='GP', profile=theano.config.profile):
-    gp_classes = dict(inspect.getmembers(ghost.regression.GP, inspect.isclass))
+    gp_classes = dict(inspect.getmembers(GP, inspect.isclass))
     gp = gp_classes[gp_class](idims=idims,odims=odims, profile=profile)
     return gp
 

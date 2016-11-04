@@ -11,7 +11,7 @@ from scipy.integrate import ode
 from time import time, sleep
 from threading import Thread, Lock
 from multiprocessing import Process,Pipe,Event
-from utils import print_with_stamp, gTrig_np
+from kusanagi.utils import print_with_stamp, gTrig_np
 
 color_generator = cnames.iteritems()
 

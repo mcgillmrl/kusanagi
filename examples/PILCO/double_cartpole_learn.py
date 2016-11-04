@@ -1,13 +1,14 @@
 import atexit
 import signal,sys,os
 import numpy as np
-import utils
-from shell.double_cartpole import default_params, DoubleCartpoleDraw
-from ghost.learners.PILCO import PILCO
-import ghost.regression.GP as GP
-from ghost.regression.NN import NN
-from ghost.control import NNPolicy
-from utils import plot_results
+
+from kusanagi import utils
+from kusanagi.shell.double_cartpole import default_params, DoubleCartpoleDraw
+from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.ghost.regression import GP
+from kusanagi.ghost.regression.NN import NN
+from kusanagi.ghost.control import NNPolicy
+from kusanagi.utils import plot_results
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 
@@ -52,7 +53,10 @@ if __name__ == '__main__':
     # learning loop
     for i in xrange(N):
         # train the dynamics models given the collected data
-        learner.train_dynamics()
+        if learner.experience.n_samples() < 1024:
+            learner.train_dynamics()
+        else:
+            learner.train_dynamics(pretrain_full=False)
 
         # train policy
         learner.train_policy()

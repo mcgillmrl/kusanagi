@@ -1,7 +1,7 @@
 import os,sys
 import theano
-import utils
-from base.Loadable import Loadable
+from kusanagi import utils
+from kusanagi.base.Loadable import Loadable
 
 class ExperienceDataset(Loadable):
     ''' Class used to store data from runs with a learning agent'''

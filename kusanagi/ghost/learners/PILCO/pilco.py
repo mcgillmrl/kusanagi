@@ -2,14 +2,14 @@ import numpy as np
 import os
 import sys
 import theano
-import utils
 import time
 
 from theano.tensor.nlinalg import matrix_inverse
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.compile.nanguardmode import NanGuardMode
-from ghost.learners.EpisodicLearner import *
-import ghost.regression.GP as GP
+from kusanagi import utils
+from kusanagi.ghost.learners.EpisodicLearner import *
+import kusanagi.ghost.regression.GP as GP
 
 class PILCO(EpisodicLearner):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='PILCO', filename_prefix=None):
@@ -144,9 +144,9 @@ class PILCO(EpisodicLearner):
 
         # compute distribution of control signal
         sn2 = theano.tensor.exp(2*self.dynamics_model.logsn)
-        Sx_ = Sx + theano.tensor.diag(0.25*sn2)# noisy state measurement
+        Sx_ = Sx + theano.tensor.diag(0.5*sn2)# noisy state measurement
         mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
-        mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_,symbolic=True)
+        mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_, symbolic=True)
         
         # compute state control joint distribution
         n = Sxa.shape[0]; U = Su.shape[1]
@@ -172,12 +172,12 @@ class PILCO(EpisodicLearner):
         if Ca is not None:
             Da = Sxa.shape[1]; Dna = D-len(self.angle_idims)
             non_angle_dims = list(set(range(D_)).difference(self.angle_idims))
-            Sxa_deltax = Sxu_deltax[:Da] # this contains the covariance between the previous state (with angles as [sin,cos]), and the next state (with angles inr radians)
+            Sxa_deltax = Sxu_deltax[:Da]        # this contains the covariance between the previous state (with angles as [sin,cos]), and the next state (with angles in radians)
             sxna_deltax = Sxa_deltax[:Dna]      # first come the non angle dimensions  [D-len(angi)] x [D] 
             sxsc_deltax = Sxa_deltax[Dna:]      # then angles as [sin,cos]             [2*len(angi)] x [D]
             #here we undo the [sin,cos] parametrization for the angle dimensions
             Sx_sc = Sx.dot(Ca)[self.angle_idims]                                     # [len(angi)] x [2*len(angi)] 
-            Sa = Sxa[Dna:,Dna:]+1e-6*theano.tensor.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
+            Sa = Sxa[Dna:,Dna:]#+1e-12*theano.tensor.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
             sxa_deltax = Sx_sc.dot(matrix_inverse(Sa).dot(sxsc_deltax))  # [len(angi] x [D]
             # now we create Sx_deltax and fill it with the appropriate values (i.e. in the correct order)
             Sx_deltax = theano.tensor.zeros((D,D))

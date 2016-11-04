@@ -2,13 +2,13 @@ import atexit
 import signal,sys,os
 #sys.path.append('/home/adaptation/achatr/Desktop/Summer2016/PILCO_clone/kusanagi')
 import numpy as np
-import utils
 from functools import partial
-from ghost.regression.GP import SSGP_UI
-from ghost.learners.PILCO import PILCO
-from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss, default_params
-from ghost.control import RBFPolicy
-from utils import plot_results
+from kusanagi import utils
+from kusanagi.ghost.regression.GP import SSGP_UI
+from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss, default_params
+from kusanagi.ghost.control import RBFPolicy
+from kusanagi.utils import plot_results
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 

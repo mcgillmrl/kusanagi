@@ -4,8 +4,8 @@
 #include <Encoder.h>
 #include <CmdMessenger.h>
 #define BAUD_RATE 4000000
-#define ENCODER_SAMPLING_PERIOD 1000 // microsecs
-#define CONTROL_SAMPLING_PERIOD 1000 // microsecs
+#define ENCODER_SAMPLING_PERIOD 500 // microsecs
+#define CONTROL_SAMPLING_PERIOD 500 // microsecs
 #define FORCE_TO_ANG_ACCEL 2048
 
 #define DIR_PIN 7
@@ -17,7 +17,7 @@
 double twopi = PI * 2;
 elapsedMicros usec = 0;
 unsigned long t_end = 0;
-int PWM_MAX = 0.75*pow(2,PWM_RESOLUTION);
+int PWM_MAX = 1.0*pow(2,PWM_RESOLUTION);
 double IDEAL_PWM_FREQ = F_BUS/pow(2,PWM_RESOLUTION);
 elapsedMicros encoder_usec = 0;
 elapsedMicros control_usec = 0;

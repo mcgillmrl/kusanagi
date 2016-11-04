@@ -4,7 +4,7 @@ import theano.tensor as T
 from theano.tensor.nlinalg import matrix_inverse, trace
 from theano.tensor.nlinalg import det
 from theano.sandbox.linalg import psd
-from utils import print_with_stamp,gTrig2, gTrig_np, gTrig
+from kusanagi.utils import print_with_stamp,gTrig2, gTrig_np, gTrig
 
 def linear_loss(mx,Sx,params,absolute=True):
     # linear penalty function
