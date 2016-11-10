@@ -142,7 +142,6 @@ class GP(Loadable):
         self.state_changed = True
         if (self.N > 0):
             self.ready = True
-        self.trained = False
 
     def append_dataset(self,X_dataset,Y_dataset,X_cov=None,Y_var=None):
         if self.X is None:
@@ -160,6 +159,7 @@ class GP(Loadable):
             self.set_dataset(X_,Y_,X_cov_,Y_var_)
 
     def init_params(self):
+        utils.print_with_stamp('Initialising parameters' ,self.name)
         idims = self.D; odims = self.E; 
         # initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
         X = self.X.get_value(); Y = self.Y.get_value()
@@ -174,7 +174,6 @@ class GP(Loadable):
         # create logsn (used in PILCO)
         if self.logsn is None:
             self.logsn = self.loghyp[:,-1]
-        self.trained = False
 
     def set_params(self, params):
         if type(params) is list:

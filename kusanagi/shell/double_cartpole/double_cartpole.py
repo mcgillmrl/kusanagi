@@ -36,7 +36,7 @@ def default_params():
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,0,0,0]
-    cost_params['width'] = 0.5
+    cost_params['width'] = 0.25
     cost_params['expl'] = 0.0
     cost_params['pendulum_lengths'] = [ plant_params['params']['l2'], plant_params['params']['l3'] ]
 

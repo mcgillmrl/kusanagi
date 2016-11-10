@@ -11,6 +11,7 @@ from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
 
 if __name__ == '__main__':
+    #utils.set_output_dir(os.path.join(utils.get_output_dir(),'double_cartpole'))
     J = 2                                                                   # number of random initial trials
     N = 100                                                                 # learning iterations
     # setup learner parameters

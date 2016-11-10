@@ -13,6 +13,9 @@ from kusanagi.utils import plot_results
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
+    # setup output directory
+    #utils.set_output_dir(os.path.join(utils.get_output_dir(),'double_cartpole'))
+
     J = 2                                                                   # number of random initial trials
     N = 100                                                                 # learning iterations
     learner_params = default_params()
@@ -53,10 +56,7 @@ if __name__ == '__main__':
     # learning loop
     for i in xrange(N):
         # train the dynamics models given the collected data
-        if learner.experience.n_samples() < 1024:
-            learner.train_dynamics()
-        else:
-            learner.train_dynamics(pretrain_full=False)
+        learner.train_dynamics()
 
         # train policy
         learner.train_policy()
