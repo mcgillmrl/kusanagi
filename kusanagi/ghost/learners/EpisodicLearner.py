@@ -230,7 +230,7 @@ class EpisodicLearner(Loadable):
             # convert input angle dimensions to complex representation
             x_t_ = utils.gTrig_np(x_t[None,:], self.angle_idims).flatten()
             #  get command from policy (this should be fast, or at least account for delays in processing):
-            u_t = policy.evaluate(x_t_)[0].flatten()
+            u_t = policy.evaluate( x_t_, t=i )[0].flatten()
             #  send command to robot:
             self.plant.apply_control(u_t)
             if self.evaluate_cost is not None:

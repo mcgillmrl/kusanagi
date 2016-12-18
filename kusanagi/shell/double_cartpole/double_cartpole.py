@@ -21,7 +21,7 @@ def default_params():
     learner_params['discount'] = 1.0                                        # discoutn factor
     # plant
     plant_params = {}
-    plant_params['dt'] = 0.1
+    plant_params['dt'] = 0.05
     plant_params['params'] = {'m1': 0.5, 'm2': 0.5, 'm3': 0.5, 'l2': 0.6, 'l3': 0.6, 'b': 0.1, 'g': 9.82}
     plant_params['noise'] = np.diag(np.ones(len(learner_params['x0']))*0.01**2)   # model measurement noise (randomizes the output of the plant)
     # policy

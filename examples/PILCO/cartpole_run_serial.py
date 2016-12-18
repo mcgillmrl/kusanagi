@@ -1,14 +1,14 @@
 import atexit
 import signal,sys,os
 import numpy as np
-import utils
-from shell.cartpole import default_params
-from shell.plant import SerialPlant
-from ghost.learners.PILCO import PILCO
-from ghost.regression.GP import SPGP_UI,SSGP_UI
-from ghost.regression.NN import NN
-from ghost.control import NNPolicy
-from utils import plot_results
+from kusanagi import utils
+from kusanagi.shell.plant import SerialPlant
+from kusanagi.shell.cartpole import default_params
+from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.ghost.regression import GP
+from kusanagi.ghost.regression.NN import NN
+from kusanagi.ghost.control import NNPolicy
+from kusanagi.utils import plot_results
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 
@@ -22,10 +22,10 @@ if __name__ == '__main__':
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
-    learner_params['dynmodel_class'] = SSGP_UI
+    learner_params['dynmodel_class'] = GP.SSGP_UI
     learner_params['params']['dynmodel']['n_basis'] = 100
     learner_params['plant_class'] = SerialPlant
-    learner_params['params']['plant']['maxU'] = learner_params['params']['policy']['maxU']
+    learner_params['params']['plant']['maxU'] = np.array(learner_params['params']['policy']['maxU'])*1.0/0.4
     learner_params['params']['plant']['state_indices'] = [0,2,3,1]
     learner_params['params']['plant']['baud_rate'] = 4000000
     learner_params['params']['plant']['port'] = '/dev/ttyACM0'

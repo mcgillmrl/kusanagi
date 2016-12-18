@@ -251,13 +251,12 @@ class RandPolicy:
     def __init__(self, maxU=[10], random_walk=False):
         self.maxU = np.array(maxU)
         #self.last_u = np.zeros_like(np.array(maxU))
-        self.last_u = 0.5*((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
         self.random_walk=random_walk
-        
 
     def evaluate(self, m, s=None, t=None, symbolic=False):
         if self.random_walk:
-            ret = self.last_u + 0.3*((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+            new_u = ((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+            ret = self.last_u + 0.2*new_u if t is None or t != 0 else new_u
             ret = np.min ( (ret.flatten(), self.maxU.flatten()), axis=0  ) 
             ret = np.max ( (ret.flatten(), -self.maxU.flatten()), axis=0  ) 
             ret = ret.reshape(self.maxU.shape)

@@ -1,8 +1,8 @@
 import numpy as np 
-import utils
-from ghost.regression import GP
-from ghost.learners.EpisodicLearner import EpisodicLearner
-from ghost.learners.PILCO import PILCO
+from kusanagi import utils
+from kusanagi.ghost.regression import GP
+from kusanagi.ghost.learners.EpisodicLearner import EpisodicLearner
+from kusanagi.ghost.learners.PILCO import PILCO
 import theano
 
 class TrajectoryMatching(PILCO):

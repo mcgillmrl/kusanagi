@@ -961,7 +961,7 @@ class SSGP(GP):
             # train the full GP ( if dataset too large, take a random subsample)
             X_full = None
             Y_full = None
-            n_subsample = 1024
+            n_subsample = 500
             X = self.X.get_value()
             if X.shape[0] > n_subsample:
                 utils.print_with_stamp('Training full gp with random subsample of size %d'%(n_subsample),self.name)

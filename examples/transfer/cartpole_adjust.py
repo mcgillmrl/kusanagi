@@ -4,20 +4,19 @@ import os, sys
 import numpy as np
 from functools import partial
 
-import ghost
-from ghost.regression import GP
-from ghost import control
-from ghost.learners.ExperienceDataset import ExperienceDataset
-from ghost.transfer.trajectory_matching import TrajectoryMatching
-from ghost.control import RBFPolicy
-from ghost.control import AdjustedPolicy
+from kusanagi import ghost
+from kusanagi.ghost.regression import GP
+from kusanagi.ghost import control
+from kusanagi.ghost.learners.ExperienceDataset import ExperienceDataset
+from kusanagi.ghost.transfer.trajectory_matching import TrajectoryMatching
+from kusanagi.ghost.control import RBFPolicy
+from kusanagi.ghost.control import AdjustedPolicy
 
-from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
-import shell.cartpole
+from kusanagi.shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss, default_params
 
-from shell.plant import SerialPlant
+from kusanagi.shell.plant import SerialPlant
 
-import utils
+from kusanagi import utils
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 
@@ -27,8 +26,8 @@ if __name__ == '__main__':
     simulation = False
     base_dir = os.path.dirname(ghost.__file__).rsplit('/',1)[0]
     #source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole')
-    #source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole_serial')
-    source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole_serial')
+    source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole_serial/cartpole_serial')
+    #source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole_serial')
     target_dir = os.path.join(base_dir,'examples/learned_policies/target_video')
     # SOURCE DOMAIN 
     utils.set_output_dir(source_dir)
@@ -40,7 +39,7 @@ if __name__ == '__main__':
     
     # TARGET DOMAIN
     utils.set_output_dir(target_dir)
-    target_params = shell.cartpole.default_params()
+    target_params = default_params()
     target_params['params']['H'] = 5.0                                               # control horizon
     target_params['params']['max_evals'] = 125
     # policy
@@ -60,7 +59,7 @@ if __name__ == '__main__':
     # initialize target plant
     if not simulation:
         target_params['plant_class'] = SerialPlant
-        target_params['params']['plant']['maxU'] = np.array(target_params['params']['policy']['maxU'])*1.0/0.4
+        target_params['params']['plant']['maxU'] = np.array(target_params['params']['policy']['maxU'])*(1.0/0.4)
         target_params['params']['plant']['state_indices'] = [0,2,3,1]
         target_params['params']['plant']['baud_rate'] = 4000000
         target_params['params']['plant']['port'] = '/dev/ttyACM0'
