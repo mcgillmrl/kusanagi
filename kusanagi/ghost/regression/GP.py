@@ -17,6 +17,7 @@ import SNRpenalty
 from kusanagi import utils
 from kusanagi.base.Loadable import Loadable
 
+DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 class GP(Loadable):
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, snr_penalty=SNRpenalty.SEard, filename=None, **kwargs):
         # theano options
@@ -25,7 +26,7 @@ class GP(Loadable):
 
         # GP options
         self.max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 500
-        self.conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-16
+        self.conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         self.min_method = kwargs['min_method'] if 'min_method' in kwargs else 'L-BFGS-B'#utils.fmin_lbfgs
         self.state_changed = True
         self.should_recompile = False
@@ -370,6 +371,8 @@ class GP(Loadable):
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (loss.astype(np.float64), dloss.astype(np.float64))
         utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
+        if loss < self.besthyp[0]:
+            self.besthyp = [loss, loghyp]
 
         return res
 
@@ -405,10 +408,19 @@ class GP(Loadable):
         utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
         self.n_evals=0
-        #try:
-        opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': self.max_evals})
-        #except ValueError:
-        #    opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method='CG', tol=self.conv_thr, options={'maxiter': self.max_evals})
+        min_methods = self.min_method if type(self.min_method) is list else [self.min_method]
+        min_methods.extend([m for m in DETERMINISTIC_MIN_METHODS if m != self.min_method])
+        self.besthyp = [np.array(self.loss_fn()).sum(), loghyp0]
+        for m in min_methods:
+            try:
+                utils.print_with_stamp("Using %s optimizer"%(m),self.name)
+                opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=m, tol=self.conv_thr, options={'maxiter': self.max_evals, 'maxcor': 100, 'maxls':30})
+                break
+            except ValueError:
+                print ''
+                utils.print_with_stamp("Optimization with %s failed"%(m),self.name)
+                loghyp0 = self.besthyp[1]
+
         print ''
         loghyp = opt_res.x.reshape(loghyp0.shape)
         self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)

@@ -6,13 +6,14 @@ import theano.tensor as tt
 import time
 
 from functools import partial
-from scipy.optimize import minimize, basinhopping
 
 from kusanagi import utils
 from kusanagi.ghost.learners.ExperienceDataset import ExperienceDataset
 from kusanagi.ghost.control import RandPolicy
 from kusanagi.base.Loadable import Loadable
 
+from scipy.optimize import minimize, basinhopping
+from kusanagi import utils
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
                           'MOMENTUM': lasagne.updates.momentum,
@@ -307,7 +308,6 @@ class EpisodicLearner(Loadable):
             m_loss = utils.MemoizeJac(self.loss)
         
             # setup alternative minimization methods (in case the one selected fails)
-            successful = None
             min_methods = [min_method]
             for i in xrange(len(DETERMINISTIC_MIN_METHODS)): 
                 if DETERMINISTIC_MIN_METHODS[i] not in min_methods: 
@@ -322,7 +322,7 @@ class EpisodicLearner(Loadable):
                                        args=parameter_shapes, 
                                        method=min_methods[i], 
                                        tol=self.conv_thr, 
-                                       options={'maxiter': self.max_evals})
+                                       options={'maxiter': self.max_evals, 'maxcor': 100, 'maxls': 30})
                     # break the loop since we succeeded
                     self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
                     break
@@ -330,9 +330,6 @@ class EpisodicLearner(Loadable):
                     print ''
                     utils.print_with_stamp("Optimization with %s failed"%(min_methods[i]),self.name)
                     v0,p0 = self.best_p
-                    #print v0
-                    #for p in p0:
-                    #    print p
                     self.policy.set_params(p0)
 
         # stochastic gradients

@@ -44,7 +44,7 @@ def default_params():
 
     learner_params['max_evals'] = 150
     learner_params['conv_thr'] = 1e-12
-    learner_params['min_method'] = 'BFGS'#utils.fmin_lbfgs
+    learner_params['min_method'] = 'L-BFGS-B'#utils.fmin_lbfgs
     learner_params['realtime'] = True
 
     learner_params['plant'] = plant_params
