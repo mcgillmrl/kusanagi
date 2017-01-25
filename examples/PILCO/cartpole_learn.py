@@ -1,14 +1,14 @@
 import atexit
 import signal,sys,os
 import numpy as np
+import kusanagi.ghost.regression as kreg
+
 from kusanagi import utils
-from kusanagi.shell.cartpole import default_params
+from kusanagi.shell.cartpole import default_params, CartpoleDraw
 from kusanagi.ghost.learners.PILCO import PILCO
-from kusanagi.ghost.regression import GP
-from kusanagi.ghost.regression.NN import NN
 from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
-#np.random.seed(31337)
+np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
@@ -20,8 +20,9 @@ if __name__ == '__main__':
     learner_params = default_params()
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
-    learner_params['dynmodel_class'] = GP.SSGP_UI
-    learner_params['params']['dynmodel']['n_basis'] = 100
+    learner_params['params']['realtime'] = False
+    learner_params['dynmodel_class'] = kreg.SSGP_UI
+    learner_params['params']['dynmodel']['n_inducing'] = 100
     #learner_params['min_method'] = 'ADAM'
     #learner_params['dynmodel_class'] = NN
     #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
@@ -34,6 +35,9 @@ if __name__ == '__main__':
         save_compiled_fns = True
 
     atexit.register(learner.stop)
+    #draw_cp = CartpoleDraw(learner.plant)
+    #draw_cp.start()
+    #atexit.register(draw_cp.stop)
 
     if learner.experience.n_samples() == 0: #if we have no prior data
         # gather data with random trials

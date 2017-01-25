@@ -10,7 +10,7 @@ def setup_cartpole():
     learner_params = default_params()
     learner_params['params']['use_empirical_x0'] = True
     learner_params['dynmodel_class'] = GP.SSGP_UI
-    learner_params['params']['dynmodel']['n_basis'] = 100
+    learner_params['params']['dynmodel']['n_inducing'] = 100
     return learner_params
  
 def setup_serial_cartpole(serial_port='/dev/ttyACM0'):
@@ -50,7 +50,7 @@ def setup_transfer(N=100, J=100, simulation= False,
     target_params['policy_class'] = AdjustedPolicy
     target_params['params']['policy']['adjustment_model_class'] = GP.GP
     #target_params['params']['policy']['adjustment_model_class'] = control.RBFPolicy
-    #target_params['params']['policy']['n_basis'] = 20
+    #target_params['params']['policy']['n_inducing'] = 20
     target_params['params']['policy']['sat_func'] = None # this is because we probably need bigger controls for heavier pendulums
     target_params['params']['policy']['max_evals'] = 5000
     target_params['params']['policy']['m0'] = np.zeros(source_policy.D+source_policy.E)

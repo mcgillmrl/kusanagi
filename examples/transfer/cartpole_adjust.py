@@ -50,7 +50,7 @@ if __name__ == '__main__':
     target_params['policy_class'] = AdjustedPolicy
     target_params['params']['policy']['adjustment_model_class'] = GP.GP
     #target_params['params']['policy']['adjustment_model_class'] = control.RBFPolicy
-    #target_params['params']['policy']['n_basis'] = 20
+    #target_params['params']['policy']['n_inducing'] = 20
     target_params['params']['policy']['sat_func'] = None # this is because we probably need bigger controls for heavier pendulums
     target_params['params']['policy']['max_evals'] = 5000
     target_params['params']['policy']['m0'] = np.zeros(source_policy.D+source_policy.E)
@@ -94,6 +94,6 @@ if __name__ == '__main__':
             tm.train_dynamics()
             tm.train_policy()
 
-        #tm.save()
+        tm.save()
 
     sys.exit(0)

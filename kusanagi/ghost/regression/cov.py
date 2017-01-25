@@ -1,5 +1,5 @@
 import theano
-import theano.tensor as T
+import theano.tensor as tt
 from kusanagi import utils
 
 def SEard(loghyp,X1,X2=None, all_pairs=True):
@@ -13,11 +13,11 @@ def SEard(loghyp,X1,X2=None, all_pairs=True):
         idims = X1.shape[0]
     if (not all_pairs) and (X1 is X2 or X2 is None):
         # all the distances are going to be zero
-        K = T.tile(T.exp(2*loghyp[idims]), (n,))
+        K = tt.tile(tt.exp(2*loghyp[idims]), (n,))
         return K
 
-    D = utils.maha(X1,X2,T.diag(T.exp(-2*loghyp[:idims])),all_pairs=all_pairs)
-    K = T.exp(2*loghyp[idims] - 0.5*D) 
+    D = utils.maha(X1,X2,tt.diag(tt.exp(-2*loghyp[:idims])),all_pairs=all_pairs)
+    K = tt.exp(2*loghyp[idims] - 0.5*D) 
     return K
 
 def Noise(loghyp,X1,X2=None, all_pairs=True):
@@ -28,20 +28,31 @@ def Noise(loghyp,X1,X2=None, all_pairs=True):
 
     if all_pairs and X1 is X2:
         #D = (X1[:,None,:] - X2[None,:,:]).sum(2)
-        K = T.eye(X1.shape[0])*T.exp(2*loghyp)
+        K = tt.eye(X1.shape[0])*tt.exp(2*loghyp)
         return K
     else:
         #D = (X1 - X2).sum(1)
         if X1 is X2:
-            K = T.ones((X1.shape[0],))*T.exp(2*loghyp)
+            K = tt.ones((X1.shape[0],))*tt.exp(2*loghyp)
         else:
             K = 0
         return K
     
-    #K = T.eq(D,0)*T.exp(2*loghyp)
+    #K = tt.eq(D,0)*tt.exp(2*loghyp)
     #return K
 
 def Sum(loghyp_l, cov_l, X1, X2=None, all_pairs=True):
     ''' Returns the sum of multiple covariance functions'''
     K = sum([cov_l[i](loghyp_l[i],X1,X2,all_pairs=all_pairs) for i in xrange(len(cov_l)) ] )
     return K
+
+def Grid(loghyp, U, cov,X1, X2=None, all_pairs=True):
+    ''' An approximation to the true covariance matrix by interpolation with inducing points on a grid (see Wilson and Nickisch, 2015)'''
+    #
+    Kuu = cov(loghyp,U,all_pairs=all_pairs)
+
+
+
+def createGrid(X1):
+    pass
+

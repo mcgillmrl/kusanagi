@@ -9,7 +9,7 @@ from time import time
 from theano import d3viz
 from theano.printing import pydotprint
 
-from kusanagi.ghost.regression import GP
+import kusanagi.ghost.regression as kreg
 from kusanagi import utils
 
 np.set_printoptions(linewidth=500, precision=17, suppress=True)
@@ -58,7 +58,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     return (x_train,y_train),(x_test,y_test,s_test)
 
 def build_GP(idims=9, odims=6, gp_class='GP', profile=theano.config.profile):
-    gp_classes = dict(inspect.getmembers(GP, inspect.isclass))
+    gp_classes = dict(inspect.getmembers(kreg, inspect.isclass))
     gp = gp_classes[gp_class](idims=idims,odims=odims, profile=profile)
     return gp
 

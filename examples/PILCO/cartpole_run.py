@@ -4,7 +4,7 @@ import signal,sys,os
 import numpy as np
 from functools import partial
 from kusanagi import utils
-from kusanagi.ghost.regression.GP import SSGP_UI
+from kusanagi.ghost.regression import SSGP_UI
 from kusanagi.ghost.learners.PILCO import PILCO
 from kusanagi.shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss, default_params
 from kusanagi.ghost.control import RBFPolicy

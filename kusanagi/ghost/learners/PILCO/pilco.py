@@ -2,17 +2,19 @@ import numpy as np
 import os
 import sys
 import theano
+import theano.tensor as tt
 import time
+import kusanagi.ghost.regression as kreg
 
 from theano.tensor.nlinalg import matrix_inverse
+from theano.tensor.slinalg import solve
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.compile.nanguardmode import NanGuardMode
 from kusanagi import utils
 from kusanagi.ghost.learners.EpisodicLearner import *
-import kusanagi.ghost.regression.GP as GP
 
 class PILCO(EpisodicLearner):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='PILCO', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, experience = None, async_plant=False, name='PILCO', filename_prefix=None):
         self.dynamics_model = None
         self.wrap_angles = params['wrap_angles'] if 'wrap_angles' in params else False
         self.use_empirical_x0 = params['use_empirical_x0'] if 'use_empirical_x0' in params else False
@@ -31,8 +33,9 @@ class PILCO(EpisodicLearner):
             params['dynmodel'] = {}
         params['dynmodel']['idims'] = dyn_idims
         params['dynmodel']['odims'] = dyn_odims
-
-        self.dynamics_model = dynmodel_class(**params['dynmodel'])
+        
+        if dynmodel_class is not None:
+            self.dynamics_model = dynmodel_class(**params['dynmodel'])
         self.next_episode = 0
 
         # initialise parent class
@@ -111,13 +114,13 @@ class PILCO(EpisodicLearner):
             # we need to restore whatever value the shared variables hold in the latest version
             state = self.dynamics_model.get_state()
             for key in state:
-                if key in t_vars[0] and isinstance(state[key],theano.tensor.sharedvar.SharedVariable):
+                if key in t_vars[0] and isinstance(state[key],tt.sharedvar.SharedVariable):
                     t_vars[0][key].set_value(state[key].get_value())
             self.dynamics_model.set_state(t_vars[0])
 
             state = self.policy.get_state()
             for key in state:
-                if key in t_vars[1] and isinstance(state[key],theano.tensor.sharedvar.SharedVariable):
+                if key in t_vars[1] and isinstance(state[key],tt.sharedvar.SharedVariable):
                     t_vars[1][key].set_value(state[key].get_value())
             self.policy.set_state(t_vars[1])
             
@@ -129,7 +132,7 @@ class PILCO(EpisodicLearner):
 
     # define the function for a single propagation step
     def propagate_state(self,mx,Sx):
-        ''' Given the input variables mx (theano.tensor.vector) and Sx (theano.tensor.matrix),
+        ''' Given the input variables mx (tt.vector) and Sx (tt.matrix),
             representing the mean and variance of the system's state x, this function returns
             the next state distribution, and the mean and variance of the immediate cost. This
             is done by 1) evaluating the current policy 2) using the dynamics model to estimate 
@@ -143,18 +146,18 @@ class PILCO(EpisodicLearner):
         mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,D_)
 
         # compute distribution of control signal
-        sn2 = theano.tensor.exp(2*self.dynamics_model.logsn)
-        Sx_ = Sx + theano.tensor.diag(0.5*sn2)# noisy state measurement
+        sn2 = tt.exp(2*self.dynamics_model.logsn)
+        Sx_ = Sx + tt.diag(0.5*sn2)# noisy state measurement
         mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
         mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_, symbolic=True)
         
         # compute state control joint distribution
         n = Sxa.shape[0]; U = Su.shape[1]
-        mxu = theano.tensor.concatenate([mxa,mu])
+        mxu = tt.concatenate([mxa,mu])
         q = Sxa.dot(Cu)
-        Sxu_up = theano.tensor.concatenate([Sxa,q],axis=1)
-        Sxu_lo = theano.tensor.concatenate([q.T,Su],axis=1)
-        Sxu = theano.tensor.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
+        Sxu_up = tt.concatenate([Sxa,q],axis=1)
+        Sxu_lo = tt.concatenate([q.T,Su],axis=1)
+        Sxu = tt.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
 
         #  predict the change in state given current state-action
         # C_deltax = inv (Sxu) dot Sxu_deltax
@@ -164,7 +167,7 @@ class PILCO(EpisodicLearner):
         mx_next = mx + m_deltax
 
         # SSGP returns C_delta as the input-output covariance. All the others do it as (input covariance)^-1 dot (input-output covariance)
-        if isinstance(self.dynamics_model,GP.SSGP):
+        if isinstance(self.dynamics_model,kreg.SSGP):
             Sxu_deltax = C_deltax
         else:
             Sxu_deltax = Sxu.dot(C_deltax)
@@ -177,12 +180,13 @@ class PILCO(EpisodicLearner):
             sxsc_deltax = Sxa_deltax[Dna:]      # then angles as [sin,cos]             [2*len(angi)] x [D]
             #here we undo the [sin,cos] parametrization for the angle dimensions
             Sx_sc = Sx.dot(Ca)[self.angle_idims]                                     # [len(angi)] x [2*len(angi)] 
-            Sa = Sxa[Dna:,Dna:]#+1e-12*theano.tensor.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
-            sxa_deltax = Sx_sc.dot(matrix_inverse(Sa).dot(sxsc_deltax))  # [len(angi] x [D]
+            Sa = Sxa[Dna:,Dna:]#+1e-12*tt.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
+            #sxa_deltax = Sx_sc.dot(matrix_inverse(Sa).dot(sxsc_deltax))  # [len(angi] x [D]
+            sxa_deltax = Sx_sc.dot(solve(Sa,sxsc_deltax))  # [len(angi] x [D]
             # now we create Sx_deltax and fill it with the appropriate values (i.e. in the correct order)
-            Sx_deltax = theano.tensor.zeros((D,D))
-            Sx_deltax = theano.tensor.set_subtensor(Sx_deltax[non_angle_dims,:], sxna_deltax)
-            Sx_deltax = theano.tensor.set_subtensor(Sx_deltax[self.angle_idims,:], sxa_deltax)
+            Sx_deltax = tt.zeros((D,D))
+            Sx_deltax = tt.set_subtensor(Sx_deltax[non_angle_dims,:], sxna_deltax)
+            Sx_deltax = tt.set_subtensor(Sx_deltax[self.angle_idims,:], sxa_deltax)
         else:
             Sx_deltax = Sxu_deltax[:D]
 
@@ -211,7 +215,8 @@ class PILCO(EpisodicLearner):
         # this defines the loop where the state is propaagated
         def rollout_single_step(mv,Sv,mx,Sx,gamma,*args):
             [mv_next, Sv_next, mx_next, Sx_next], updates = self.propagate_state(mx,Sx)
-            return [gamma*mv_next,(gamma**2)*Sv_next, mx_next, Sx_next, gamma*gamma], updates
+            gamma0 = args[0]
+            return [gamma*mv_next,tt.square(gamma)*Sv_next, mx_next, Sx_next, gamma*gamma0], updates
         
         # force Sx to have double precision
         mx0 = mx0.astype('float64')
@@ -221,7 +226,7 @@ class PILCO(EpisodicLearner):
 
         # these are the shared variables that will be used in the graph.
         # we need to pass them as non_sequences here (see: http://deeplearning.net/software/theano/library/scan.html)
-        shared_vars = []
+        shared_vars = [gamma0]
         shared_vars.extend(self.dynamics_model.get_all_shared_vars())
         shared_vars.extend(self.policy.get_all_shared_vars())
         # create the nodes that return the result from scan
@@ -242,11 +247,11 @@ class PILCO(EpisodicLearner):
             updts += self.policy.learning_iteration_updates
 
         # prepend the initial cost distribution
-        mean_costs = theano.tensor.concatenate([mv0.dimshuffle('x'), mean_costs])
-        var_costs = theano.tensor.concatenate([Sv0.dimshuffle('x'), var_costs])
+        mean_costs = tt.concatenate([mv0.dimshuffle('x'), mean_costs])
+        var_costs = tt.concatenate([Sv0.dimshuffle('x'), var_costs])
         # prepend the initial state distribution
-        mean_states = theano.tensor.concatenate([mx0.dimshuffle('x',0), mean_states])
-        cov_states = theano.tensor.concatenate([Sx0.dimshuffle('x',0,1), cov_states])
+        mean_states = tt.concatenate([mx0.dimshuffle('x',0), mean_states])
+        cov_states = tt.concatenate([Sx0.dimshuffle('x',0,1), cov_states])
 
         mean_costs.name = 'mc_list'
         var_costs.name = 'Sc_list'
@@ -263,7 +268,7 @@ class PILCO(EpisodicLearner):
         gamma0 = self.gamma0 if gamma0 is None else gamma0
 
         [mc_,Sc_,mx_,Sx_], updts = self.get_rollout(mx0,Sx0,H,gamma0)
-        return mc_.sum(), updts
+        return mc_[1:].sum(), updts
 
     def get_policy_gradients(self, expected_accumulated_cost, params):
         ''' Creates the variables representing the policy gradients (theano tensor variables) of
@@ -271,7 +276,7 @@ class PILCO(EpisodicLearner):
 
         utils.print_with_stamp('Computing symbolic expression for policy gradients',self.name)
         
-        dJdp = theano.tensor.grad(expected_accumulated_cost, params )
+        dJdp = tt.grad(expected_accumulated_cost, params )
         return dJdp
 
     def compile_rollout(self, mx0 = None, Sx0 = None, H = None, gamma0 = None):
@@ -302,7 +307,7 @@ class PILCO(EpisodicLearner):
         gamma0 = self.gamma0 if gamma0 is None else gamma0
         
         [mc_,Sc_,mx_,Sx_], updts = self.get_rollout(mx0,Sx0,H,gamma0)
-        expected_accumulated_cost = mc_.sum()
+        expected_accumulated_cost = mc_[1:].sum()
         expected_accumulated_cost.name = 'J'
 
         # get the policy parameters (as theano tensor variables)
@@ -339,6 +344,7 @@ class PILCO(EpisodicLearner):
         ''' Function that ensures the compiled policy gradients function is initialised before we can call it'''
         if self.policy_gradient_fn is None:
             self.compile_policy_gradients()
+            self.start_time = time.time()
 
         # update shared vars
         self.mx0.set_value(mx0)
@@ -434,4 +440,5 @@ class PILCO(EpisodicLearner):
             return ret
         else:
             ret = self.rollout(mx,Sx,H_steps,self.discount)
-            return ret[0].sum()
+            # don't include timestep 0
+            return ret[0][1:].sum()

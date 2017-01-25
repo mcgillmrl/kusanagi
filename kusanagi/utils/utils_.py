@@ -8,9 +8,10 @@ import traceback
 
 import random
 import numpy as np
+import lbfgs
 import csv
 import theano
-from theano import tensor as T, ifelse
+from theano import tensor as tt, ifelse
 from theano.gof import Variable
 from theano.sandbox.linalg import psd,matrix_inverse
 import matplotlib as mpl
@@ -27,27 +28,27 @@ def maha(X1,X2=None,M=None, all_pairs=True):
     
     if all_pairs:
         if M is None:
-            #D, updts = theano.scan(fn=lambda xi,X: T.sum((xi-X)**2,1), sequences=[X1], non_sequences=[X2])
-            #D = ((X1-X2[:,None,:])**2).sum(2)
-            D = T.sum(X1**2,1).dimshuffle(0,'x') + T.sum(X2**2,1) - 2*X1.dot(X2.T);
+            #D, updts = theano.scan(fn=lambda xi,X: tt.sum(tt.square(xi-X),1), sequences=[X1], non_sequences=[X2])
+            #D = tt.square(X1-X2[:,None,:]).sum(2)
+            D = tt.sum(tt.square(X1),1).dimshuffle(0,'x') + tt.sum(tt.square(X2),1) - 2*X1.dot(X2.T);
         else:
-            #D, updts = theano.scan(fn=lambda xi,X,V: T.sum(((xi-X).dot(V))*(xi-X),1), sequences=[X1], non_sequences=[X2,M])
+            #D, updts = theano.scan(fn=lambda xi,X,V: tt.sum(((xi-X).dot(V))*(xi-X),1), sequences=[X1], non_sequences=[X2,M])
             #delta = (X1-X2[:,None,:])
             #D = ((delta.dot(M))*delta).sum(2)
             X1M = X1.dot(M);
-            D = T.sum(X1M*X1,1).dimshuffle(0,'x') + T.sum(X2.dot(M)*X2,1) - 2*X1M.dot(X2.T)
+            D = tt.sum(X1M*X1,1).dimshuffle(0,'x') + tt.sum(X2.dot(M)*X2,1) - 2*X1M.dot(X2.T)
     else:
         # computes the distance  x1i - x2i for each row i
         if X1 is X2:
             # in this case, we don't need to compute anything
-            D = T.zeros((X1.shape[0],))
+            D = tt.zeros((X1.shape[0],))
             return D
         delta = X1-X2
         if M is None:
             deltaM = delta
         else:
             deltaM = delta.dot(M)
-        D = T.sum(deltaM*delta,1)
+        D = tt.sum(deltaM*delta,1)
     return D
 
 def fast_jacobian(expr, wrt, chunk_size=16, func=None):
@@ -57,24 +58,24 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
         ("tensor.jacobian expects a 1 dimensional variable as "
          "`expr`. If not use flatten to make it a vector")
 
-    num_chunks = T.ceil(1.0 * expr.shape[0] / chunk_size)
-    num_chunks = T.cast(num_chunks, 'int32')
-    steps = T.arange(num_chunks)
+    num_chunks = tt.ceil(1.0 * expr.shape[0] / chunk_size)
+    num_chunks = tt.cast(num_chunks, 'int32')
+    steps = tt.arange(num_chunks)
     remainder = expr.shape[0] % chunk_size
 
     def chunk_grad(i):
-        wrt_rep = T.tile(wrt, (chunk_size, 1))
+        wrt_rep = tt.tile(wrt, (chunk_size, 1))
         if func is not None:
             expr_rep = func(wrt_rep)
         else:
             expr_rep, _ = theano.scan(
                 fn=lambda wrt_: theano.clone(expr, {wrt: wrt_}),
                 sequences=wrt_rep)
-        chunk_expr_grad = T.roll(
-            T.identity_like(expr_rep),
+        chunk_expr_grad = tt.roll(
+            tt.identity_like(expr_rep),
             i * chunk_size,
             axis=1)
-        return T.grad(cost=None,
+        return tt.grad(cost=None,
                       wrt=wrt_rep,
                       known_grads={
                           expr_rep: chunk_expr_grad
@@ -82,7 +83,7 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
 
     grads, _ = theano.scan(chunk_grad, sequences=steps)
     grads = grads.reshape((chunk_size * grads.shape[0], wrt.shape[0]))
-    jac = ifelse.ifelse(T.eq(remainder, 0), grads, grads[:expr.shape[0], :])
+    jac = ifelse.ifelse(tt.eq(remainder, 0), grads, grads[:expr.shape[0], :])
     return jac
 
 def print_with_stamp(message, name=None, same_line=False, use_log=True):
@@ -141,15 +142,15 @@ def kmeanspp(X,k):
 def gTrig(x,angi,D):
     Da = 2*len(angi)
     n = x.shape[0]
-    xang = T.zeros((n,Da))
+    xang = tt.zeros((n,Da))
     xi = x[:,angi]
-    xang = T.set_subtensor(xang[:,::2], T.sin(xi))
-    xang = T.set_subtensor(xang[:,1::2], T.cos(xi))
+    xang = tt.set_subtensor(xang[:,::2], tt.sin(xi))
+    xang = tt.set_subtensor(xang[:,1::2], tt.cos(xi))
 
     non_angle_dims = list(set(range(D)).difference(angi))
     if len(non_angle_dims)>0:
         xnang = x[:,non_angle_dims]
-        m = T.concatenate([xnang,xang],axis=1)
+        m = tt.concatenate([xnang,xang],axis=1)
     else:
         m = xang
     return m
@@ -161,59 +162,59 @@ def gTrig2(m, v, angi, D, derivs=False):
     non_angle_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
     Dna = len(non_angle_dims)
-    Ma = T.zeros((Da,))
-    Va = T.zeros((Da,Da))
-    Ca = T.zeros((D,Da))
+    Ma = tt.zeros((Da,))
+    Va = tt.zeros((Da,Da))
+    Ca = tt.zeros((D,Da))
 
     # compute the mean
     mi = m[angi]
     vi = v[angi,:][:,angi]
     vii = v[angi,angi]
-    exp_vii_h = T.exp(-vii/2)
+    exp_vii_h = tt.exp(-vii/2)
 
-    Ma = T.set_subtensor(Ma[::2], exp_vii_h*T.sin(mi))
-    Ma = T.set_subtensor(Ma[1::2], exp_vii_h*T.cos(mi))
+    Ma = tt.set_subtensor(Ma[::2], exp_vii_h*tt.sin(mi))
+    Ma = tt.set_subtensor(Ma[1::2], exp_vii_h*tt.cos(mi))
     
     # compute the entries in the augmented covariance matrix
     vii_c = vii.dimshuffle(0,'x')
     vii_r = vii.dimshuffle('x',0)
-    lq = -0.5*(vii_c+vii_r); q = T.exp(lq)
-    exp_lq_p_vi = T.exp(lq+vi)
-    exp_lq_m_vi = T.exp(lq-vi)
+    lq = -0.5*(vii_c+vii_r); q = tt.exp(lq)
+    exp_lq_p_vi = tt.exp(lq+vi)
+    exp_lq_m_vi = tt.exp(lq-vi)
     mi_c = mi.dimshuffle(0,'x')
     mi_r = mi.dimshuffle('x',0)
-    U1 = (exp_lq_p_vi - q)*(T.sin(mi_c-mi_r))
-    U2 = (exp_lq_m_vi - q)*(T.sin(mi_c+mi_r))
-    U3 = (exp_lq_p_vi - q)*(T.cos(mi_c-mi_r))
-    U4 = (exp_lq_m_vi - q)*(T.cos(mi_c+mi_r))
+    U1 = (exp_lq_p_vi - q)*(tt.sin(mi_c-mi_r))
+    U2 = (exp_lq_m_vi - q)*(tt.sin(mi_c+mi_r))
+    U3 = (exp_lq_p_vi - q)*(tt.cos(mi_c-mi_r))
+    U4 = (exp_lq_m_vi - q)*(tt.cos(mi_c+mi_r))
     
-    Va = T.set_subtensor(Va[::2,::2], U3-U4)
-    Va = T.set_subtensor(Va[1::2,1::2], U3+U4)
+    Va = tt.set_subtensor(Va[::2,::2], U3-U4)
+    Va = tt.set_subtensor(Va[1::2,1::2], U3+U4)
     U12 = U1+U2
-    Va = T.set_subtensor(Va[::2,1::2],U12)
-    Va = T.set_subtensor(Va[1::2,::2],U12.T)
+    Va = tt.set_subtensor(Va[::2,1::2],U12)
+    Va = tt.set_subtensor(Va[1::2,::2],U12.T)
     Va = 0.5*Va
 
     # inv times input output covariance
     Is = 2*np.arange(len(angi)); Ic = Is +1;
-    Ca = T.set_subtensor( Ca[angi,Is], Ma[1::2]) 
-    Ca = T.set_subtensor( Ca[angi,Ic], -Ma[::2]) 
+    Ca = tt.set_subtensor( Ca[angi,Is], Ma[1::2]) 
+    Ca = tt.set_subtensor( Ca[angi,Ic], -Ma[::2]) 
 
     # construct mean vectors ( non angle dimensions come first, then angle dimensions)
     Mna = m[non_angle_dims]
-    M = T.concatenate([Mna,Ma])
+    M = tt.concatenate([Mna,Ma])
 
     # construct the corresponding covariance matrices ( just the blocks for the non angle dimensions and the angle dimensions separately)
-    V = T.zeros((Dna+Da,Dna+Da))
+    V = tt.zeros((Dna+Da,Dna+Da))
     Vna = v[non_angle_dims,:][:,non_angle_dims]
-    V = T.set_subtensor(V[:Dna,:Dna], Vna)
-    V = T.set_subtensor(V[Dna:,Dna:], Va)
+    V = tt.set_subtensor(V[:Dna,:Dna], Vna)
+    V = tt.set_subtensor(V[Dna:,Dna:], Va)
 
     # fill in the cross covariances
     q = v.dot(Ca)[non_angle_dims,:]
-    V = T.set_subtensor(V[:Dna,Dna:], q )
-    V = T.set_subtensor(V[Dna:,:Dna], q.T )
-    #V = T.concatenate([T.concatenate([Vna,q],axis=1),T.concatenate([q.T,Va],axis=1)], axis=0)
+    V = tt.set_subtensor(V[:Dna,Dna:], q )
+    V = tt.set_subtensor(V[Dna:,:Dna], q.T )
+    #V = tt.concatenate([tt.concatenate([Vna,q],axis=1),tt.concatenate([q.T,Va],axis=1)], axis=0)
 
     retvars = [M,V,Ca]
 
@@ -221,9 +222,9 @@ def gTrig2(m, v, angi, D, derivs=False):
     if derivs:
         dretvars = []
         for r in retvars:
-            dretvars.append( T.jacobian(r.flatten(),m) )
+            dretvars.append( tt.jacobian(r.flatten(),m) )
         for r in retvars:
-            dretvars.append( T.jacobian(r.flatten(),v) )
+            dretvars.append( tt.jacobian(r.flatten(),v) )
         retvars.extend(dretvars)
 
     return retvars
@@ -302,8 +303,8 @@ def gTrig2_np(m,v,angi,D):
     return [M,V]
 
 def get_compiled_gTrig(angi,D,derivs=True):
-    m = T.dvector('x')      # n_samples x idims
-    v = T.dmatrix('x_cov')  # n_samples x idims x idims
+    m = tt.dvector('x')      # n_samples x idims
+    v = tt.dmatrix('x_cov')  # n_samples x idims x idims
 
     gt = gTrig2(m, v, angi, D, derivs=derivs)
     return theano.function([m,v],gt)
@@ -353,6 +354,22 @@ class MemoizeJac(object):
         else:
             self._compute(x, *args)
             return self.jac
+
+def fmin_lbfgs(f, x0, args=(), callback=None, options={}, **kwargs):
+    opt = lbfgs.LBFGS()
+
+    for name in kwargs:
+        value=kwargs[name]
+        if hasattr(opt,name):
+            setattr(opt,name,value)
+
+    for name in options:
+        value=options[name]
+        if hasattr(opt,name):
+            setattr(opt,name,value)
+
+    return opt.minimize(f, x0, progress=callback, args=args)
+
 
 def integer_generator(i=0):
     while True:

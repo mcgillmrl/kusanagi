@@ -1,17 +1,19 @@
 import numpy as np
-import utils
+from kusanagi import utils
 from time import time
-from ghost.learners.EpisodicLearner import EpisodicLearner
-from ghost.learners.PILCO import PILCO
-from ghost.learners.ExperienceDataset import ExperienceDataset
-import ghost.regression.GP as GP
-from ghost.control import LocalLinearPolicy
+from kusanagi.ghost.learners.EpisodicLearner import EpisodicLearner
+from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.ghost.learners.ExperienceDataset import ExperienceDataset
+import kusanagi.ghost.regression as kreg
+from kusanagi.ghost.control import LocalLinearPolicy
 from theano.tensor.nlinalg import matrix_inverse, pinv
+from theano.tensor.slinalg import solve
 import theano
+import theano.tensor as tt
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
 class PDDP(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='PDDP', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, experience = None, async_plant=False, name='PDDP', filename_prefix=None):
         params['policy']['H'] = params['H']
         params['policy']['dt'] = params['plant']['dt']
         params['angle_dims'] = []
@@ -19,7 +21,7 @@ class PDDP(PILCO):
     
     # define the function for a single propagation step
     def propagate_state(self,mx,Sx,t,open_loop=False):
-        ''' Given the input variables mx (theano.tensor.vector) and Sx (theano.tensor.matrix),
+        ''' Given the input variables mx (tt.vector) and Sx (tt.matrix),
             representing the mean and variance of the system's state x, this function returns
             the next state distribution, and the mean and variance of the immediate cost. This
             is done by 1) evaluating the current policy 2) using the dynamics model to estimate 
@@ -34,19 +36,19 @@ class PDDP(PILCO):
         
         if open_loop:
             mu = self.policy.u_nominal[t]
-            Su = theano.tensor.zeros((mu.size,mu.size))
+            Su = tt.zeros((mu.size,mu.size))
         else:
             # compute control signal given uncertain state
-            sn2 = theano.tensor.exp(2*self.dynamics_model.logsn)
-            Sx_ = Sx + theano.tensor.diag(0.5*sn2)# noisy state measurement
+            sn2 = tt.exp(2*self.dynamics_model.logsn)
+            Sx_ = Sx + tt.diag(0.5*sn2)# noisy state measurement
             mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
             mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_, t, symbolic=True)
         
         # compute state control joint distribution ( controls are deterministic, so the u terms in Sxu are set to zero )
         n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
-        mxu = theano.tensor.concatenate([mxa,mu])
-        Sxu = theano.tensor.zeros((Da+U,Da+U))
-        Sxu = theano.tensor.set_subtensor(Sxu[:Da,:Da],Sxa)
+        mxu = tt.concatenate([mxa,mu])
+        Sxu = tt.zeros((Da+U,Da+U))
+        Sxu = tt.set_subtensor(Sxu[:Da,:Da],Sxa)
 
         #  predict the change in state given current state-action
         # C_deltax = inv (Sxu) dot Sxu_deltax
@@ -56,7 +58,7 @@ class PDDP(PILCO):
         mx_next = mx + m_deltax
 
         # SSGP returns C_delta as the input-output covariance. All the others do it as (input covariance)^-1 dot (input-output covariance)
-        if isinstance(self.dynamics_model,GP.SSGP):
+        if isinstance(self.dynamics_model,kreg.SSGP):
             Sxu_deltax = C_deltax
         else:
             Sxu_deltax = Sxu.dot(C_deltax)
@@ -69,12 +71,12 @@ class PDDP(PILCO):
             sxsc_deltax = Sxa_deltax[Dna:]      # then angles as [sin,cos]             [2*len(angi)] x [D]
             #here we undo the [sin,cos] parametrization for the angle dimensions
             Sx_sc = Sx.dot(Ca)[self.angle_idims]                                     # [len(angi)] x [2*len(angi)] 
-            Sa = Sxa[Dna:,Dna:]#+1e-12*theano.tensor.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
-            sxa_deltax = Sx_sc.dot(matrix_inverse(Sa).dot(sxsc_deltax))  # [len(angi] x [D]
+            Sa = Sxa[Dna:,Dna:]#+1e-12*tt.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
+            sxa_deltax = Sx_sc.dot(solve(Sa,sxsc_deltax))  # [len(angi] x [D]
             # now we create Sx_deltax and fill it with the appropriate values (i.e. in the correct order)
-            Sx_deltax = theano.tensor.zeros((D,D))
-            Sx_deltax = theano.tensor.set_subtensor(Sx_deltax[non_angle_dims,:], sxna_deltax)
-            Sx_deltax = theano.tensor.set_subtensor(Sx_deltax[self.angle_idims,:], sxa_deltax)
+            Sx_deltax = tt.zeros((D,D))
+            Sx_deltax = tt.set_subtensor(Sx_deltax[non_angle_dims,:], sxna_deltax)
+            Sx_deltax = tt.set_subtensor(Sx_deltax[self.angle_idims,:], sxa_deltax)
         else:
             Sx_deltax = Sxu_deltax[:D]
 
@@ -84,7 +86,7 @@ class PDDP(PILCO):
         mcost, Scost = self.cost(mx,Sx)
         cost_params = self.cost.keywords['params']
         # add a term for the action
-        R = T.constant(cost_params['R'],dtype=mx.dtype) if 'R' in cost_params else theano.tensor.zeros((mu.size,mu.size))
+        R = T.constant(cost_params['R'],dtype=mx.dtype) if 'R' in cost_params else tt.zeros((mu.size,mu.size))
         mcost += mu.dot(R).dot(mu)
 
         # check if dynamics model has an updates dictionary
@@ -113,26 +115,27 @@ class PDDP(PILCO):
 
     def compute_derivs(self,z,t,*args):
         # split z into the mean and covariance of the state
-        #D = ((theano.tensor.sqrt(8*z.shape[0]+9) - 3)/2).astype('int64')
+        #D = ((tt.sqrt(8*z.shape[0]+9) - 3)/2).astype('int64')
         D = self.mx0.get_value().size
         triu_indices = np.triu_indices(D)
 
         mx, Sx_triu = z[:D], z[D:]
-        Sx = theano.tensor.zeros((D,D))
-        Sx = theano.tensor.set_subtensor(Sx[triu_indices],Sx_triu)
-        Sx = Sx + Sx.T - theano.tensor.diag(theano.tensor.diag(Sx))
+        Sx = tt.zeros((D,D))
+        Sx = tt.set_subtensor(Sx[triu_indices],Sx_triu)
+        Sx = Sx + Sx.T - tt.diag(tt.diag(Sx))
 
         # compute the next state using the dynamics model
         [mcost,Scost,mx_next,Sx_next,mu,Su], updates = self.propagate_state(mx,Sx,t,open_loop=True)
 
-        z_next = theano.tensor.concatenate([mx_next.flatten(),Sx_next[triu_indices]])
+        z_next = tt.concatenate([mx_next.flatten(),Sx_next[triu_indices]])
 
         # compute all the required derivatives
-        Fu,Fx = zip(*[theano.tensor.jacobian(z_next[i:i+D],[mu,z]) for i in xrange(0,D+len(triu_indices[0]),D)])
-        Fu,Fx = theano.tensor.concatenate(Fu,axis=0), theano.tensor.concatenate(Fx,axis=0)
-        lu,lx = theano.tensor.grad(mcost,[mu,mx])
-        luu,lux = theano.tensor.jacobian(lu.flatten(),[mu,mx], disconnected_inputs='ignore')
-        lxx = theano.tensor.jacobian(lx.flatten(),mx)
+        #Fu,Fx = zip(*[tt.jacobian(z_next[i:i+D],[mu,z]) for i in xrange(0,D+len(triu_indices[0]),D)])
+        #Fu,Fx = tt.concatenate(Fu,axis=0), tt.concatenate(Fx,axis=0)
+        Fu, Fx = tt.jacobian(z_next,[mu,z])
+        lu,lx = tt.grad(mcost,[mu,z])
+        luu,lux = tt.jacobian(lu.flatten(),[mu,z], disconnected_inputs='ignore')
+        lxx = tt.jacobian(lx.flatten(),z)
 
         return [Fx,Fu,lx,lu,lxx,lux,luu], updates
 
@@ -147,7 +150,7 @@ class PDDP(PILCO):
         shared_vars.extend(self.policy.get_all_shared_vars())
 
         (Fx,Fu,lx,lu,lxx,lux,luu), updts = theano.scan(fn=self.compute_derivs,
-                                                       sequences=[z_nom,theano.tensor.arange(H)], 
+                                                       sequences=[z_nom,tt.arange(H)], 
                                                        non_sequences=shared_vars, 
                                                        strict=True)
 
@@ -161,7 +164,7 @@ class PDDP(PILCO):
 
     def compile_derivs_func2(self):
         utils.print_with_stamp('Computing symbolic Jacobians along trajectory')
-        t = theano.tensor.iscalar('t')
+        t = tt.iscalar('t')
         z_t = self.policy.z_nominal[t]
 
         (Fx,Fu,lx,lu,lxx,lux,luu), updts = self.compute_derivs(z_t,t)

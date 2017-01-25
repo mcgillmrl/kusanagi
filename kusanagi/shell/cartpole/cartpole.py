@@ -1,10 +1,14 @@
 import numpy as np
 import theano
+import theano.tensor as tt
+
 from kusanagi.shell.plant import ODEPlant, PlantDraw
 from kusanagi.ghost.cost import quadratic_saturating_loss
 from kusanagi.utils import print_with_stamp, gTrig_np, gTrig2
 from kusanagi.ghost.control import RBFPolicy
-from kusanagi.ghost.regression.GP import GP_UI
+from kusanagi.ghost.regression import GP_UI
+from kusanagi import utils
+from matplotlib import pyplot as plt
 
 def default_params():
     # setup learner parameters
@@ -16,7 +20,7 @@ def default_params():
     learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
     learner_params['angle_dims'] = [3]                                      # angle dimensions
     learner_params['H'] = 4.0                                               # control horizon
-    learner_params['discount'] = 1.0                                        # discoutn factor
+    learner_params['discount'] = 1.0                                        # discount factor
     # plant
     plant_params = {}
     plant_params['dt'] = 0.1
@@ -26,7 +30,7 @@ def default_params():
     policy_params = {}
     policy_params['m0'] = learner_params['x0']
     policy_params['S0'] = learner_params['S0']
-    policy_params['n_basis'] = 10
+    policy_params['n_inducing'] = 10
     #policy_params['hidden_dims'] = [50,50,50]
     policy_params['maxU'] = [10]
     # dynamics model
@@ -34,13 +38,13 @@ def default_params():
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
-    cost_params['width'] = 0.15
+    cost_params['width'] = 0.25
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
 
     learner_params['max_evals'] = 150
     learner_params['conv_thr'] = 1e-12
-    learner_params['min_method'] = 'L-BFGS-B'
+    learner_params['min_method'] = 'BFGS'#utils.fmin_lbfgs
     learner_params['realtime'] = True
 
     learner_params['plant'] = plant_params
@@ -77,7 +81,7 @@ def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
         loss_params['Q'] = Q/c**2
         m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
         if b is not None and b != 0.0:
-            m_cost += b*theano.tensor.sqrt(s_cost) # UCB  exploration term
+            m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
         M_cost.append(m_cost)
         S_cost.append(s_cost)
     
@@ -128,7 +132,7 @@ class Cartpole(ODEPlant):
         dz2 = -3*( a0*cz + 2*( (M+m)*a1 + a2*cz ) )/( l*a3 )            # dtheta/dt
         dz3 = cz*z[2]                                   # sin(theta)
         dz4 = -sz*z[2]                                   # cos(theta)
-        dz = theano.tensor.stack([dz0,dz1,dz2,dz3,dz4])
+        dz = tt.stack([dz0,dz1,dz2,dz3,dz4])
 
         return dz*self.dt
 
@@ -151,7 +155,6 @@ class CartpoleDraw(PlantDraw):
         self.center_y = 0
 
         # initialize the patches to draw the cartpole
-        from matplotlib import pyplot as plt
         self.body_rect = plt.Rectangle( (self.center_x-0.5*self.body_h, self.center_y-0.125*self.body_h), self.body_h, 0.25*self.body_h, facecolor='black')
         self.pole_line = plt.Line2D((self.center_x, 0), (self.center_y, l), lw=2, c='r')
         self.mass_circle = plt.Circle((0, l), self.mass_r, fc='y')

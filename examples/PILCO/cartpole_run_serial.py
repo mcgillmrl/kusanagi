@@ -23,7 +23,7 @@ if __name__ == '__main__':
     learner_params = default_params()
     # initialize learner
     learner_params['dynmodel_class'] = GP.SSGP_UI
-    learner_params['params']['dynmodel']['n_basis'] = 100
+    learner_params['params']['dynmodel']['n_inducing'] = 100
     learner_params['plant_class'] = SerialPlant
     learner_params['params']['plant']['maxU'] = np.array(learner_params['params']['policy']['maxU'])*1.0/0.4
     learner_params['params']['plant']['state_indices'] = [0,2,3,1]

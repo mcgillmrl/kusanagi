@@ -1,6 +1,6 @@
 import lasagne
 import theano
-import theano.tensor as T
+import theano.tensor as tt
 
 from lasagne.layers.base import Layer
 from lasagne.random import get_rng
@@ -30,7 +30,7 @@ class DropoutLayer(lasagne.layers.noise.DropoutLayer):
 	    return input
 	else:
             # Using theano constant to prevent upcasting
-            one = T.constant(1)
+            one = tt.constant(1)
 
             retain_prob = one - self.p
             if self.rescale:

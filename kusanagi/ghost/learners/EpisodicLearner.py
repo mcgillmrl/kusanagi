@@ -2,6 +2,7 @@ import lasagne
 import numpy as np
 import os
 import theano
+import theano.tensor as tt
 import time
 
 from functools import partial
@@ -21,7 +22,7 @@ STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
                           'RMSPROP': lasagne.updates.rmsprop,
                           'ADADELTA': lasagne.updates.adadelta,
                           'ADAM': lasagne.updates.adam}
-
+# TODO remove any theano dependency from here
 class EpisodicLearner(Loadable):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
         self.name = name
@@ -146,8 +147,8 @@ class EpisodicLearner(Loadable):
             if self.cost:
                 utils.print_with_stamp('Compiling cost function',self.name)
                 utils.print_with_stamp('Cost parameters: %s'%(self.cost.keywords['params']),self.name)
-                mx = theano.tensor.vector('mx')
-                Sx = theano.tensor.matrix('Sx')
+                mx = tt.vector('mx')
+                Sx = tt.matrix('Sx')
                 self.evaluate_cost = theano.function((mx,Sx),self.cost(mx,Sx), allow_input_downcast=True)
             else:
                 utils.print_with_stamp('No cost function provided',self.name)
@@ -238,6 +239,7 @@ class EpisodicLearner(Loadable):
                 c_t = self.evaluate_cost(x_t, Sx_t)
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
+                #print x_t, c_t
             else:
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,0)
@@ -252,9 +254,12 @@ class EpisodicLearner(Loadable):
                 if exec_time < self.plant.dt:
                     time.sleep(self.plant.dt-exec_time)
 
-            #  get robot state (this should ensure synchronization by blocking until dt seconds have passed):
+            #  get robot state (this should ensure synchronization by checking the time reported by plant.get_state):
             exec_time = time.time()
-            x_t, t = self.plant.get_plant_state()
+            t0 = t
+            while t < t0+self.plant.dt:
+                x_t, t = self.plant.get_plant_state()
+
             if self.plant.noise is not None:
                 # randomize state
                 x_t = x_t + np.random.randn(x_t.shape[0]).dot(L_noise);
@@ -286,6 +291,8 @@ class EpisodicLearner(Loadable):
         
         # optimize value wrt to the policy parameters
         self.learning_iteration+=1
+        self.iter_time = 0
+        self.start_time = time.time()
         self.n_evals=0
         utils.print_with_stamp('Training policy parameters [Iteration %d]'%(self.learning_iteration), self.name)
 
@@ -308,7 +315,7 @@ class EpisodicLearner(Loadable):
 
             # keep on trying to optimize with all the methods, until one succeds, or we go through all of them
             for i in range(len(min_methods)):
-                #try:
+                try:
                     utils.print_with_stamp("Using %s optimizer"%(min_methods[i]),self.name)
                     opt_res = minimize(m_loss, utils.wrap_params(p0),
                                        jac=m_loss.derivative, 
@@ -319,13 +326,14 @@ class EpisodicLearner(Loadable):
                     # break the loop since we succeeded
                     self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
                     break
-                #except ValueError:
-                #    utils.print_with_stamp("Optimization using %s failed"%(min_methods[i]),self.name)
-                #    v0,p0 = self.best_p
-                #    print v0
-                #    for p in p0:
-                #        print p
-                #    self.policy.set_params(p0)
+                except ValueError:
+                    print ''
+                    utils.print_with_stamp("Optimization with %s failed"%(min_methods[i]),self.name)
+                    v0,p0 = self.best_p
+                    #print v0
+                    #for p in p0:
+                    #    print p
+                    self.policy.set_params(p0)
 
         # stochastic gradients
         elif min_method in STOCHASTIC_MIN_METHODS.keys():
@@ -378,6 +386,10 @@ class EpisodicLearner(Loadable):
             self.best_p = [v,p]
 
         self.n_evals+=1
-        utils.print_with_stamp('Current value: %s, Total evaluations: %d    '%(str(v),self.n_evals),self.name,True)
+        end_time = time.time()
+        self.iter_time = ((end_time - self.start_time) - self.iter_time)/self.n_evals + self.iter_time
+        
+        utils.print_with_stamp('Current value: %s, Total evaluations: %d, Avg. time per call: %f   '%(str(v),self.n_evals,self.iter_time),self.name,True)
+        self.start_time = time.time()
         return v,dv
 

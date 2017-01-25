@@ -1,9 +1,9 @@
 import numpy as np
 import theano
+import theano.tensor as tt
 
 from kusanagi import utils
-from kusanagi.ghost.regression.GP import RBFGP, SSGP_UI,GP
-from kusanagi.ghost.regression.NN import NN
+from kusanagi.ghost.regression import RBFGP, SSGP_UI,GP, NN
 from kusanagi.ghost.regression import cov
 from kusanagi.ghost.control.saturation import gSat
 from kusanagi.utils import gTrig2, gTrig2_np
@@ -14,9 +14,9 @@ from scipy.cluster.vq import kmeans2,vq
 
 # GP based controller
 class RBFPolicy(RBFGP):
-    def __init__(self, idims=None, odims=None, sat_func=gSat,  m0=None, S0=None, maxU=[10], n_basis=10, angle_dims=[], name='RBFPolicy', filename=None, max_evals=750 ,*kwargs):
+    def __init__(self, idims=None, odims=None, sat_func=gSat,  m0=None, S0=None, maxU=[10], n_inducing=10, angle_dims=[], name='RBFPolicy', filename=None, max_evals=750 ,*kwargs):
         self.maxU = np.array(maxU)
-        self.n_basis = n_basis
+        self.n_inducing = n_inducing
         self.angle_dims = angle_dims
         self.name = name
         self.X_train = None
@@ -51,7 +51,7 @@ class RBFPolicy(RBFGP):
         super(RBFGP,self).load(output_folder,output_filename)
         
         # initialize mising variables
-        self.loghyp = theano.tensor.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=np.array(1,dtype='int64'))
+        self.loghyp = tt.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=np.array(1,dtype='int64'))
 
         # loghyp is no longer the trainable paramter
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
@@ -65,10 +65,10 @@ class RBFPolicy(RBFGP):
             m0,S0 = X.mean(0), np.cov(X.T,ddof=1);
 
             # init inputs and targets as subset of dataset
-            #idx = np.arange(X.shape[0]); np.random.shuffle(idx); idx= idx[:self.n_basis]
-            inputs = utils.kmeanspp(X,self.n_basis)
+            #idx = np.arange(X.shape[0]); np.random.shuffle(idx); idx= idx[:self.n_inducing]
+            inputs = utils.kmeanspp(X,self.n_inducing)
             inputs,idx = kmeans2(X,inputs)
-            targets = np.vstack([ Y[idx==i].mean() for i in xrange(self.n_basis) ])
+            targets = np.vstack([ Y[idx==i].mean() for i in xrange(self.n_inducing) ])
             
             # initialize log hyper parameters
             l0 = np.zeros((odims,idims+2))
@@ -78,8 +78,8 @@ class RBFPolicy(RBFGP):
             l0 = np.log(l0)
 
             # init policy targets according to output distribution
-            #targets = np.random.multivariate_normal(Y.mean(0),np.atleast_2d(np.cov(Y.T)),self.n_basis)
-            targets = 0.1*np.random.randn(self.n_basis,self.maxU.size)
+            #targets = np.random.multivariate_normal(Y.mean(0),np.atleast_2d(np.cov(Y.T)),self.n_inducing)
+            targets = 0.1*np.random.randn(self.n_inducing,self.maxU.size)
         else:
             # initialize tthe mean and covariance of the inputs
             m0,S0 = self.m0,self.S0
@@ -88,14 +88,14 @@ class RBFPolicy(RBFGP):
                 m0 = m0.squeeze(); S0 = S0.squeeze();
             # init inputs
             L_noise = np.linalg.cholesky(S0)
-            inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(self.n_basis)]);
+            inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(self.n_inducing)]);
 
             # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
             l0 = np.hstack([np.ones(self.m0.size-len(self.angle_dims)),0.7*np.ones(2*len(self.angle_dims)),1,0.01])
             l0 = np.log(np.tile(l0,(self.maxU.size,1)))
 
             # init policy targets close to zero
-            targets = 0.1*np.random.randn(self.n_basis,self.maxU.size)
+            targets = 0.1*np.random.randn(self.n_inducing,self.maxU.size)
         
         
         self.trained = False
@@ -109,7 +109,7 @@ class RBFPolicy(RBFGP):
         self.set_params( {'loghyp_full': l0} )
         
         # don't optimize the signal and noise variances
-        self.loghyp = theano.tensor.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=np.array(1,dtype='int64'))
+        self.loghyp = tt.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=np.array(1,dtype='int64'))
 
         # loghyp is no longer the trainable paramter
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
@@ -164,7 +164,7 @@ class RBFPolicy(RBFGP):
         Y_train_var = self.Y_train_var
 
         # compute predictions for the whole dataset
-        SX = theano.tensor.zeros((X_train.shape[0],X_train.shape[1],X_train.shape[1]))
+        SX = tt.zeros((X_train.shape[0],X_train.shape[1],X_train.shape[1]))
         
         def predict_odim(L,beta,loghyp,X,mx,*args):
             idims = self.X.shape[1]
@@ -187,7 +187,7 @@ class RBFPolicy(RBFGP):
         loss = (0.5*((delta**2)/(Y_train_var+1e-6)).sum() + 1e-3*(self.beta**2).sum())/N
         
         #compute gradients
-        dloss = theano.tensor.grad(loss,self.get_params(symbolic=True))
+        dloss = tt.grad(loss,self.get_params(symbolic=True))
         
         if compile_funcs:
             utils.print_with_stamp('Compiling supervised training loss function',self.name)
@@ -238,7 +238,7 @@ class RBFPolicy(RBFGP):
         D = m.shape[0]
         if symbolic:
             if s is None:
-                s = theano.tensor.zeros((D,D))
+                s = tt.zeros((D,D))
             ret = self.predict_symbolic(m,s)
         else:
             if s is None:
@@ -285,7 +285,7 @@ class LocalLinearPolicy(Loadable):
 
         Loadable.__init__(self,name=name,filename=self.filename)
         # register theano functions and shared variables for saving
-        self.register_types([theano.tensor.sharedvar.SharedVariable, theano.compile.function_module.Function])
+        self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
 
     def init_params(self):
         H_steps = int(np.ceil(self.H/self.dt))
@@ -320,29 +320,29 @@ class LocalLinearPolicy(Loadable):
         u,z,I,L = self.u_nominal,self.z_nominal,self.I,self.L
 
         if symbolic:
-            T = theano.tensor
+            tt = theano.tensor
         else:
-            T = np
+            tt = np
             u,z,I,L=u.get_value(),z.get_value(),I.get_value(),L.get_value()
             
         if s is None:
-            s = T.zeros((D,D))
+            s = tt.zeros((D,D))
         
         # construct flattened state covariance vector
-        z_t = T.concatenate([m.flatten(),s[self.triu_indices]])
+        z_t = tt.concatenate([m.flatten(),s[self.triu_indices]])
         # compute control
         u_t = u[t] + I[t] + L[t].dot(z_t - z[t])
         # add random noise if requested (only for non symbolic)
         if not symbolic and self.noise and self.noise > 0:
-            u_t += self.noise*T.random.randn(*u_t.shape)
+            u_t += self.noise*tt.random.randn(*u_t.shape)
 
         # limit the controller output
-        #u_t = T.maximum(u_t, -self.maxU)
-        #u_t = T.minimum(u_t, self.maxU)
+        #u_t = tt.maximum(u_t, -self.maxU)
+        #u_t = tt.minimum(u_t, self.maxU)
 
         U = u_t.shape[0]
         self.t+=1
-        return u_t, T.zeros((U,U)), T.zeros((D,U))
+        return u_t, tt.zeros((U,U)), tt.zeros((D,U))
 
     def get_params(self, symbolic=False, t=None):
         params = [self.u_nominal,self.z_nominal,self.I,self.L]
@@ -352,7 +352,7 @@ class LocalLinearPolicy(Loadable):
         return params
 
     def get_all_shared_vars(self):
-        return [attr for attr in self.__dict__.values() if isinstance(attr,theano.tensor.sharedvar.SharedVariable)]
+        return [attr for attr in self.__dict__.values() if isinstance(attr,tt.sharedvar.SharedVariable)]
 
 class AdjustedPolicy:
     def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI, use_control_input=True, **kwargs):
@@ -371,22 +371,22 @@ class AdjustedPolicy:
         pass
 
     def evaluate(self, m, S=None, t=None, symbolic=False):
-        T = theano.tensor if symbolic else np
+        tt = theano.tensor if symbolic else np
         # get the output of the source policy
         mu,Su,Cu = self.source_policy.evaluate(m,S,t,symbolic)
 
         if self.adjustment_model.trained == True:
             # initialize the inputs to the policy adjustment function
             adj_input_m = m
-            adj_input_S = S if S is not None else T.zeros((m.size,m.size))
+            adj_input_S = S if S is not None else tt.zeros((m.size,m.size))
 
             if self.use_control_input:
-                adj_input_m = T.concatenate([adj_input_m,mu])
+                adj_input_m = tt.concatenate([adj_input_m,mu])
                 # fill input convariance matrix
                 q = adj_input_S.dot(Cu)
-                Sxu_up = T.concatenate([adj_input_S,q],axis=1)
-                Sxu_lo = T.concatenate([q.T,Su],axis=1)
-                adj_input_S = T.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
+                Sxu_up = tt.concatenate([adj_input_S,q],axis=1)
+                Sxu_lo = tt.concatenate([q.T,Su],axis=1)
+                adj_input_S = tt.concatenate([Sxu_up,Sxu_lo],axis=0) # [D+U]x[D+U]
 
             if symbolic:
                 madj,Sadj,Cadj = self.adjustment_model.predict_symbolic(adj_input_m,adj_input_S)
@@ -400,7 +400,7 @@ class AdjustedPolicy:
             Su = Su + Sadj + Su_adj + Su_adj.T
             if S is not None:
                 if symbolic:
-                    Cu = Cu + theano.tensor.nlinalg.matrix_inverse(S).dot(Sxu_adj[:m.size])
+                    Cu = Cu + tt.nlinalg.matrix_inverse(S).dot(Sxu_adj[:m.size])
                 else:
                     Cu = Cu + np.linalg.pinv(S).dot(Sxu_adj[:m.size])
 
@@ -459,7 +459,7 @@ class NNPolicy(NN):
         D = m.shape[0]
         if symbolic:
             if s is None:
-                s = theano.tensor.zeros((D,D))
+                s = tt.zeros((D,D))
             ret = self.predict_symbolic(m,s)
         else:
             if s is None:

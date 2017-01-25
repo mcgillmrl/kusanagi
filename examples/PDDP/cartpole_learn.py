@@ -1,11 +1,11 @@
 import atexit,os,sys
 import numpy as np
-import ghost.regression.GP as GP
-from ghost.learners.PDDP import PDDP
-from ghost.cost import quadratic_loss
-from ghost.control import LocalLinearPolicy
-from shell.cartpole import default_params,CartpoleDraw
-import utils
+from kusanagi.ghost.regression import GP,GP_UI,SSGP,SSGP_UI
+from kusanagi.ghost.learners.PDDP import PDDP
+from kusanagi.ghost.cost import quadratic_loss
+from kusanagi.ghost.control import LocalLinearPolicy
+from kusanagi.shell.cartpole import default_params,CartpoleDraw
+from kusanagi import utils
 #np.random.seed(31347)
 np.set_printoptions(linewidth=500)
 
@@ -17,7 +17,7 @@ if __name__ == '__main__':
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     learner_params['policy_class'] = LocalLinearPolicy
-    learner_params['dynmodel_class'] = GP.SSGP_UI
+    learner_params['dynmodel_class'] = GP_UI
     # initialize learner
     learner = PDDP(**learner_params)
     try:

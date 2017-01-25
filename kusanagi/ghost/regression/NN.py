@@ -1,5 +1,6 @@
 #!/usr/bin/env python2
 import theano
+import theano.tensor as tt
 import lasagne
 import numpy as np
 import time
@@ -42,14 +43,14 @@ class NN(Loadable):
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX)
         Loadable.__init__(self,name=name,filename=self.filename)
         # register theanno functions and shared variables for saving
-        self.register_types([theano.tensor.sharedvar.SharedVariable, theano.compile.function_module.Function])
+        self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
     
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
             # TODO get all the params from the lasagne neural net model
-            return [(attr_name,self.__dict__[attr_name]) for attr_name in self.__dict__.keys() if isinstance(self.__dict__[attr_name],theano.tensor.sharedvar.SharedVariable)]
+            return [(attr_name,self.__dict__[attr_name]) for attr_name in self.__dict__.keys() if isinstance(self.__dict__[attr_name],tt.sharedvar.SharedVariable)]
         else:
-            v= [attr for attr in self.__dict__.values() if isinstance(attr,theano.tensor.sharedvar.SharedVariable)]
+            v= [attr for attr in self.__dict__.values() if isinstance(attr,tt.sharedvar.SharedVariable)]
             v.extend(lasagne.layers.get_all_params(self.network))
             return v
     
@@ -132,22 +133,22 @@ class NN(Loadable):
 
         utils.print_with_stamp('Initialising loss function',self.name)
         # evaluate the output in mini_batches
-        train_inputs = theano.tensor.fmatrix('%s>train_inputs'%(self.name))
-        train_targets = theano.tensor.fmatrix('%s>train_targets'%(self.name))
+        train_inputs = tt.fmatrix('%s>train_inputs'%(self.name))
+        train_targets = tt.fmatrix('%s>train_targets'%(self.name))
         train_predictions = lasagne.layers.get_output(self.network, train_inputs, deterministic=False)#, batch_norm_update_averages=True, batch_norm_use_averages=True)
         train_predictions = train_predictions*self.Ys + self.Ym
 
         # build the dropout loss function ( See Gal and Gharamani 2015)
-        #loss = theano.tensor.mean(lasagne.objectives.squared_error(train_predictions,train_targets))
+        #loss = tt.mean(lasagne.objectives.squared_error(train_predictions,train_targets))
         delta_y = train_predictions-train_targets
         N,E = train_targets.shape
         l2_penalty = lasagne.regularization.regularize_network_params(self.network, lasagne.regularization.l2)
         l2_weight = self.lscale2*(1.0-self.drop_hidden)/(2.0*N)
         if self.learn_noise:
-            error = ((delta_y*theano.tensor.exp(-self.logsn))**2).sum(1)
+            error = (tt.square(delta_y*tt.exp(-self.logsn))).sum(1)
             loss = 0.5*error.mean() + l2_weight*l2_penalty + self.logsn.sum()
         else:
-            error = (delta_y**2).sum(1)
+            error = tt.square(delta_y).sum(1)
             loss = error.mean() + l2_weight*l2_penalty 
 
 
@@ -173,8 +174,8 @@ class NN(Loadable):
 
 
     def init_predict(self):
-        mx = theano.tensor.vector('mx')
-        Sx = theano.tensor.matrix('Sx') if self.uncertain_inputs else None
+        mx = tt.vector('mx')
+        Sx = tt.matrix('Sx') if self.uncertain_inputs else None
 
         # initialize variable for input covariance 
         input_vars = [mx] if not self.uncertain_inputs else [mx,Sx]
@@ -213,7 +214,7 @@ class NN(Loadable):
             z_std = self.m_rng.normal((self.dropout_samples,self.D))
 
             # transform to multivariate normal
-            Lx = theano.tensor.slinalg.cholesky(Sx)
+            Lx = tt.slinalg.cholesky(Sx)
             x = mx + z_std.dot(Lx.T)
         else:
             x = mx[None,:]
@@ -236,18 +237,18 @@ class NN(Loadable):
         #y = theano.printing.Print('dropout_sample')(y)
         y = y.astype('float64')
         
-        n = theano.tensor.cast(y.shape[0], dtype='float64')
+        n = tt.cast(y.shape[0], dtype='float64')
         # empirical mean
         M = y.mean(axis=0)
         # empirical covariance
-        S = theano.tensor.diag(theano.tensor.exp(2*self.logsn)) + y.T.dot(y)/n - theano.tensor.outer(M,M)
+        S = tt.diag(tt.exp(2*self.logsn)) + y.T.dot(y)/n - tt.outer(M,M)
         # Sx^-1 times empirical input output covariance
         if Sx is not None:
-            C = x.T.dot(y)/n - theano.tensor.outer(mx,M)
-            C = theano.tensor.slinalg.solve_lower_triangular(Lx,C)
-            C = theano.tensor.slinalg.solve_upper_triangular(Lx.T,C)
+            C = x.T.dot(y)/n - tt.outer(mx,M)
+            C = tt.slinalg.solve_lower_triangular(Lx,C)
+            C = tt.slinalg.solve_upper_triangular(Lx.T,C)
         else:
-            C = theano.tensor.zeros((self.D,self.E))
+            C = tt.zeros((self.D,self.E))
         
         return [M,S,C]
 

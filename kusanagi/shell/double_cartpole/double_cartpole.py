@@ -1,11 +1,12 @@
 import numpy as np
 import theano
+import theano.tensor as tt
 
-from kusanagi.ghost.control import RBFPolicy
-from kusanagi.ghost.regression.GP import GP_UI
 from kusanagi.shell.plant import ODEPlant, PlantDraw
 from kusanagi.ghost.cost import quadratic_saturating_loss
 from kusanagi.utils import print_with_stamp, gTrig_np, gTrig2
+from kusanagi.ghost.control import RBFPolicy
+from kusanagi.ghost.regression import GP_UI
 from matplotlib import pyplot as plt
 
 def default_params():
@@ -28,17 +29,22 @@ def default_params():
     policy_params = {}
     policy_params['m0'] = learner_params['x0']
     policy_params['S0'] = learner_params['S0']
-    policy_params['n_basis'] = 200
+    policy_params['n_inducing'] = 200
     policy_params['maxU'] = [20]
     # dynamics model
     dynmodel_params = {}
-    dynmodel_params['n_basis'] = 100
+    dynmodel_params['n_inducing'] = 100
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,0,0,0]
     cost_params['width'] = 0.25
     cost_params['expl'] = 0.0
     cost_params['pendulum_lengths'] = [ plant_params['params']['l2'], plant_params['params']['l3'] ]
+
+    learner_params['max_evals'] = 150
+    learner_params['conv_thr'] = 1e-12
+    learner_params['min_method'] = 'BFGS'#utils.fmin_lbfgs
+    learner_params['realtime'] = True
 
     learner_params['plant'] = plant_params
     learner_params['policy'] = policy_params
@@ -77,7 +83,7 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
         loss_params['Q'] = Q/c**2
         m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
         if b is not None and b != 0.0:
-            m_cost += b*theano.tensor.sqrt(s_cost) # UCB  exploration term
+            m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
         M_cost.append(m_cost)
         S_cost.append(s_cost)
     
@@ -109,7 +115,7 @@ def double_cartpole_loss_openAI(mx,Sx,params, loss_func=quadratic_saturating_los
         loss_params['Q'] = Q/c**2
         m_cost, s_cost = loss_func(mx,Sx,loss_params)
         if b is not None and b != 0.0:
-            m_cost += b*theano.tensor.sqrt(s_cost) # UCB  exploration term
+            m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
         M_cost.append(m_cost)
         S_cost.append(s_cost)
     
