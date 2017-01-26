@@ -1,3 +1,4 @@
+import climin
 import os
 import numpy as np
 import theano
@@ -6,10 +7,9 @@ import theano.tensor as tt
 from collections import OrderedDict
 from functools import partial
 from scipy.optimize import minimize, basinhopping
-from scipy.cluster.vq import kmeans
 from theano import function as F, shared as S
 from theano.tensor.nlinalg import matrix_dot
-from theano.sandbox.linalg import psd,matrix_inverse,det,cholesky
+from theano.sandbox.linalg import matrix_inverse,det,cholesky
 from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular, solve
 
 import cov
@@ -357,7 +357,8 @@ class GP(Loadable):
             res = predict(mx)
         return res
     
-    def loss(self,loghyp):
+    def loss(self,params,parameter_shapes):
+        loghyp = utils.unwrap_params(params,parameter_shapes)
         self.set_params({'loghyp': loghyp})
         if self.nigp:
             # update the nigp parameter using the derivative of the mean function
@@ -367,11 +368,12 @@ class GP(Loadable):
 
         loss,dloss = self.dloss_fn()
         loss = loss.sum()
-        dloss = dloss.flatten()
+        dloss = utils.wrap_params([dloss])
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (loss.astype(np.float64), dloss.astype(np.float64))
         utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
-        if loss < self.besthyp[0]:
+
+        if hasattr(self,'besthyp') and loss < self.besthyp[0]:
             self.besthyp = [loss, loghyp]
 
         return res
@@ -403,18 +405,28 @@ class GP(Loadable):
             self.dM2_fn = F((),dM2,name='%s>dM2'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
 
-        loghyp0 = self.loghyp.eval()
-        utils.print_with_stamp('Current hyperparameters:\n%s'%(loghyp0),self.name)
+        p0 = [self.loghyp.eval()]
+        parameter_shapes = [p.shape for p in p0]
+        utils.print_with_stamp('Current hyperparameters:\n%s'%(p0),self.name)
         utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
         self.n_evals=0
         min_methods = self.min_method if type(self.min_method) is list else [self.min_method]
         min_methods.extend([m for m in DETERMINISTIC_MIN_METHODS if m != self.min_method])
-        self.besthyp = [np.array(self.loss_fn()).sum(), loghyp0]
+        self.besthyp = [np.array(self.loss_fn()).sum(), p0]
         for m in min_methods:
             try:
                 utils.print_with_stamp("Using %s optimizer"%(m),self.name)
-                opt_res = minimize(m_loss, loghyp0, jac=m_loss.derivative, method=m, tol=self.conv_thr, options={'maxiter': self.max_evals, 'maxcor': 100, 'maxls':30})
+                opt_res = minimize(m_loss, 
+                                   utils.wrap_params(p0),
+                                   jac=m_loss.derivative,
+                                   args=parameter_shapes,
+                                   method=m, 
+                                   tol=self.conv_thr,
+                                   options={'maxiter': self.max_evals,
+                                            'maxcor': 100,
+                                            'maxls': 30}
+                                  )
                 break
             except ValueError:
                 print ''
@@ -422,8 +434,8 @@ class GP(Loadable):
                 loghyp0 = self.besthyp[1]
 
         print ''
-        loghyp = opt_res.x.reshape(loghyp0.shape)
-        self.state_changed = not np.allclose(loghyp0,loghyp,1e-6,1e-9)
+        loghyp = utils.unwrap_params(opt_res.x,parameter_shapes)
+        self.state_changed = not np.allclose(utils.wrap_params(p0),opt_res.x,1e-6,1e-9)
         self.set_params({'loghyp': loghyp})
         utils.print_with_stamp('New hyperparameters:\n%s'%(self.loghyp.eval()),self.name)
         utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)

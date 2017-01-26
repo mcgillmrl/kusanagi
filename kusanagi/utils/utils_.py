@@ -311,9 +311,11 @@ def get_compiled_gTrig(angi,D,derivs=True):
 
 def wrap_params(p_list):
     # flatten out and concatenate the parameters
+    if type(p_list) is not list:
+        p_list = [p_list]
     P = []
     for pi in p_list:
-        pi = np.array(pi.__array__()) # to deal with other types that do not implement the numpy array API
+        pi = np.array(pi.__array__()) # to deal with other types that do not implement the numpy array API. TODO this will cause a GPU memory transfer!
         P.append(pi.flatten())
     P = np.concatenate(P)
     return P
@@ -329,16 +331,20 @@ def unwrap_params(P,parameter_shapes):
         p.append( P[i:i+npi].reshape(pshape) )
         # set index to the beginning  of next parameter
         i += npi
+    if len(p) == 1:
+        p = p[0]
     return p
 
 class MemoizeJac(object):
-    def __init__(self, fun):
+    def __init__(self, fun, args=()):
         self.fun = fun
         self.value, self.jac = None, None
         self.x = None
+        self.args=tuple(args)
 
     def _compute(self, x, *args):
         self.x = np.asarray(x).copy()
+        args += self.args
         self.value, self.jac = self.fun(x, *args)
 
     def __call__(self, x, *args):

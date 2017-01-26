@@ -8,7 +8,7 @@ from kusanagi.shell.cartpole import default_params, CartpoleDraw
 from kusanagi.ghost.learners.PILCO import PILCO
 from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
-np.random.seed(31337)
+#np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':

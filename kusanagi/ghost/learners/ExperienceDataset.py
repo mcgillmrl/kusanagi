@@ -1,5 +1,6 @@
 import os,sys
 import theano
+import numpy as np
 from kusanagi import utils
 from kusanagi.base.Loadable import Loadable
 
@@ -72,6 +73,7 @@ class ExperienceDataset(Loadable):
         return len(self.states)
 
     def reset(self):
+        ''' Empties the internal data structures'''
         utils.print_with_stamp('Resetting experience dataset (WARNING: data from %s will be overwritten)'%(self.filename),self.name)
         self.time_stamps = []
         self.states = []
@@ -92,3 +94,19 @@ class ExperienceDataset(Loadable):
             self.immediate_cost = self.immediate_cost[:episode]
             self.policy_parameters = self.policy_parameters[:episode]
             self.state_changed = True
+
+    def get_dynmodel_dataset(self, deltas=True, filter_episodes=[]):
+	''' Returns a dataset where the inputs are state_actions and the outputs are next steps'''
+        X,Y=[],[]
+	if type(filter_episodes) is not list:
+	    filter_episodes = [filter_episodes]
+	if len(filter_episodes) < 1:
+	    # use all data
+	    filter_episodes = range(self.n_episodes())
+        for ep in filter_episodes:
+            states,actions = self.states[ep],self.actions[ep]
+            x = np.concatenate([states,actions],axis=1)
+            y = x[1:,:-1] - x[:-1,:-1] if deltas else x[1:,:-1]
+            X.append(x[:-1])
+            Y.append(y)
+        return np.concatenate(X),np.concatenate(Y)

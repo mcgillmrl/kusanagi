@@ -1,4 +1,5 @@
 from GP import *
+from scipy.cluster.vq import kmeans
 
 class SPGP(GP):
     '''Sparse Pseudo Input FITC approximation Snelson and Gharammani 2005'''

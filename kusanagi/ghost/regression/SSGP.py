@@ -104,6 +104,7 @@ class SSGP(GP):
         # on a 64bit system, scipy optimize complains if we pass a 32 bit float
         res = (loss.astype(np.float64), dloss.astype(np.float64))
         utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
+        self.besthyp = [np.array(self.loss_ss_fn()).sum(), utils.unwrap_params(params,parameter_shapes)]
         return res
 
     def train(self, pretrain_full=True):
@@ -154,7 +155,29 @@ class SSGP(GP):
         p0 = [self.loghyp.get_value(),self.w.get_value()]
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = utils.MemoizeJac(self.loss_ss)
-        opt_res = minimize(m_loss_ss, utils.wrap_params(p0), args=parameter_shapes, jac=m_loss_ss.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(self.max_evals)})
+        self.n_evals=0
+        min_methods = self.min_method if type(self.min_method) is list else [self.min_method]
+        min_methods.extend([m for m in DETERMINISTIC_MIN_METHODS if m != self.min_method])
+        self.besthyp = [np.array(self.loss_ss_fn()).sum(), p0]
+        for m in min_methods:
+            try:
+                utils.print_with_stamp("Using %s optimizer"%(m),self.name)
+                opt_res = minimize(m_loss_ss, 
+                                   utils.wrap_params(p0), 
+                                   args=parameter_shapes,
+                                   jac=m_loss_ss.derivative,
+                                   method=m,
+                                   tol=self.conv_thr,
+                                   options={'maxiter': int(self.max_evals),
+                                            'maxcor': 100,
+                                            'maxls': 30}
+                                  )
+                break
+            except ValueError:
+                print ''
+                utils.print_with_stamp("Optimization with %s failed"%(m),self.name)
+                p0 = self.besthyp[1]
+
         print ''
         loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.set_params({'loghyp': loghyp, 'w': w})
