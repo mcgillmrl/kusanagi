@@ -13,18 +13,20 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     # setup output directory
-    utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
+    utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole_0.33m'))
 
     J = 4                                                                   # number of random initial trials
-    N = 100                                                                 # learning iterations
+    N = 15                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
     learner_params['params']['realtime'] = False
     learner_params['dynmodel_class'] = kreg.SSGP_UI
     learner_params['params']['dynmodel']['n_inducing'] = 100
-    #learner_params['min_method'] = 'ADAM'
-    #learner_params['dynmodel_class'] = NN
+    learner_params['params']['plant']['params']['l'] = 0.33
+    learner_params['params']['cost']['pendulum_length'] = 0.33
+    #learner_params['params']['min_method'] = 'ADAM'
+    #learner_params['dynmodel_class'] = kreg.NN
     #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
     learner = PILCO(**learner_params)
     try:

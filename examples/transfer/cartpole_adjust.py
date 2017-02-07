@@ -5,7 +5,7 @@ import numpy as np
 from functools import partial
 
 from kusanagi import ghost
-from kusanagi.ghost.regression import GP
+from kusanagi.ghost import regression as kreg
 from kusanagi.ghost import control
 from kusanagi.ghost.learners.ExperienceDataset import ExperienceDataset
 from kusanagi.ghost.transfer.trajectory_matching import TrajectoryMatching
@@ -26,14 +26,14 @@ if __name__ == '__main__':
     simulation = False
     base_dir = os.path.dirname(ghost.__file__).rsplit('/',1)[0]
     #source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole')
-    source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole_serial/cartpole_serial')
+    source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole')
     #source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole_serial')
-    target_dir = os.path.join(base_dir,'examples/learned_policies/target_video')
+    target_dir = os.path.join(base_dir,'examples/learned_policies/target_sim2robot')
     # SOURCE DOMAIN 
     utils.set_output_dir(source_dir)
     # load source experience
-    #source_experience = ExperienceDataset(filename='PILCO_SSGP_UI_Cartpole_RBFPolicy_sat_dataset')
-    source_experience = ExperienceDataset(filename='PILCO_SSGP_UI_SerialPlant_RBFPolicy_sat_dataset')
+    source_experience = ExperienceDataset(filename='PILCO_SSGP_UI_Cartpole_RBFPolicy_sat_dataset')
+    #source_experience = ExperienceDataset(filename='PILCO_SSGP_UI_SerialPlant_RBFPolicy_sat_dataset')
     #load source policy
     source_policy = RBFPolicy(filename='RBFPolicy_sat_5_1_cpu_float64')
     
@@ -43,12 +43,12 @@ if __name__ == '__main__':
     target_params['params']['H'] = 5.0                                               # control horizon
     target_params['params']['max_evals'] = 125
     # policy
-    target_params['dynmodel_class'] = GP.SSGP_UI
-    target_params['invdynmodel_class'] = GP.GP_UI
+    target_params['dynmodel_class'] = kreg.SSGP_UI
+    target_params['invdynmodel_class'] = kreg.GP_UI
     target_params['params']['invdynmodel'] = {}
     target_params['params']['invdynmodel']['max_evals'] = 1000
     target_params['policy_class'] = AdjustedPolicy
-    target_params['params']['policy']['adjustment_model_class'] = GP.GP
+    target_params['params']['policy']['adjustment_model_class'] = kreg.GP
     #target_params['params']['policy']['adjustment_model_class'] = control.RBFPolicy
     #target_params['params']['policy']['n_inducing'] = 20
     target_params['params']['policy']['sat_func'] = None # this is because we probably need bigger controls for heavier pendulums

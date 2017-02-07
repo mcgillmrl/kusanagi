@@ -13,6 +13,7 @@ from kusanagi.ghost.control import RandPolicy
 from kusanagi.base.Loadable import Loadable
 
 from scipy.optimize import minimize, basinhopping
+import climin
 from kusanagi import utils
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
@@ -301,6 +302,30 @@ class EpisodicLearner(Loadable):
         utils.print_with_stamp('Initial value estimate [%f]'%(v0),self.name) 
         p0 = self.policy.get_params(symbolic=False)
         self.best_p = [v0,p0]
+        parameter_shapes = [p.shape for p in p0]
+        m_loss = utils.MemoizeJac(self.loss,args=(parameter_shapes,))
+        '''
+        p0_vec = utils.wrap_params(p0)
+        opt = climin.Lbfgs(p0_vec,
+                           m_loss,
+                           m_loss.derivative,
+                           n_factors=100,
+                           line_search=climin.linesearch.ScipyLineSearch(p0_vec,
+                                                                         m_loss,
+                                                                         m_loss.derivative,
+                                                                         c1=1e-4,
+                                                                         c2=0.9,
+                                                                         amax=10,
+                                                                        )
+                          )
+        for info in opt:
+            print info['n_iter'], info['step_length']
+            if 'step_length' in info and abs(info['step_length']) < 1e-100:
+                break
+            if self.n_evals >= self.max_evals:
+                break
+        print ''        
+        '''
         min_method = self.min_method.upper()
         # deterministic gradients
         if min_method in DETERMINISTIC_MIN_METHODS:
@@ -322,7 +347,13 @@ class EpisodicLearner(Loadable):
                                        args=parameter_shapes, 
                                        method=min_methods[i], 
                                        tol=self.conv_thr, 
-                                       options={'maxiter': self.max_evals, 'maxcor': 100, 'maxls': 30})
+                                       options={ 'maxiter': self.max_evals, 
+                                                 'maxfun': self.max_evals, 
+                                                 'maxcor': 100, 
+                                                 'maxls': 30, 
+                                                 'ftol': 1e6*np.finfo(float).eps, 
+                                                 'gtol': 1.0e-6 }
+                                       )
                     # break the loop since we succeeded
                     self.policy.set_params(utils.unwrap_params(opt_res.x,parameter_shapes))
                     break
@@ -364,7 +395,6 @@ class EpisodicLearner(Loadable):
             raise ValueError(error_str)
      
         print '' 
-
         v,p = self.best_p
         self.policy.set_params(p)
         utils.print_with_stamp('Done training. New value [%f]'%(v),self.name)

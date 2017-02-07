@@ -290,12 +290,14 @@ class PILCO(EpisodicLearner):
         [mc_,Sc_,mx_,Sx_], updts = self.get_rollout(mx0,Sx0,H,gamma0)
 
         utils.print_with_stamp('Compiling belief state propagation',self.name)
-        self.rollout_fn = theano.function([], 
-                                          [mc_,Sc_,mx_,Sx_], 
-                                          allow_input_downcast=True, 
-                                          updates=updts,
-                                          name='%s>rollout_fn'%(self.name))
+        rollout_fn = theano.function([], 
+                                     [mc_,Sc_,mx_,Sx_], 
+                                     allow_input_downcast=True, 
+                                     updates=updts,
+                                     name='%s>rollout_fn'%(self.name))
         utils.print_with_stamp("Done compiling.",self.name)
+
+        return rollout_fn
 
     def compile_policy_gradients(self, mx0 = None, Sx0 = None, H = None, gamma0 = None):
         ''' Compiles a theano function graph that computes the gradients of the expected accumulated a given
@@ -319,17 +321,18 @@ class PILCO(EpisodicLearner):
         retvars.extend(dJdp)
 
         utils.print_with_stamp('Compiling policy gradients',self.name)
-        self.policy_gradient_fn = theano.function([],
-                                                   retvars, 
-                                                   allow_input_downcast=True, 
-                                                   updates=updts,
-                                                   name="%s>policy_gradient_fn"%(self.name))
+        policy_gradient_fn = theano.function([],
+                                             retvars, 
+                                             allow_input_downcast=True, 
+                                             updates=updts,
+                                             name="%s>policy_gradient_fn"%(self.name))
         utils.print_with_stamp("Done compiling.",self.name)
+        return policy_gradient_fn
 
     def rollout(self, mx0, Sx0, H_steps, discount, symbolic=False):
         ''' Function that ensures the compiled rollout function is initialised before we can call it'''
         if self.rollout_fn is None:
-            self.compile_rollout()
+            self.rollout_fn = self.compile_rollout()
 
         # update shared vars
         self.mx0.set_value(mx0)
@@ -343,7 +346,7 @@ class PILCO(EpisodicLearner):
     def policy_gradient(self, mx0, Sx0, H_steps, discount):
         ''' Function that ensures the compiled policy gradients function is initialised before we can call it'''
         if self.policy_gradient_fn is None:
-            self.compile_policy_gradients()
+            self.policy_gradient_fn = self.compile_policy_gradients()
             self.start_time = time.time()
 
         # update shared vars

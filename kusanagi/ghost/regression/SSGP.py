@@ -169,8 +169,11 @@ class SSGP(GP):
                                    method=m,
                                    tol=self.conv_thr,
                                    options={'maxiter': int(self.max_evals),
+                                            'maxfun': self.max_evals, 
                                             'maxcor': 100,
-                                            'maxls': 30}
+                                            'maxls': 30,
+                                            'ftol': 1e7*np.finfo(float).eps, 
+                                            'gtol': 1e-5 }
                                   )
                 break
             except ValueError:

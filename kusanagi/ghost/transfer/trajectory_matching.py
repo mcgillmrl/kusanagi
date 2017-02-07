@@ -1,12 +1,12 @@
 import numpy as np 
 from kusanagi import utils
-from kusanagi.ghost.regression import GP
+from kusanagi.ghost import regression as kreg
 from kusanagi.ghost.learners.EpisodicLearner import EpisodicLearner
 from kusanagi.ghost.learners.PILCO import PILCO
 import theano
 
 class TrajectoryMatching(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=GP.GP_UI, invdynmodel_class=GP.GP_UI, experience = None, async_plant=False, name='TrajectoryMatching', wrap_angles=False, filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, invdynmodel_class=kreg.GP_UI, experience = None, async_plant=False, name='TrajectoryMatching', wrap_angles=False, filename_prefix=None):
         self.angle_idims = params['angle_dims']
         self.maxU = params['policy']['maxU']
         # initialize source policy
@@ -122,11 +122,11 @@ class TrajectoryMatching(PILCO):
             Su_t = np.stack(Su_t)
             
             if self.policy.use_control_input:
-                X.append( np.hstack( [x_s[:-1] , u_s[:-1]] ))
+                X.append( np.hstack( [x_s[1:-1] , u_s[1:-1], u_s[:-2]] ))
             else:
                 X.append( x_s[:-1] )
 
-            Y.append( u_t-u_s[:-1] )
+            Y.append( u_t[1:]-u_s[1:-1] )
             Y_var.append( Su_t )
         '''
         # from latest OPTIMIZED target trajectories (so it doesn't destroy work done by the trajectory optimizer)
@@ -162,6 +162,17 @@ class TrajectoryMatching(PILCO):
 
         self.policy.adjustment_model.set_dataset(X,Y,Y_var=Y_var)
         self.policy.adjustment_model.train()
+    
+    def trajectory_likelihood(self,src_dynmodel,target_exp, episodes=[]):
+        ''' Computes the likelihood of target_exp given a trained dynmodel '''
+        if not hasattr(self,'src_models'):
+            self.src_models = {}
+
+        if len(episodes) < 1:
+            episodes = range(target_exp.states)
+
+        # compile rollout for given dynmodel
+
 
     def sample_trajectory_source(self, N=1):
         # TODO gather data using the source dynamics model or plant

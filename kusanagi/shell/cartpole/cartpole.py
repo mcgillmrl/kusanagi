@@ -42,9 +42,9 @@ def default_params():
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
 
-    learner_params['max_evals'] = 150
+    learner_params['max_evals'] = 200
     learner_params['conv_thr'] = 1e-12
-    learner_params['min_method'] = 'L-BFGS-B'#utils.fmin_lbfgs
+    learner_params['min_method'] = 'BFGS'#utils.fmin_lbfgs
     learner_params['realtime'] = True
 
     learner_params['plant'] = plant_params
