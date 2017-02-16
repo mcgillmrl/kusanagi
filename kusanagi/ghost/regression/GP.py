@@ -15,11 +15,11 @@ from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular
 import cov
 import SNRpenalty
 from kusanagi import utils
-from kusanagi.base.Loadable import Loadable
+from kusanagi.ghost.regression import BaseRegressor
 
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
-class GP(Loadable):
-    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, uncertain_inputs=False, snr_penalty=SNRpenalty.SEard, filename=None, **kwargs):
+class GP(BaseRegressor):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, snr_penalty=SNRpenalty.SEard, filename=None, **kwargs):
         # theano options
         self.profile= profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
@@ -31,10 +31,9 @@ class GP(Loadable):
         self.state_changed = True
         self.should_recompile = False
         self.trained = False
-        self.uncertain_inputs = uncertain_inputs
         self.snr_penalty = snr_penalty
         self.covs = (cov.SEard, cov.Noise)
-        self.fixed_params = []
+	self.uncertain_inputs = True
         
         # dimension related variables
         self.N = 0
@@ -53,7 +52,6 @@ class GP(Loadable):
             self.E = Y_dataset.shape[1]
 
         #symbolic varianbles
-        self.param_names = []
         self.loghyp = None; self.logsn = None
         self.X = None; self.Y = None;
         self.iK = None; self.L = None; self.beta = None; self.nigp=None; self.Y_var=None; self.X_cov=None
@@ -67,19 +65,15 @@ class GP(Loadable):
         # name of this class for printing command line output and saving
         self.name = name
         # filename for saving
-        self.filename = '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX)
+        self.filename = filename if filename is not None else  '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX)
+        BaseRegressor.__init__(self,name=name,filename=self.filename)
         if filename is not None:
-            self.filename = filename
-            Loadable.__init__(self,name=name,filename=self.filename)
             self.load()
-        else:
-            Loadable.__init__(self,name=name,filename=self.filename)
-        
 
         # register theanno functions and shared variables for saving
         self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
         # register additional variables for saving
-        self.register(['trained', 'param_names', 'fixed_params'])
+        self.register(['trained'])
         
         # initialize the class if no pickled version is available
         if X_dataset is not None and Y_dataset is not None:
@@ -88,6 +82,7 @@ class GP(Loadable):
             utils.print_with_stamp('Finished initialising GP regressor',self.name)
         
         self.ready = False
+        self.predict_fn = None
 
     def load(self, output_folder=None,output_filename=None):
         ''' loads the state from file, and initializes additional variables'''
@@ -103,35 +98,11 @@ class GP(Loadable):
         if hasattr(self,'loghyp') and self.loghyp:
             self.logsn = self.loghyp[:,-1]
 
-    def get_dataset(self):
-        return self.X.get_value(), self.Y.get_value()
-
     def set_dataset(self,X_dataset,Y_dataset,X_cov=None,Y_var=None):
-        # ensure we don't change the number of input and output dimensions ( the number of samples can change)
-        assert X_dataset.shape[0] == Y_dataset.shape[0], "X_dataset and Y_dataset must have the same number of rows"
-        if hasattr(self,'X') and self.X:
-            assert self.X.get_value(borrow=True).shape[1] == X_dataset.shape[1]
-        if hasattr(self,'Y') and self.Y:
-            assert self.Y.get_value(borrow=True).shape[1] == Y_dataset.shape[1]
-        
-        # first, convert numpy arrays to appropriate type
-        X_dataset = X_dataset.astype( 'float64' )# + 1e-5*np.random.randn(*X_dataset.shape)
-        Y_dataset = Y_dataset.astype( 'float64' )
-        # dims = non_angle_dims + 2*angle_dims
-        self.N = X_dataset.shape[0]
-        self.D = X_dataset.shape[1]
-        self.E = Y_dataset.shape[1]
+        # set dataset
+        super(GP,self).set_dataset(X_dataset,Y_dataset)
 
-        # now we create symbolic shared variables
-        if self.X is None:
-            self.X = S(X_dataset,name='%s>X'%(self.name),borrow=True)
-        else:
-            self.X.set_value(X_dataset,borrow=True)
-        if self.Y is None:
-            self.Y = S(Y_dataset,name='%s>Y'%(self.name),borrow=True)
-        else:
-            self.Y.set_value(Y_dataset,borrow=True)
-        
+        # extra operations when setting the dataset (specific to this class)
         self.X_cov = X_cov
         if Y_var is not None:
             if self.Y_var is None:
@@ -149,6 +120,7 @@ class GP(Loadable):
             self.ready = True
 
     def append_dataset(self,X_dataset,Y_dataset,X_cov=None,Y_var=None):
+        # overrides append_dataset from BaseRegressor
         if self.X is None:
             self.set_dataset(X_dataset,Y_dataset,X_cov,Y_var)
         else:
@@ -180,34 +152,6 @@ class GP(Loadable):
         if self.logsn is None:
             self.logsn = self.loghyp[:,-1]
 
-    def set_params(self, params):
-        if type(params) is list:
-            params = dict(zip(self.param_names,params))
-        for pname in params.keys():
-            # create shared variable if it doesn't exist
-            if pname not in self.__dict__ or self.__dict__[pname] is None:
-                p = S(params[pname],name='%s>%s'%(self.name,pname),borrow=True)
-                self.__dict__[pname] = p
-                if pname not in self.param_names:
-                    self.param_names.append(pname)
-            # otherwise, update the value of the shared variable
-            else:
-                p = self.__dict__[pname]
-                pv = params[pname].reshape(p.get_value(borrow=True).shape)
-                p.set_value(pv,borrow=True)
-
-    def get_params(self, symbolic=False, as_dict=False, ignore_fixed=True):
-        if ignore_fixed:
-            params = [ self.__dict__[pname] for pname in self.param_names if (pname in self.__dict__ and self.__dict__[pname] and not pname in self.fixed_params) ]
-        else:
-            params = [ self.__dict__[pname] for pname in self.param_names if (pname in self.__dict__ and self.__dict__[pname]) ]
-
-        if not symbolic:
-            params = [ p.get_value() for p in params]
-        if as_dict:
-            params = dict(zip(self.param_names,params))
-        return params
-
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
             return [(attr_name,self.__dict__[attr_name]) for attr_name in self.__dict__.keys() if isinstance(self.__dict__[attr_name],tt.sharedvar.SharedVariable)]
@@ -221,15 +165,15 @@ class GP(Loadable):
 
         # these are shared variables for the kernel matrix, its cholesky decomposition and K^-1 dot Y
         if self. iK is None:
-            self.iK = S(np.zeros((self.E,self.N,self.N),dtype='float64'), name="%s>iK"%(self.name))
+            self.iK = S(np.zeros((self.E,self.N,self.N)), name="%s>iK"%(self.name))
         if self.L is None:
-            self.L = S(np.zeros((self.E,self.N,self.N),dtype='float64'), name="%s>L"%(self.name))
+            self.L = S(np.zeros((self.E,self.N,self.N)), name="%s>L"%(self.name))
         if self.beta is None:
-            self.beta = S(np.zeros((self.E,self.N),dtype='float64'), name="%s>beta"%(self.name))
+            self.beta = S(np.zeros((self.E,self.N)), name="%s>beta"%(self.name))
         if self.X_cov is not None and self.nigp is None:
-            self.nigp = S(np.zeros((self.E,self.N),dtype='float64'), name="%s>nigp"%(self.name))
+            self.nigp = S(np.zeros((self.E,self.N)), name="%s>nigp"%(self.name))
 
-        N = self.X.shape[0].astype('float64')
+        N = self.X.shape[0].astype(theano.config.floatX)
         
         def log_marginal_likelihood(Y,loghyp,i,X,EyeN,nigp=None,y_var=None):
             # initialise the (before compilation) kernel function
@@ -291,30 +235,6 @@ class GP(Loadable):
             self.dloss_fn = F((),(loss,dloss),name='%s>dloss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         self.state_changed = True # for saving
     
-    def init_predict(self, init_loss=True, compile_funcs=True):
-        if init_loss and self.loss_fn is None:
-            self.init_loss()
-
-        utils.print_with_stamp('Initialising expression graph for prediction',self.name)
-        # Note that this handles n_samples inputsa
-        # initialize variable for input vector ( input mean in the case of uncertain inputs )
-        mx = tt.vector('mx')
-        Sx = tt.matrix('Sx')
-        # initialize variable for input covariance 
-        input_vars = [mx] if not self.uncertain_inputs else [mx,Sx]
-        
-        # get prediction
-        output_vars = self.predict_symbolic(mx,Sx)
-        prediction = []
-        for o in output_vars:
-            if o is not None:
-                prediction.append(o)
-        
-        # compile prediction
-        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
-        self.predict_fn = F(input_vars,prediction,name='%s>predict_'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True)
-        self.state_changed = True # for saving
-
     def predict_symbolic(self,mx,Sx):
         idims = self.D
         odims = self.E
@@ -339,23 +259,6 @@ class GP(Loadable):
         V = tt.zeros((self.D,self.E))
 
         return M,S,V
-    
-    def predict(self,mx,Sx = None):
-        predict = None
-        if self.predict_fn is None or self.should_recompile:
-            self.init_predict()
-        predict = self.predict_fn
-
-        odims = self.E
-        idims = self.D
-        res = None
-        if self.uncertain_inputs:
-            if Sx is None:
-                Sx = np.zeros((idims,idims))
-            res = predict(mx, Sx)
-        else:
-            res = predict(mx)
-        return res
     
     def loss(self,params,parameter_shapes):
         loghyp = utils.unwrap_params(params,parameter_shapes)
@@ -404,7 +307,6 @@ class GP(Loadable):
 
             self.dM2_fn = F((),dM2,name='%s>dM2'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
-
         p0 = [self.loghyp.eval()]
         parameter_shapes = [p.shape for p in p0]
         utils.print_with_stamp('Current hyperparameters:\n%s'%(p0),self.name)
@@ -447,8 +349,8 @@ class GP(Loadable):
 class GP_UI(GP):
     ''' Gaussian process with uncertain inputs (Deisenroth et al  2009)'''
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'GP_UI', idims=None, odims=None, profile=False, **kwargs):
-        super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=True, **kwargs)
-
+        super(GP_UI, self).__init__(X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,**kwargs)
+    
     def predict_symbolic(self,mx,Sx):
         idims = self.D
         odims = self.E
@@ -458,13 +360,14 @@ class GP_UI(GP):
         
         # initialize some variables
         sf2 = tt.exp(2*self.loghyp[:,idims])
+        sn2 = tt.exp(2*self.loghyp[:,idims+1])
         eyeE = tt.tile(tt.eye(idims),(odims,1,1))
         lscales = tt.exp(self.loghyp[:,:idims])
         iL = eyeE/lscales.dimshuffle(0,1,'x')
 
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
-        iLdotSx = iL.dot(Sx.astype('float64')) # force the matrix inverse to be done with double precision
+        iLdotSx = iL.dot(Sx) # force the matrix inverse to be done with double precision
         B = tt.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + tt.eye(idims)                              #TODO vectorize this
         #t = tt.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
         t = tt.stack([solve(B[i].T, inp[i].T).T for i in xrange(odims)])      # E x N x D
@@ -483,10 +386,10 @@ class GP_UI(GP):
         logk_r = logk.dimshuffle(0,'x',1)
         logk_c = logk.dimshuffle(0,1,'x')
         Lambda = tt.square(iL)
-        R = tt.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.astype('float64').T).transpose(0,1,3,2) + tt.eye(idims) # again forcing the matrix inverse to be done with double precision
+        R = tt.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx).transpose(0,1,3,2) + tt.eye(idims) # again forcing the matrix inverse to be done with double precision
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         
-        M2 = tt.zeros((self.E,self.E),dtype='float64')
+        M2 = tt.zeros((self.E,self.E))
         # initialize indices
         indices = [ tt.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
@@ -528,22 +431,37 @@ class RBFGP(GP_UI):
         self.register(['sat_func'])
         self.register(['iK','beta','L'])
 
-    def predict_symbolic(self,mx,Sx):
+    def predict_symbolic(self,mx,Sx=None):
         idims = self.D
         odims = self.E
-
         #centralize inputs 
         zeta = self.X - mx
         
         # initialize some variables
         sf2 = tt.exp(2*self.loghyp[:,idims])
+        sn2 = tt.exp(2*self.loghyp[:,idims+1])
         eyeE = tt.tile(tt.eye(idims),(odims,1,1))
         lscales = tt.exp(self.loghyp[:,:idims])
         iL = eyeE/lscales.dimshuffle(0,1,'x')
+        
+        if Sx is None:
+            print 'deterministic rbf'
+            # predictive mean ( we don't need to do the rest )
+            inp = iL.dot(zeta.T).transpose(0,2,1)
+            l = tt.exp(-0.5*tt.sum(inp**2,2))
+            lb = l*self.beta # beta should have been precomputed in init_loss # E x Na
+            M = tt.sum(lb,1)*sf2
+            # apply saturating function to the output if available
+            if self.sat_func is not None:
+                # saturate the output
+                M = self.sat_func(M)
 
+            return M, tt.zeros((self.D,self.D)), tt.zeros((self.D,self.E))
+
+        print 'moment matching rbf'
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
-        iLdotSx = iL.dot(Sx.astype('float64')) # force the matrix inverse to be done with double precision
+        iLdotSx = iL.dot(Sx)
         B = tt.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + tt.eye(idims)   #TODO vectorize this
         #t = tt.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
         t = tt.stack([solve(B[i].T, inp[i].T).T for i in xrange(odims)])      # E x N x D
@@ -562,48 +480,34 @@ class RBFGP(GP_UI):
         logk_r = logk.dimshuffle(0,'x',1)
         logk_c = logk.dimshuffle(0,1,'x')
         Lambda = tt.square(iL)
-        R = tt.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.astype('float64').T).transpose(0,1,3,2) + tt.eye(idims) # again forcing the matrix inverse to be done with double precision
+        R = tt.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx).transpose(0,1,3,2) + tt.eye(idims) # again forcing the matrix inverse to be done with double precision
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         
-        if self.E == 1:
-            # for some reason, compiling the policy gradients breaks when the output dimension of this class is one
-            #  TODO: do the same in the other classes that compute second_moments
-            # with a scan loop,
+        M2 = tt.zeros((self.E,self.E))
+        # initialize indices
+        indices = [ tt.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
+
+        def second_moments(i,j,M2,beta,R,logk_c,logk_r,z_,Sx):
             # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-            Rij = R[0,0]
-            #n2 = logk_c[0] + logk_r[0] + utils.maha(z_[0],-z_[0],0.5*matrix_inverse(Rij).dot(Sx))
-            n2 = logk_c[0] + logk_r[0] + utils.maha(z_[0],-z_[0],0.5*solve(Rij,Sx))
+            Rij = R[i,j]
+            #n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
+            n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*solve(Rij,Sx))
             Q = tt.exp( n2 )/tt.sqrt(det(Rij))
             # Eq 2.55
-            m2 = matrix_dot(self.beta[0],Q,self.beta[0].T)
-            m2 = m2 + 1e-6
-            M2 = tt.stack([m2])
-        else:
-            M2 = tt.zeros((self.E,self.E),dtype='float64')
-            # initialize indices
-            indices = [ tt.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
+            m2 = matrix_dot(beta[i], Q, beta[j])
+            
+            m2 = theano.ifelse.ifelse(tt.eq(i,j), m2 + 1e-6, m2)
+            M2 = tt.set_subtensor(M2[i,j], m2)
+            M2 = theano.ifelse.ifelse(tt.eq(i,j), M2 , tt.set_subtensor(M2[j,i], m2))
+            return M2
 
-            def second_moments(i,j,M2,beta,R,logk_c,logk_r,z_,Sx):
-                # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
-                Rij = R[i,j]
-                #n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*matrix_inverse(Rij).dot(Sx))
-                n2 = logk_c[i] + logk_r[j] + utils.maha(z_[i],-z_[j],0.5*solve(Rij,Sx))
-                Q = tt.exp( n2 )/tt.sqrt(det(Rij))
-                # Eq 2.55
-                m2 = matrix_dot(beta[i], Q, beta[j])
-                
-                m2 = theano.ifelse.ifelse(tt.eq(i,j), m2 + 1e-6 , m2)
-                M2 = tt.set_subtensor(M2[i,j], m2)
-                M2 = theano.ifelse.ifelse(tt.eq(i,j), M2 , tt.set_subtensor(M2[j,i], m2))
-                return M2
-
-            M2_,updts = theano.scan(fn=second_moments, 
-                                sequences=indices,
-                                outputs_info=[M2],
-                                non_sequences=[self.beta,R,logk_c,logk_r,z_,Sx],
-                                allow_gc=False,
-                                name="%s>M2_scan"%(self.name))
-            M2 = M2_[-1]
+        M2_,updts = theano.scan(fn=second_moments, 
+                            sequences=indices,
+                            outputs_info=[M2],
+                            non_sequences=[self.beta,R,logk_c,logk_r,z_,Sx],
+                            allow_gc=False,
+                            name="%s>M2_scan"%(self.name))
+        M2 = M2_[-1]
 
         S = M2 - tt.outer(M,M)
 

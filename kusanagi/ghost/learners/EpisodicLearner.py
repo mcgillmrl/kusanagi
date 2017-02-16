@@ -54,7 +54,7 @@ class EpisodicLearner(Loadable):
         self.discount = params['discount'] if 'discount' in params else 1.0
         self.max_evals = params['max_evals'] if 'max_evals' in params else 150
         self.conv_thr = params['conv_thr'] if 'conv_thr' in params else 1e-12
-        self.learning_rate = params['learning_rate'] if 'learning_rate' in params else 1.0
+        self.learning_rate = params['learning_rate'] if 'learning_rate' in params else 1e-3
         self.min_method = params['min_method'] if 'min_method' in params else "L-BFGS-B"
         self.random_walk = params['random_walk'] if 'random_walk' in params else False
 
@@ -151,7 +151,7 @@ class EpisodicLearner(Loadable):
                 utils.print_with_stamp('Cost parameters: %s'%(self.cost.keywords['params']),self.name)
                 mx = tt.vector('mx')
                 Sx = tt.matrix('Sx')
-                self.evaluate_cost = theano.function((mx,Sx),self.cost(mx,Sx), allow_input_downcast=True)
+                self.evaluate_cost = theano.function((mx,Sx),self.cost(mx,Sx), allow_input_downcast=True, on_unused_input='ignore')
             else:
                 utils.print_with_stamp('No cost function provided',self.name)
     
@@ -374,20 +374,24 @@ class EpisodicLearner(Loadable):
                 utils.print_with_stamp("Compiling optimizer",self.name)
                 min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
                 p = self.policy.get_params(symbolic=True)
-                updates = min_method_updt(v,p,learning_rate=self.learning_rate)
+                dJdp = self.get_policy_gradients(v,p,clip=10.0)
+                updates = min_method_updt(dJdp,p,learning_rate=self.learning_rate)
                 updates += updts
-                self.train_fn = theano.function([],v,updates=updates)
+                self.train_fn = theano.function([],[v]+dJdp,updates=updates)
                 utils.print_with_stamp("Done compiling.",self.name)
 
             # training loop   
             for i in xrange(self.max_evals):
                 # evaluate current policy and update parameters
-                v = self.train_fn()
+                ret = self.train_fn()
+                v = ret[0]
+                dJdp = ret[1:]
+                gmags = [np.sqrt((djdp**2).sum()) for djdp in dJdp]
+                gmaxs = [np.absolute(djdp).max() for djdp in dJdp]
                 p = self.policy.get_params(symbolic=False)
-                if v<self.best_p[0]:
-                    self.best_p = [v,p]
+                self.best_p = [v,p]
                 self.n_evals+=1
-                utils.print_with_stamp('Current value: %s, Total evaluations: %d    '%(str(v),self.n_evals),
+                utils.print_with_stamp('Current value: %s, Total evaluations: %d, gMags: %s, gmaxs: %s    '%(str(v),self.n_evals,str(gmags),str(gmaxs)),
                                         self.name,True)
         else:
             error_str = 'Unknown minimization method %s' % (self.min_method)

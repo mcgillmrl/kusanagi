@@ -68,7 +68,7 @@ def write_profile_files(gp):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gp_class', nargs='?', help='the name of the GP regressor class (GP,GP_UI,SPGP,SPGP_UI,SSGP,SSGP_UI). Default: GP_UI.', default='GP_UI')
+    parser.add_argument('--gp_class', nargs='?', help='the name of the GP regressor class (GP,GP_UI,SPGP,SPGP_UI,SSGP,SSGP_UI,BNN). Default: GP_UI.', default='GP_UI')
     parser.add_argument('--n_train', nargs='?', type=int, help='Number of training samples. Default: 500.', default=500)
     parser.add_argument('--n_test', nargs='?', type=int, help='Number of testing samples. Default: 200', default=200)
     parser.add_argument('--idims', nargs='?', type=int, help='Input dimensions. Default: 4', default=4)

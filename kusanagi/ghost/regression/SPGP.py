@@ -62,15 +62,15 @@ class SPGP(GP):
             
             # initialize shared variables
             if self.iKmm is None:
-                self.iKmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing),dtype='float64'), name="%s>iKmm"%(self.name))
+                self.iKmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing)), name="%s>iKmm"%(self.name))
             if self.Lmm is None:
-                self.Lmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing),dtype='float64'), name="%s>Lmm"%(self.name))
+                self.Lmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing)), name="%s>Lmm"%(self.name))
             if self.Amm is None:
-                self.Amm = S(np.zeros((self.E,self.n_inducing,self.n_inducing),dtype='float64'), name="%s>Amm"%(self.name))
+                self.Amm = S(np.zeros((self.E,self.n_inducing,self.n_inducing)), name="%s>Amm"%(self.name))
             if self.iBmm is None:
-                self.iBmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing),dtype='float64'), name="%s>iBmm"%(self.name))
+                self.iBmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing)), name="%s>iBmm"%(self.name))
             if self.beta_sp is None:
-                self.beta_sp = S(np.zeros((self.E,self.n_inducing),dtype='float64'), name="%s>beta_sp"%(self.name))
+                self.beta_sp = S(np.zeros((self.E,self.n_inducing)), name="%s>beta_sp"%(self.name))
 
             # initialize the training loss function of the sparse FITC approximation
             def log_marginal_likelihood(Y,loghyp,X,X_sp,EyeM):
@@ -163,7 +163,7 @@ class SPGP(GP):
             kL = solve_lower_triangular(Lmm,k)
             kA = solve_lower_triangular(Amm,k)
             variance = kernel_func(mx[None,:],all_pairs=False) - kL.dot(kL) -  kA.dot(kA)
-
+            
             return mean, variance
         
         (M,S), updts = theano.scan(fn=predict_odim, sequences=[self.Lmm,self.Amm,self.beta_sp,self.loghyp], non_sequences=[self.X_sp,mx],allow_gc=False)
@@ -220,6 +220,7 @@ class SPGP_UI(SPGP,GP_UI):
         zeta = self.X_sp - mx
         
         # initialize some variables
+        sn2 = tt.exp(2*self.loghyp[:,idims+1])
         sf2 = tt.exp(2*self.loghyp[:,idims])
         eyeE = tt.tile(tt.eye(idims),(odims,1,1))
         lscales = tt.exp(self.loghyp[:,:idims])
@@ -248,7 +249,7 @@ class SPGP_UI(SPGP,GP_UI):
         R = tt.dot((Lambda.dimshuffle(0,'x',1,2) + Lambda).transpose(0,1,3,2),Sx.T).transpose(0,1,3,2) + tt.eye(idims)
         z_= Lambda.dot(zeta.T).transpose(0,2,1) 
         
-        M2 = tt.zeros((self.E,self.E),dtype='float64')
+        M2 = tt.zeros((self.E,self.E))
         # initialize indices
         indices = [ tt.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 

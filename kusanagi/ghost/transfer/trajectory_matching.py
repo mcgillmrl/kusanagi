@@ -41,7 +41,7 @@ class TrajectoryMatching(PILCO):
         # TODO Set the source dynamics
         pass
 
-    def train_inverse_dynamics(self):
+    def train_inverse_dynamics(self, deltas=True):
         utils.print_with_stamp('Training inverse dynamics model',self.name)
 
         X = []
@@ -56,8 +56,10 @@ class TrajectoryMatching(PILCO):
 
                 # inputs are pairs of consecutive states < x_{t}, x_{t+1} >
                 x_ = utils.gTrig_np(x, self.angle_idims)
-                #X.append( np.hstack((x_[:-1],x[1:])) )
-                X.append( np.hstack((x_[:-1],x_[1:])) )
+                if deltas:
+                    X.append( np.hstack((x_[:-1], x_[:-1] - x_[1:])) )
+                else:
+                    X.append( np.hstack((x_[:-1], x_[1:])) )
                 # outputs are the actions that produced the input state transition
                 Y.append( u[:-1] )
 
@@ -90,9 +92,9 @@ class TrajectoryMatching(PILCO):
         self.inverse_dynamics_model.train()
         utils.print_with_stamp('Done training inverse dynamics model',self.name)
 
-    def train_adjustment(self):
+    def train_adjustment(self,deltas=True):
         n_source_traj=5
-        n_target_traj=2
+        n_target_traj=3
         total_trajectories=len(self.source_experience.states)
         X = []
         Y = []
@@ -105,9 +107,14 @@ class TrajectoryMatching(PILCO):
             x = np.array(self.source_experience.states[i])
             x_s = utils.gTrig_np(x, self.angle_idims)
             # source transitions
-            t_s = np.hstack((x_s[:-1],x_s[1:])) 
+            if deltas:
+                t_s = np.hstack((x_s[:-1],x_s[:-1]-x_s[1:])) 
+            else:
+                t_s = np.hstack((x_s[:-1],x_s[1:])) 
+
             # source actions
             u_s = np.array(self.source_experience.actions[i])
+
             # target actions
             u_t = []
             Su_t = []
@@ -122,44 +129,16 @@ class TrajectoryMatching(PILCO):
             Su_t = np.stack(Su_t)
             
             if self.policy.use_control_input:
-                X.append( np.hstack( [x_s[1:-1] , u_s[1:-1], u_s[:-2]] ))
+                X.append( np.hstack( [x_s[1:-1] , u_s[1:-1]] ))
             else:
                 X.append( x_s[:-1] )
 
             Y.append( u_t[1:]-u_s[1:-1] )
-            Y_var.append( Su_t )
-        '''
-        # from latest OPTIMIZED target trajectories (so it doesn't destroy work done by the trajectory optimizer)
-        total_target_trajectories = len(self.experience.states)
-        for i in xrange(total_target_trajectories-n_target_traj,total_target_trajectories):
-            x_t = np.array(self.experience.states[i])[:-1]
-            x_t = utils.gTrig_np(x_t, self.angle_idims)
-            u_t = np.array(self.experience.actions[i])[:-1]
-            # for every state in the target domain trajectory
-            u_s = []
-            Su_s = []
-            for x in x_t:
-                # get the action from the source policy
-                u,Su,Cu = self.policy.source_policy.evaluate(x)
-                u_s.append(u)
-                Su_s.append(1.0*np.ones((u.size,))) # this will put a high weight on the target trajectories
-
-            u_s = np.stack(u_s)
-            Su_s = np.stack(Su_s)
-            
-            if self.policy.use_control_input:
-                X.append( np.hstack( [x_t , u_s] ))
-            else:
-                X.append( x_t )
-
-            Y.append( u_t-u_s )
-            Y_var.append( Su_s )
-        '''
+            Y_var.append( Su_t[1:] )
 
         X = np.vstack(X)
         Y = np.vstack(Y)
         Y_var = np.vstack(Y_var)
-
         self.policy.adjustment_model.set_dataset(X,Y,Y_var=Y_var)
         self.policy.adjustment_model.train()
     

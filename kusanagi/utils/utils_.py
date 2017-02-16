@@ -421,25 +421,45 @@ def plot_results(learner,H=None):
     if H is None:
         H = learner.H
     H_steps =int( np.ceil(H/dt))
-    # plot last run cost vs predicted cost
-    plt.figure('Cost of last run and Predicted cost')
-    plt.gca().clear()
     T_range = np.arange(0,H+dt,dt)
     cost = np.array(learner.experience.immediate_cost[-1])[:,0]
     rollout_ =  learner.rollout(x0,S0,H_steps,1)
-    plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
-    plt.plot(T_range,cost)
-    print_with_stamp('Predicted value: [%f]'%(np.array(rollout_[0]).sum()),'plot_results')
-
     states = np.array(learner.experience.states[-1])
-    predicted_means = np.array(rollout_[2])
-    predicted_vars = np.array(rollout_[3])
-    
-    for d in xrange(x0.size):
-        plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
+
+    if hasattr(learner,'trajectory_samples'):
+        predicted_costs_means = np.array(rollout_[0])
+        predicted_costs_vars = np.array(rollout_[1])
+        predicted_trajectories = np.array(rollout_[2])
+        # plot  cost of trajectories
+        plt.figure('Cost of last run and Predicted cost')
         plt.gca().clear()
-        plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
-        plt.plot(T_range,states[:,d])
+        plt.errorbar(T_range,predicted_costs_means,color='b',yerr=2*np.sqrt(predicted_costs_vars))
+        plt.plot(T_range,cost,color='g', linewidth=2)
+        
+        # plot all trajectories
+        for d in xrange(x0.size):
+            plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
+            plt.gca().clear()
+            for tr_d in predicted_trajectories:
+                plt.plot(T_range,tr_d[:,d],color='b', alpha=0.3)
+            plt.plot(T_range,states[:,d],color='g', linewidth=2)
+    else:
+        # plot last run cost vs predicted cost
+        plt.figure('Cost of last run and Predicted cost')
+        plt.gca().clear()
+
+        # plot predictive distributions
+        plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
+        plt.plot(T_range,cost)
+        print_with_stamp('Predicted value: [%f]'%(np.array(rollout_[0]).sum()),'plot_results')
+        predicted_means = np.array(rollout_[2])
+        predicted_vars = np.array(rollout_[3])
+        
+        for d in xrange(x0.size):
+            plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
+            plt.gca().clear()
+            plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
+            plt.plot(T_range,states[:,d])
 
     plt.figure('Total cost per learning iteration')
     plt.gca().clear()

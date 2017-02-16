@@ -23,10 +23,10 @@ np.set_printoptions(linewidth=500)
 if __name__ == '__main__':
     N = 100
     J = 100
-    simulation = False
+    simulation = True
     base_dir = os.path.dirname(ghost.__file__).rsplit('/',1)[0]
     #source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole')
-    source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole')
+    source_dir = os.path.join(base_dir,'/home/juancamilog/.kusanagi/output/cartpole_0.5m/')
     #source_dir = os.path.join(base_dir,'examples/learned_policies/cartpole_serial')
     target_dir = os.path.join(base_dir,'examples/learned_policies/target_sim2robot')
     # SOURCE DOMAIN 
@@ -65,7 +65,7 @@ if __name__ == '__main__':
         target_params['params']['plant']['port'] = '/dev/ttyACM0'
     else:
         # TODO get these as command line arguments
-        target_params['params']['plant']['params'] = {'l': 0.5, 'm': 1.5, 'M': 1.5, 'b': 0.1, 'g': 9.82}
+        target_params['params']['plant']['params'] = {'l': 0.6, 'm': 1.5, 'M': 1.5, 'b': 0.1, 'g': 9.82}
         target_params['params']['cost']['pendulum_length'] = target_params['params']['plant']['params']['l']
 
     target_params['params']['source_policy'] = source_policy
@@ -89,10 +89,10 @@ if __name__ == '__main__':
             tm.train_adjustment()
 
         n_episodes = len(tm.experience.states)
-        if n_episodes > J:
+        #if n_episodes > J:
             # fine tuning the adjustment (RL)
-            tm.train_dynamics()
-            tm.train_policy()
+        #    tm.train_dynamics()
+        #    tm.train_policy()
 
         tm.save()
 

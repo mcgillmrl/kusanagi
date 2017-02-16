@@ -1,8 +1,8 @@
 from GP import *
 
 class SSGP(GP):
-    ''' Sparse Spectral Gaussian Process Regression LAzaro-GRedilla et al 2010'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_inducing=100,  uncertain_inputs=False, **kwargs):
+    ''' Sparse Spectrum Gaussian Process Regression LAzaro-GRedilla et al 2010'''
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_inducing=100, **kwargs):
         self.w = None
         self.sr = None
         self.Lmm = None
@@ -11,23 +11,23 @@ class SSGP(GP):
         self.loss_ss_fn = None
         self.dloss_ss_fn = None
         self.n_inducing = n_inducing
-        GP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs, **kwargs)
+        GP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,**kwargs)
     
     def init_loss(self,cache_vars=True):
         super(SSGP, self).init_loss()
-        utils.print_with_stamp('Initialising expression graph for sparse spectral training loss function',self.name)
+        utils.print_with_stamp('Initialising expression graph for sparse spectrum training loss function',self.name)
         idims = self.D
         odims = self.E
 
         if self.iA is None:
-            self.iA = S(np.zeros((self.E,2*self.n_inducing,2*self.n_inducing),dtype='float64'), name="%s>iA"%(self.name))
+            self.iA = S(np.zeros((self.E,2*self.n_inducing,2*self.n_inducing)), name="%s>iA"%(self.name))
         if self.Lmm is None:
-            self.Lmm = S(np.zeros((self.E,2*self.n_inducing,2*self.n_inducing),dtype='float64'), name="%s>Lmm"%(self.name))
+            self.Lmm = S(np.zeros((self.E,2*self.n_inducing,2*self.n_inducing)), name="%s>Lmm"%(self.name))
         if self.beta_ss is None:
-            self.beta_ss = S(np.zeros((self.E,2*self.n_inducing),dtype='float64'), name="%s>beta_ss"%(self.name))
+            self.beta_ss = S(np.zeros((self.E,2*self.n_inducing)), name="%s>beta_ss"%(self.name))
         
-        # sample initial unscaled spectral points
-        self.set_spectral_samples()
+        # sample initial unscaled spectrum points
+        self.set_spectrum_samples()
 
         #init variables
         N = self.X.shape[0].astype('float64')
@@ -37,7 +37,7 @@ class SSGP(GP):
         sf2M = sf2/M
         sn2 = tt.exp(2*self.loghyp[:,idims+1])
         srdotX = self.sr.dot(self.X.T)
-        phi_f = tt.concatenate( [tt.sin(srdotX), tt.cos(srdotX)], axis=1 ).astype('float64') # E x 2*n_inducing x N
+        phi_f = tt.concatenate( [tt.sin(srdotX), tt.cos(srdotX)], axis=1 ) # E x 2*n_inducing x N
         
         # TODO vectorize these ops
         def log_marginal_likelihood(sf2M, sn2, phi_f, Y, EyeM):
@@ -48,7 +48,7 @@ class SSGP(GP):
             Yc = solve_lower_triangular(Lmm,(phi_f.dot(Y)))
             beta_ss = sf2M*solve_upper_triangular(Lmm.T,Yc)
 
-            loss_ss = 0.5*( Y.dot(Y) - sf2M*Yc.dot(Yc) )/sn2 + tt.sum(tt.log(tt.diag(Lmm))) + (0.5*N - M)*tt.log(sn2) + 0.5*N*np.log(2*np.pi)
+            loss_ss = 0.5*( Y.dot(Y) - sf2M*Yc.dot(Yc) )/sn2 + tt.sum(tt.log(tt.diag(Lmm))) + (0.5*N - M)*tt.log(sn2) + 0.5*N*np.log(2*np.pi) 
             
             return loss_ss,iA,Lmm,beta_ss
         
@@ -71,21 +71,25 @@ class SSGP(GP):
             penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': tt.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
             loss_ss += self.snr_penalty(self.loghyp)
 
-        # Compute the gradients for the sum of loss for all output dimensions
-        dloss_ss = tt.grad(loss_ss.sum(),[self.loghyp,self.w])
+        # add a penalty for high frequencies
+        loss_ss += tt.sum(tt.abs_(self.sr))
 
-        utils.print_with_stamp('Compiling sparse spectral training loss function',self.name)
+        # Compute the gradients for the sum of loss for all output dimensions
+        dloss_ss = tt.grad(loss_ss.sum(), [self.loghyp,self.w])
+        #dloss_ss =[  dloss_ss[0], 1e-3*dloss_ss[1] ] # scale the gradient for frequencies
+
+        utils.print_with_stamp('Compiling sparse spectrum training loss function',self.name)
         self.loss_ss_fn = F((),loss_ss,name='%s>loss_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-        utils.print_with_stamp('Compiling gradient of sparse spectral training loss function',self.name)
+        utils.print_with_stamp('Compiling gradient of sparse spectrum training loss function',self.name)
         self.dloss_ss_fn = F((),(loss_ss,dloss_ss[0],dloss_ss[1]),name='%s>dloss_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
 
-    def set_spectral_samples(self,w=None):
+    def set_spectrum_samples(self,w=None):
         idims = self.D
         odims = self.E
         if w is None:
-            w = np.random.randn(self.n_inducing,odims,idims).astype('float64')
+            w = np.random.randn(self.n_inducing,odims,idims)
         else:
-            w = w.reshape((self.n_inducing,odims,idims)).astype('float64')
+            w = w.reshape((self.n_inducing,odims,idims))
     
         self.set_params({'w': w})
         
@@ -134,20 +138,20 @@ class SSGP(GP):
         if self.loss_ss_fn is None or self.should_recompile:
             self.init_loss()
 
-        # initialize spectral samples
+        # initialize spectrum samples
         loss = self.loss_ss_fn()
         best_w = self.w.get_value()
 
-        # try a couple spectral samples and pick the one with the lowest loss
+        # try a couple spectrum samples and pick the one with the lowest loss
         for i in xrange(100):
-            self.set_spectral_samples()
+            self.set_spectrum_samples()
             loss_i = self.loss_ss_fn()
             for d in xrange(odims):
                 if np.all(loss_i[d] < loss[d]):
                     loss[d] = loss_i[d]
                     best_w[:,d,:] = self.w.get_value()[:,d,:]
 
-        self.set_spectral_samples( best_w )
+        self.set_spectrum_samples( best_w )
 
         # train the pseudo input locations
         utils.print_with_stamp('loss SS: %s'%(np.array(self.loss_ss_fn())),self.name)
@@ -169,7 +173,7 @@ class SSGP(GP):
                                    method=m,
                                    tol=self.conv_thr,
                                    options={'maxiter': int(self.max_evals),
-                                            'maxfun': self.max_evals, 
+                                            'maxfun': int(self.max_evals),
                                             'maxcor': 100,
                                             'maxls': 30,
                                             'ftol': 1e7*np.finfo(float).eps, 
@@ -209,16 +213,16 @@ class SSGP(GP):
             variance[i] = sn2*(1 + (sf2/M)*phi_x_L.dot( phi_x_L ))
 
         # reshape output variables
-        M = tt.stack(mean).tt.flatten()
-        S = tt.diag(tt.stack(variance).tt.flatten())
+        M = tt.stack(mean).T.flatten()
+        S = tt.diag(tt.stack(variance).T.flatten())
         V = tt.zeros((self.D,self.E))
 
         return M,S,V
 
 class SSGP_UI(SSGP, GP_UI):
-    ''' Sparse Spectral Gaussian Process Regression with Uncertain Inputs'''
+    ''' Sparse Spectrum Gaussian Process Regression with Uncertain Inputs'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_inducing=100, **kwargs):
-        SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_inducing=n_inducing,uncertain_inputs=True, **kwargs)
+        SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_inducing=n_inducing,**kwargs)
 
     def predict_symbolic(self,mx,Sx):
         #if self.N < self.n_inducing:
@@ -254,12 +258,12 @@ class SSGP_UI(SSGP, GP_UI):
         
         srdotSxdotsr_c = srdotSxdotsr.dimshuffle(0,1,'x')
         srdotSxdotsr_r = srdotSxdotsr.dimshuffle(0,'x',1)
-        M2 = tt.zeros((self.E,self.E),dtype='float64')
+        M2 = tt.zeros((self.E,self.E))
         # initialize indices
         indices = [ tt.as_index_variable(idx) for idx in np.triu_indices(self.E) ]
 
         def second_moments(i,j,M2,beta,iA,sn2,sf2M,sr,srdotSx,srdotSxdotsr_c,srdotSxdotsr_r,sin_srdotx,cos_srdotx):
-            # compute the second moments of the spectral feature vectors
+            # compute the second moments of the spectrum feature vectors
             siSxsj = srdotSx[i].dot(sr[j].T) #Ms x Ms
             sijSxsij = -0.5*(srdotSxdotsr_c[i] + srdotSxdotsr_r[j]) 
             em =  tt.exp(sijSxsij+siSxsj)      # MsxMs

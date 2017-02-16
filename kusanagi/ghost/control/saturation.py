@@ -2,7 +2,7 @@ import theano.tensor as tt
 import numpy as np
 import theano
 
-def gSin(m,v,i=None,e=None,derivs=False):
+def gSin(m,v,i=None,e=None):
     D = m.shape[0]
     if i is None:
         i = tt.arange(D)
@@ -41,18 +41,13 @@ def gSin(m,v,i=None,e=None,derivs=False):
 
     retvars = [M,V,C]
 
-    # compute derivatives
-    if derivs:
-        dretvars = []
-        for r in retvars:
-            dretvars.append( tt.jacobian(r.flatten(),m) )
-        for r in retvars:
-            dretvars.append( tt.jacobian(r.flatten(),v) )
-        retvars.extend(dretvars)
-
     return retvars
 
-def gSat(m,v,i=None,e=None,derivs=False):
+def gSat(m,v=None,i=None,e=None):
+    ''' Reimplementation from the PILCO matlab code. Saturates the input signal to -1 to 1 through the function 
+    sat(x) = (9*sin(x) +sin(3*x))/8.
+    If v is not None, this function returns the output mean, covariance and input-output covariance for computing 
+    the joint distribution p(input,output) as a multivariate Gaussian.'''
     D = m.shape[0]
 
     if i is None:
@@ -64,6 +59,12 @@ def gSat(m,v,i=None,e=None,derivs=False):
     elif e.__class__ is np.array:
         e = tt.as_tensor_variable(e).flatten()
     e = e.astype(m.dtype)
+
+    # if no input variance, return deterministic 
+    if v is None:
+        print 'deterministic sat'
+        return e*(9*tt.sin(m) +tt.sin(3*m))/8
+
     # construct joint distribution of x and 3*x
     Q = tt.vertical_stack(tt.eye(D), 3*tt.eye(D))
     ma = Q.dot(m)
@@ -72,7 +73,7 @@ def gSat(m,v,i=None,e=None,derivs=False):
     # compute the joint distribution of 9*sin(x)/8 and sin(3*x)/8
     i1 = tt.concatenate([i, i+D]);
     e1 = tt.concatenate([9.0*e, e])/8.0;
-    M2, V2, C2 = gSin(ma, va, i1, e1, derivs=False);
+    M2, V2, C2 = gSin(ma, va, i1, e1);
     # get the distribution of (9*sin(x) + sin(3*x))/8
     P = tt.vertical_stack(tt.eye(D), tt.eye(D))
     # mean
@@ -84,14 +85,5 @@ def gSat(m,v,i=None,e=None,derivs=False):
     C = Q.T.dot(C2).dot(P)
     
     retvars = [M,V,C]
-
-    # compute derivatives
-    if derivs:
-        dretvars = []
-        for r in retvars:
-            dretvars.append( tt.jacobian(r.flatten(),m) )
-        for r in retvars:
-            dretvars.append( tt.jacobian(r.flatten(),v) )
-        retvars.extend(dretvars)
 
     return retvars

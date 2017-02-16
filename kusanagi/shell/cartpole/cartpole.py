@@ -42,7 +42,7 @@ def default_params():
     cost_params['expl'] = 0.0
     cost_params['pendulum_length'] = plant_params['params']['l']
 
-    learner_params['max_evals'] = 200
+    learner_params['max_evals'] = 150
     learner_params['conv_thr'] = 1e-12
     learner_params['min_method'] = 'BFGS'#utils.fmin_lbfgs
     learner_params['realtime'] = True
@@ -65,27 +65,46 @@ def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
     D = target.size
     
     #convert angle dimensions
-    targeta = gTrig_np(target,angle_dims).flatten()
+    targeta = utils.gTrig_np(target,angle_dims).flatten()
     Da = targeta.size
-    mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
+
     # build cost scaling function
     Q = np.zeros((Da,Da))
     Q[0,0] = 1; Q[0,-2] = ell; Q[-2,0] = ell; Q[-2,-2] = ell**2; Q[-1,-1]=ell**2
+
+    if Sx is None:
+        if mx.ndim == 1:
+            mx = mx[None,:]
+        mxa = utils.gTrig(mx,angle_dims,D)
+        mxa = mxa.flatten() # since we are dealing with one input vector at a time
+        Sxa = None
+
+        cost = [];
+        # total cost is the sum of costs with different widths
+        for c in cw:
+            loss_params = {}
+            loss_params['target'] = targeta
+            loss_params['Q'] = Q/c**2
+            cost_c = loss_func(mxa,None,loss_params)
+            cost.append(cost_c)
+        
+        return sum(cost), tt.constant(0.0)
+    else:
+        mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
+        
+        M_cost = [] ; S_cost = []
+        # total cost is the sum of costs with different widths
+        for c in cw:
+            loss_params = {}
+            loss_params['target'] = targeta
+            loss_params['Q'] = Q/c**2
+            m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
+            if b is not None and b != 0.0:
+                m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
+            M_cost.append(m_cost)
+            S_cost.append(s_cost)
     
-    M_cost = [] ; S_cost = []
-    
-    # total cost is the sum of costs with different widths
-    for c in cw:
-        loss_params = {}
-        loss_params['target'] = targeta
-        loss_params['Q'] = Q/c**2
-        m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
-        if b is not None and b != 0.0:
-            m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
-        M_cost.append(m_cost)
-        S_cost.append(s_cost)
-    
-    return sum(M_cost), sum(S_cost)
+        return sum(M_cost), sum(S_cost)
 
 class Cartpole(ODEPlant):
     def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Cartpole', integrator='dopri5', atol=1e-12, rtol=1e-12, angle_dims = []):

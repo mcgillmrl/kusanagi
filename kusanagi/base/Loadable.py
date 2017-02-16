@@ -1,4 +1,5 @@
 import os,sys,stat
+import theano
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from kusanagi import utils
 
@@ -16,6 +17,9 @@ class Loadable(object):
         assert isinstance(state,dict), "The state must be a dictionary (Files that saved a lit of variables will need to be converted)"
         for key in state.keys():
             value = state[key]
+            if hasattr(value,'name'):
+                if value.name is not None:
+                    value.name = value.name.replace('[[dot]]','.')
             self.__dict__[key] = value
             # if not already registered, register it so we don't lose data
             if not any([isinstance(value,type_) for type_ in self.registered_types]) or not key in self.registered_keys:
@@ -31,6 +35,7 @@ class Loadable(object):
             value = self.__dict__[attr_name]
             if any([isinstance(value,type_) for type_ in self.registered_types]):
                 state[attr_name] = value
+
         return state
 
     def register(self,variable_names):
