@@ -62,7 +62,6 @@ def gSat(m,v=None,i=None,e=None):
 
     # if no input variance, return deterministic 
     if v is None:
-        print 'deterministic sat'
         return e*(9*tt.sin(m) +tt.sin(3*m))/8
 
     # construct joint distribution of x and 3*x

@@ -17,7 +17,7 @@ if __name__ == '__main__':
     utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole_.5m'))
     
     use_bnn = True
-    J = 4                                                                   # number of random initial trials
+    J = 1                                                                   # number of random initial trials
     N = 30                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
@@ -31,14 +31,14 @@ if __name__ == '__main__':
     learner_params['params']['cost']['pendulum_length'] = .5
     if not use_bnn:
         # gp based PILCO
-        #learner_params['params']['min_method'] = 'ADAM'
         learner = PILCO(**learner_params)
     else:
         # dropout network (BNN) based PILCO
         learner_params['params']['min_method'] = 'ADAM'
+        learner_params['params']['learning_rate'] = 1e-2
+        learner_params['params']['max_evals'] = 1000
         learner_params['dynmodel_class'] = kreg.BNN
-        learner_params['params']['max_evals'] = 100
-        learner_params['params']['H'] = 4.0
+        learner_params['params']['H'] = 2.5
 
         learner = MC_PILCO(**learner_params)
 

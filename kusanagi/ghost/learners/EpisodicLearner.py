@@ -389,7 +389,8 @@ class EpisodicLearner(Loadable):
                 gmags = [np.sqrt((djdp**2).sum()) for djdp in dJdp]
                 gmaxs = [np.absolute(djdp).max() for djdp in dJdp]
                 p = self.policy.get_params(symbolic=False)
-                self.best_p = [v,p]
+                if v < self.best_p[0]:
+                    self.best_p = [v,p]
                 self.n_evals+=1
                 utils.print_with_stamp('Current value: %s, Total evaluations: %d, gMags: %s, gmaxs: %s    '%(str(v),self.n_evals,str(gmags),str(gmaxs)),
                                         self.name,True)

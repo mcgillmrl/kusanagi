@@ -445,7 +445,6 @@ class RBFGP(GP_UI):
         iL = eyeE/lscales.dimshuffle(0,1,'x')
         
         if Sx is None:
-            print 'deterministic rbf'
             # predictive mean ( we don't need to do the rest )
             inp = iL.dot(zeta.T).transpose(0,2,1)
             l = tt.exp(-0.5*tt.sum(inp**2,2))
@@ -458,7 +457,6 @@ class RBFGP(GP_UI):
 
             return M, tt.zeros((self.D,self.D)), tt.zeros((self.D,self.E))
 
-        print 'moment matching rbf'
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
         iLdotSx = iL.dot(Sx)

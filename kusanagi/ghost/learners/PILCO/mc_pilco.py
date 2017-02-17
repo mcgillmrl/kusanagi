@@ -40,7 +40,7 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
     return jac
 
 class MC_PILCO(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=25, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=10, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
         super(MC_PILCO, self).__init__(params, plant_class, policy_class, cost_func,viz_class, dynmodel_class, experience, async_plant, name, filename_prefix)
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
         self.trajectory_samples = theano.shared(np.array(n_samples).astype('int32'), name="%s>trajectory_samples"%(self.name) ) 
@@ -85,13 +85,10 @@ class MC_PILCO(PILCO):
         # compute the successor states
         x_next = x + delta_x
 
-        # add measurement noise (uncorrelated to the dynamics, thus requires draing new samples)
-        #sn2 = tt.exp(2*dynmodel.logsn)
-        #x_next += self.m_rng.normal(x_next.shape).dot(tt.diag(tt.sqrt(0.5*sn2)))
-
-        # get cost ( via moment matching )
+        # get cost ( via moment matching, which will penalize policies that result in multimodal trajectory distributions )
         mx_next = x_next.mean(0)
-        Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next,mx_next)
+        sn2 = tt.exp(2*dynmodel.logsn)
+        Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next,mx_next) + tt.diag(0.5*sn2)
         mc_next, Sc_next = cost(mx_next,Sx_next)
 
         # check if dynamics model has an updates dictionary
