@@ -364,20 +364,10 @@ class PILCO(EpisodicLearner):
         n_episodes = len(self.experience.states)
         
         if n_episodes>0:
-            # construct training dataset
-            for i in xrange(self.next_episode,n_episodes):
-                x = np.array(self.experience.states[i])
-                u = np.array(self.experience.actions[i])
-
-                # inputs are states, concatenated with actions ( excluding the last entry) 
-                x_ = utils.gTrig_np(x, self.angle_idims)
-                X.append( np.hstack((x_[:-1],u[:-1])) )
-                # outputs are changes in state
-                Y.append( x[1:] - x[:-1] )
-
+            # get dataset for dynamics model
+            episodes = range(self.next_episode,n_episodes) if max_episodes is None or n_episodes < max_episodes else range(max(0,n_episodes-max_episodes),n_episodes)
             self.next_episode = n_episodes 
-            X = np.vstack(X)
-            Y = np.vstack(Y)
+            X,Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes, angle_dims=self.angle_idims)
             
             # wrap angles if requested (this might introduce error if the angular velocities are high )
             if self.wrap_angles:
@@ -386,7 +376,7 @@ class PILCO(EpisodicLearner):
 
             # get distribution of initial states
             x0 = np.array([x[0] for x in self.experience.states])
-            if n_episodes > 4:
+            if n_episodes > 2:
                 self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
                 self.Sx0.set_value(np.cov(x0.T).astype(theano.config.floatX))
             else:
@@ -400,8 +390,8 @@ class PILCO(EpisodicLearner):
                 dynamics_filename = self.filename+'_dynamics'
                 self.dynamics_model = dynmodel_class(X,Y,filename=dynamics_filename,**dynmodel_params)
             else:
-                if max_episodes is not None and len(X) > max_episodes:
-                    self.dynamics_model.set_dataset(X[-10:],Y[-10:])
+                if max_episodes is not None and len(episodes) ==  max_episodes:
+                    self.dynamics_model.set_dataset(X,Y)
                 else:
                     # append data to the dynamics model
                     self.dynamics_model.append_dataset(X,Y)

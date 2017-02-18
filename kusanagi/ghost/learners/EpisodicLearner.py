@@ -375,24 +375,28 @@ class EpisodicLearner(Loadable):
                 min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
                 p = self.policy.get_params(symbolic=True)
                 dJdp = self.get_policy_gradients(v,p,clip=10.0)
-                updates = min_method_updt(dJdp,p,learning_rate=self.learning_rate)
+                lr = theano.tensor.scalar('lr')
+                updates = min_method_updt(dJdp,p,learning_rate=lr)
                 updates += updts
-                self.train_fn = theano.function([],[v]+dJdp,updates=updates)
+                self.train_fn = theano.function([lr],[v]+dJdp,updates=updates)
                 utils.print_with_stamp("Done compiling.",self.name)
 
-            # training loop   
+            # training loop
+            v_avg = self.best_p[0]
             for i in xrange(self.max_evals):
                 # evaluate current policy and update parameters
-                ret = self.train_fn()
+                total_evals = self.n_evals + self.max_evals*self.learning_iteration
+                ret = self.train_fn(self.learning_rate)
                 v = ret[0]
                 dJdp = ret[1:]
                 gmags = [np.sqrt((djdp**2).sum()) for djdp in dJdp]
                 gmaxs = [np.absolute(djdp).max() for djdp in dJdp]
                 p = self.policy.get_params(symbolic=False)
+                v_avg = 0.1*v + 0.9*v_avg
                 if v < self.best_p[0]:
-                    self.best_p = [v,p]
+                  self.best_p = [v,p]
                 self.n_evals+=1
-                utils.print_with_stamp('Current value: %s, Total evaluations: %d, gMags: %s, gmaxs: %s    '%(str(v),self.n_evals,str(gmags),str(gmaxs)),
+                utils.print_with_stamp('Current value: %E [Smoothed: %E], Total evaluations: %d, gMags: %s,'%(v,v_avg,self.n_evals,str(gmags)),
                                         self.name,True)
         else:
             error_str = 'Unknown minimization method %s' % (self.min_method)

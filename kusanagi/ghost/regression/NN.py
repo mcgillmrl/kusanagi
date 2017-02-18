@@ -11,7 +11,7 @@ from kusanagi.ghost.regression import BaseRegressor
 
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
-    def __init__(self,idims, odims,  dropout_samples=10, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
+    def __init__(self,idims, odims,  dropout_samples=25, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
         self.D = idims
         self.E = odims
         self.name=name
@@ -111,6 +111,8 @@ class BNN(BaseRegressor):
         else:
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
+
+        print self.Xm.get_value()
 
     def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, name=None):
         from lasagne.layers import InputLayer, DenseLayer

@@ -146,9 +146,8 @@ class BaseRegressor(Loadable):
         if len([p for p in predict.input_storage if p.data is None]) == 2:
             if Sx is None:
                 Sx = np.zeros((self.D,self.D))
-            res = self.predict(mx)
             input_vars.append(Sx)
-
+        
         res = predict(*input_vars)
         return res
     

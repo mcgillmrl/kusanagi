@@ -52,6 +52,7 @@ class RBFPolicy(RBFGP):
 
         # loghyp is no longer the trainable paramter
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
+        self.predict_fn=None
 
     def init_params(self,compile_funcs=False):
         utils.print_with_stamp('Initializing parameters',self.name)

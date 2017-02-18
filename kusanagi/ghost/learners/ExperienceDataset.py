@@ -95,7 +95,7 @@ class ExperienceDataset(Loadable):
             self.policy_parameters = self.policy_parameters[:episode]
             self.state_changed = True
 
-    def get_dynmodel_dataset(self, deltas=True, filter_episodes=[]):
+    def get_dynmodel_dataset(self, deltas=True, filter_episodes=[], angle_dims=[]):
 	''' Returns a dataset where the inputs are state_actions and the outputs are next steps'''
         X,Y=[],[]
 	if type(filter_episodes) is not list:
@@ -104,9 +104,10 @@ class ExperienceDataset(Loadable):
 	    # use all data
 	    filter_episodes = range(self.n_episodes())
         for ep in filter_episodes:
-            states,actions = self.states[ep],self.actions[ep]
-            x = np.concatenate([states,actions],axis=1)
-            y = x[1:,:-1] - x[:-1,:-1] if deltas else x[1:,:-1]
+            states,actions = np.array(self.states[ep]),np.array(self.actions[ep])
+            states_ = utils.gTrig_np(np.array(states), angle_dims)
+            x = np.concatenate([states_,actions],axis=1)
+            y = states[1:,:] - states[:-1,:] if deltas else x[1:,:]
             X.append(x[:-1])
             Y.append(y)
         return np.concatenate(X),np.concatenate(Y)

@@ -434,8 +434,6 @@ class RBFGP(GP_UI):
     def predict_symbolic(self,mx,Sx=None):
         idims = self.D
         odims = self.E
-        #centralize inputs 
-        zeta = self.X - mx
         
         # initialize some variables
         sf2 = tt.exp(2*self.loghyp[:,idims])
@@ -445,17 +443,26 @@ class RBFGP(GP_UI):
         iL = eyeE/lscales.dimshuffle(0,1,'x')
         
         if Sx is None:
+            # first check if we received a vector [D] or a matrix [nxD]
+            if mx.ndim == 1:
+                mx = mx[None,:]
+            #centralize inputs
+            zeta = self.X[:,None,:] - mx[None,:,:]
+
             # predictive mean ( we don't need to do the rest )
-            inp = iL.dot(zeta.T).transpose(0,2,1)
-            l = tt.exp(-0.5*tt.sum(inp**2,2))
-            lb = l*self.beta # beta should have been precomputed in init_loss # E x Na
-            M = tt.sum(lb,1)*sf2
+            inp = (iL[:,None,:,None,:]*zeta[:,None,:,:]).sum(2)   # [ExNxnxD]
+            l = tt.exp(-0.5*tt.sum(inp**2,-1))
+            lb = l*self.beta[:,:,None] # beta should have been precomputed in init_loss # E x N
+            M = tt.sum(lb,1).T*sf2
             # apply saturating function to the output if available
             if self.sat_func is not None:
                 # saturate the output
                 M = self.sat_func(M)
 
             return M, tt.zeros((self.D,self.D)), tt.zeros((self.D,self.E))
+
+        #centralize inputs 
+        zeta = self.X - mx
 
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 

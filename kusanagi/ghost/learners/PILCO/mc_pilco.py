@@ -40,7 +40,7 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
     return jac
 
 class MC_PILCO(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=10, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=25, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
         super(MC_PILCO, self).__init__(params, plant_class, policy_class, cost_func,viz_class, dynmodel_class, experience, async_plant, name, filename_prefix)
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
         self.trajectory_samples = theano.shared(np.array(n_samples).astype('int32'), name="%s>trajectory_samples"%(self.name) ) 
@@ -71,11 +71,8 @@ class MC_PILCO(PILCO):
         xa = utils.gTrig(x,self.angle_idims,D_)
 
         # compute control signal
-        # TODO get rid of the scan
-        def eval_policy(x_i,*args):
-            return policy.evaluate(x_i, symbolic=True)
-        [u,_,__], u_updt= theano.scan(fn=eval_policy , sequences=[xa], non_sequences=shared_vars,name='%s>policy_eval_scan'%(self.name), strict=True,allow_gc=False)
-        
+        u = policy.evaluate(xa, symbolic=True)[0]
+
         # build state-control vectors
         xu = tt.concatenate([xa,u],axis=1)
 
@@ -88,14 +85,10 @@ class MC_PILCO(PILCO):
         # get cost ( via moment matching, which will penalize policies that result in multimodal trajectory distributions )
         mx_next = x_next.mean(0)
         sn2 = tt.exp(2*dynmodel.logsn)
-        Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next,mx_next) + tt.diag(0.5*sn2)
+        Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next,mx_next)# + tt.diag(0.5*sn2)
         mc_next, Sc_next = cost(mx_next,Sx_next)
 
-        # check if dynamics model has an updates dictionary
-        updates = theano.updates.OrderedUpdates()
-        updates += u_updt
-
-        return [mc_next, Sc_next, x_next], updates
+        return [mc_next, Sc_next, x_next]
 
 
     def get_rollout(self, mx0, Sx0, H, gamma0, n_samples, dynmodel=None, policy=None):
@@ -122,14 +115,16 @@ class MC_PILCO(PILCO):
         mv0, Sv0 = self.cost(mx0,Sx0)
 
         # do first iteration of scan here (so if we have any learning iteration updates that depend on computations inside the scan loop, all the inputs are defined outisde the scan)
-        [mv1, Sv1, x1], updates = self.propagate_state(x0,dynmodel,policy,z=z0,shared_vars=shared_vars)
+        [mv1, Sv1, x1] = self.propagate_state(x0,dynmodel,policy,z=z0,shared_vars=shared_vars)
         mv1 *= gamma0; Sv1 *= gamma0*gamma0
+        
+        updates = theano.updates.OrderedUpdates()
         updates += dynmodel.get_dropout_masks()
 
         # this defines the loop where the state is propaagated
         def rollout_single_step(mv,Sv,x,gamma,gamma0,z0,*args):
-            [mv_next, Sv_next, x_next], updates = self.propagate_state(x,dynmodel,policy,z=z0,shared_vars=args)
-            return [gamma*mv_next, gamma*gamma*Sv_next, x_next, gamma*gamma0], updates
+            [mv_next, Sv_next, x_next] = self.propagate_state(x,dynmodel,policy,z=z0,shared_vars=args)
+            return [gamma*mv_next, gamma*gamma*Sv_next, x_next, gamma*gamma0]
         # loop over the planning horizon
         rollout_output, rollout_updts = theano.scan(fn=rollout_single_step, 
                                             outputs_info=[mv1,Sv1,x1,gamma0*gamma0], 
