@@ -7,6 +7,7 @@ from kusanagi.ghost.cost import quadratic_saturating_loss
 from kusanagi.utils import print_with_stamp, gTrig_np, gTrig2
 from kusanagi.ghost.control import RBFPolicy
 from kusanagi.ghost.regression import GP_UI
+from kusanagi import utils
 from matplotlib import pyplot as plt
 
 def default_params():
@@ -53,6 +54,7 @@ def default_params():
 
     return {'params': learner_params, 'plant_class': DoubleCartpole, 'policy_class': RBFPolicy, 'cost_func': double_cartpole_loss, 'dynmodel_class': GP_UI}
 
+# TODO this can be converted into a generic loss function
 def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
     angle_dims = params['angle_dims']
     cw = params['width']
@@ -66,7 +68,7 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
     #convert angle dimensions
     targeta = gTrig_np(target,angle_dims).flatten()
     Da = targeta.size
-    mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
+    
     # build cost scaling function
     cost_dims = np.hstack([0, np.arange(Da-2*len(angle_dims),Da)])[:,None]  # these are the dimensions used to comptue the cost ( x, sin(theta1), cos(theta1), sin(theta2), cos(theta2) )
     Q = np.zeros((Da,Da))
@@ -74,20 +76,43 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
                    [ 0,     0, ell1,     0, ell2]]);
     Q[cost_dims,cost_dims.T] = C.T.dot(C)
     
-    M_cost = [] ; S_cost = []
+    if Sx is None:
+        flatten = False
+        if mx.ndim == 1:
+            flatten = True
+            mx = mx[None,:]
+        mxa = utils.gTrig(mx,angle_dims,D)
+        if flatten:
+            mxa = mxa.flatten() # since we are dealing with one input vector at a time
+        Sxa = None
+
+        cost = [];
+        # total cost is the sum of costs with different widths
+        for c in cw:
+            loss_params = {}
+            loss_params['target'] = targeta
+            loss_params['Q'] = Q/c**2
+            cost_c = loss_func(mxa,None,loss_params)
+            cost.append(cost_c)
+        
+        return sum(cost), tt.constant(0.0)
+    else:
+        mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
+        
+        M_cost = [] ; S_cost = []
+        
+        # total cost is the sum of costs with different widths
+        for c in cw:
+            loss_params = {}
+            loss_params['target'] = targeta
+            loss_params['Q'] = Q/c**2
+            m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
+            if b is not None and b != 0.0:
+                m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
+            M_cost.append(m_cost)
+            S_cost.append(s_cost)
     
-    # total cost is the sum of costs with different widths
-    for c in cw:
-        loss_params = {}
-        loss_params['target'] = targeta
-        loss_params['Q'] = Q/c**2
-        m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
-        if b is not None and b != 0.0:
-            m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
-        M_cost.append(m_cost)
-        S_cost.append(s_cost)
-    
-    return sum(M_cost), sum(S_cost)
+        return sum(M_cost), sum(S_cost)
 
 def double_cartpole_loss_openAI(mx,Sx,params, loss_func=quadratic_saturating_loss):
     angle_dims = params['angle_dims']

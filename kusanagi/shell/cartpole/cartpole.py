@@ -31,7 +31,6 @@ def default_params():
     policy_params['m0'] = learner_params['x0']
     policy_params['S0'] = learner_params['S0']
     policy_params['n_inducing'] = 30
-    #policy_params['hidden_dims'] = [50,50,50]
     policy_params['maxU'] = [10]
     # dynamics model
     dynmodel_params = {}

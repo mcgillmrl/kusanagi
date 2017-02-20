@@ -3,28 +3,21 @@ import signal,sys,os
 import numpy as np
 
 from kusanagi import utils
-from kusanagi.shell.double_cartpole import default_params, DoubleCartpoleDraw
-from kusanagi.ghost.learners.PILCO import PILCO
 from kusanagi.ghost.regression import GP, SSGP_UI
-from kusanagi.ghost.regression.NN import NN
-from kusanagi.ghost.control import NNPolicy
+from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.shell.double_cartpole import default_params, DoubleCartpoleDraw
 from kusanagi.utils import plot_results
+#np.random.seed(31337)
+np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(),'double_cartpole'))
-
-    J = 2                                                                   # number of random initial trials
     N = 100                                                                 # learning iterations
-    # setup learner parameters
     learner_params = default_params()
+    learner_params['params']['plant']['params']['l'] = .5
+    learner_params['params']['cost']['pendulum_length'] = .5
     # initialize learner
-    learner_params['params']['use_empirical_x0'] = True
-    learner_params['dynmodel_class'] = SSGP_UI
-    learner_params['params']['dynmodel']['n_inducing'] = 105
-    #learner_params['min_method'] = 'ADAM'
-    #learner_params['dynmodel_class'] = NN
-    #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
     learner = PILCO(**learner_params)
     learner.load(load_compiled_fns=False)
     atexit.register(learner.stop)
@@ -33,7 +26,6 @@ if __name__ == '__main__':
     atexit.register(draw_cdp.stop)
 
     for i in xrange(N):
-        # execute it on the robot
         learner.plant.reset_state()
         learner.apply_controller()
 

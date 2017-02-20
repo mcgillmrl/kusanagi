@@ -8,7 +8,7 @@ from kusanagi.shell.cartpole import default_params, CartpoleDraw
 from kusanagi.ghost.learners.PILCO import PILCO, MC_PILCO
 from kusanagi.ghost.control import BNNPolicy
 from kusanagi.utils import plot_results
-from time import sleep
+
 #np.random.seed(31337)
 np.set_printoptions(linewidth=500)
 
@@ -23,14 +23,15 @@ if __name__ == '__main__':
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
     learner_params['params']['realtime'] = False
-    learner_params['dynmodel_class'] = kreg.SSGP_UI
-    learner_params['params']['dynmodel']['n_inducing'] = 100
     learner_params['params']['H'] = 4.0
     learner_params['params']['plant']['dt'] = 0.1
     learner_params['params']['plant']['params']['l'] = .5
     learner_params['params']['cost']['pendulum_length'] = .5
+
     if not use_bnn:
         # gp based PILCO
+        learner_params['dynmodel_class'] = kreg.SSGP_UI
+        learner_params['params']['dynmodel']['n_inducing'] = 100
         learner = PILCO(**learner_params)
     else:
         # dropout network (BNN) based PILCO
@@ -62,8 +63,15 @@ if __name__ == '__main__':
         #learner.plant.reset_state()
         #learner.apply_controller()
     else:
-        learner.plant.reset_state()
-        learner.apply_controller()
+        last_pp = learner.experience.policy_parameters[-1]
+        current_pp = learner.policy.get_params(symbolic=False)
+        should_run = True
+        for lastp,curp in zip(last_pp,current_pp):
+            should_run = should_run and not np.allclose(lastp,curp)
+
+        if should_run:
+            learner.plant.reset_state()
+            learner.apply_controller()
         
         # plot results
         plot_results(learner)
