@@ -39,7 +39,6 @@ if __name__ == '__main__':
         learner_params['params']['learning_rate'] = 1e-2
         learner_params['params']['max_evals'] = 1000
         learner_params['dynmodel_class'] = kreg.BNN
-        learner_params['params']['H'] = 2.5
 
         learner = MC_PILCO(**learner_params)
 

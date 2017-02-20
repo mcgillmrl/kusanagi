@@ -114,7 +114,7 @@ class BNN(BaseRegressor):
 
         print self.Xm.get_value()
 
-    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.1, name=None):
+    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200,200], p=0.1, name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear

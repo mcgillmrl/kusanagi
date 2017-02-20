@@ -34,6 +34,7 @@ def default_params():
     policy_params['maxU'] = [10]
     # dynamics model
     dynmodel_params = {}
+    dynmodel_params['n_inducing'] = 100
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,np.pi]
@@ -53,6 +54,7 @@ def default_params():
 
     return {'params': learner_params, 'plant_class': Cartpole, 'policy_class': RBFPolicy, 'cost_func': cartpole_loss, 'dynmodel_class': GP_UI}
 
+# TODO this can be converted into a generic loss function
 def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
     angle_dims = params['angle_dims']
     cw = params['width']
