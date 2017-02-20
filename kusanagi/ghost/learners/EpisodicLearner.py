@@ -53,6 +53,7 @@ class EpisodicLearner(Loadable):
         self.dt = params['plant']['dt']
         self.discount = params['discount'] if 'discount' in params else 1.0
         self.max_evals = params['max_evals'] if 'max_evals' in params else 150
+        self.grad_clip = params['clip'] if 'clip' in params else 10.0
         self.conv_thr = params['conv_thr'] if 'conv_thr' in params else 1e-12
         self.learning_rate = params['learning_rate'] if 'learning_rate' in params else 1e-3
         self.min_method = params['min_method'] if 'min_method' in params else "L-BFGS-B"
@@ -372,7 +373,7 @@ class EpisodicLearner(Loadable):
                 utils.print_with_stamp("Compiling optimizer",self.name)
                 min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
                 p = self.policy.get_params(symbolic=True)
-                dJdp = self.get_policy_gradients(v,p,clip=10.0)
+                dJdp = self.get_policy_gradients(v,p,clip=self.grad_clip)
                 lr = theano.tensor.scalar('lr')
                 updates = min_method_updt(dJdp,p,learning_rate=lr)
                 updates += updts

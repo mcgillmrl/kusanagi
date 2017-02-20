@@ -11,7 +11,7 @@ from kusanagi.ghost.regression import BaseRegressor
 
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
-    def __init__(self,idims, odims,  dropout_samples=10, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
+    def __init__(self,idims, odims,  dropout_samples=20, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
         self.D = idims
         self.E = odims
         self.name=name
@@ -114,10 +114,10 @@ class BNN(BaseRegressor):
 
         print self.Xm.get_value()
 
-    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200,200], p=0.1, name=None):
+    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
-        from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear
+        from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
         if name is None:
             name = self.name
         if input_dims is None:
@@ -133,7 +133,7 @@ class BNN(BaseRegressor):
         network_spec.append( (InputLayer, dict(shape=input_shape, name=name+'_input') ) )
         # hidden layers
         for i in range(len(hidden_dims)):
-            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=tanh, name=name+'_fc%d'%(i)) ) )
+            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=sigmoid, name=name+'_fc%d'%(i)) ) )
             network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
         # output layer
         network_spec.append( (DenseLayer, dict(num_units=output_dims, nonlinearity=linear,name=name+'_output')) )

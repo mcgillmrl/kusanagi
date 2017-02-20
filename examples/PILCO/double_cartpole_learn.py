@@ -24,20 +24,17 @@ if __name__ == '__main__':
     learner_params['params']['use_empirical_x0'] = True
     learner_params['params']['realtime'] = False
     learner_params['params']['H'] = 4.0
-    learner_params['params']['plant']['dt'] = 0.1
-    learner_params['params']['plant']['params']['l'] = .5
-    learner_params['params']['cost']['pendulum_length'] = .5
+    learner_params['params']['plant']['dt'] = 0.075
 
     if not use_bnn:
         # gp based PILCO
         learner_params['dynmodel_class'] = kreg.SSGP_UI
-        learner_params['params']['dynmodel']['n_inducing'] = 100
         learner = PILCO(**learner_params)
     else:
         # dropout network (BNN) based PILCO
         learner_params['params']['min_method'] = 'ADAM'
-        learner_params['params']['learning_rate'] = 5e-3
-        learner_params['params']['max_evals'] = 1000
+        learner_params['params']['learning_rate'] = 1e-3
+        learner_params['params']['max_evals'] = 500
         learner_params['dynmodel_class'] = kreg.BNN
 
         learner = MC_PILCO(**learner_params)

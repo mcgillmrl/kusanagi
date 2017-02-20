@@ -15,8 +15,8 @@ if __name__ == '__main__':
     utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole_.5m'))
     N = 100                                                                 # learning iterations
     learner_params = default_params()
-    learner_params['params']['plant']['params']['l'] = .5
-    learner_params['params']['cost']['pendulum_length'] = .5
+    learner_params['params']['plant']['params']['l'] = .6
+    learner_params['params']['cost']['pendulum_length'] = .6
     # initialize learner
     learner = PILCO(**learner_params)
     learner.load(load_compiled_fns=False)

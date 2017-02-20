@@ -23,10 +23,10 @@ if __name__ == '__main__':
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
     learner_params['params']['realtime'] = False
-    learner_params['params']['H'] = 4.0
+    learner_params['params']['H'] = 2.5
     learner_params['params']['plant']['dt'] = 0.1
-    learner_params['params']['plant']['params']['l'] = .5
-    learner_params['params']['cost']['pendulum_length'] = .5
+    learner_params['params']['plant']['params']['l'] = .6
+    learner_params['params']['cost']['pendulum_length'] = .6
 
     if not use_bnn:
         # gp based PILCO
@@ -41,7 +41,7 @@ if __name__ == '__main__':
         learner_params['dynmodel_class'] = kreg.BNN
 
         learner = MC_PILCO(**learner_params)
-
+        #learner.resample=True
     try:
         learner.load(load_compiled_fns=True)
         save_compiled_fns = False
@@ -79,7 +79,7 @@ if __name__ == '__main__':
     for i in xrange(N):
         # train the dynamics models given the collected data
         if use_bnn:
-            learner.train_dynamics(max_episodes=10)
+            learner.train_dynamics(max_episodes=20)
         else:
             learner.train_dynamics()
 

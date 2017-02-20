@@ -40,15 +40,16 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
     return jac
 
 class MC_PILCO(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=10, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=20, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
         super(MC_PILCO, self).__init__(params, plant_class, policy_class, cost_func,viz_class, dynmodel_class, experience, async_plant, name, filename_prefix)
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
         self.trajectory_samples = theano.shared(np.array(n_samples).astype('int32'), name="%s>trajectory_samples"%(self.name) ) 
         D = self.mx0.get_value().size
         self.xp = theano.shared(np.zeros((n_samples, D),dtype=theano.config.floatX))
         self.dxdxp = theano.shared(np.zeros((n_samples*D, n_samples, D),dtype=theano.config.floatX))
+        self.resample = params['resample'] if 'resample' in params else False
     
-    def propagate_state(self,x,dynmodel=None,policy=None,cost=None,z=None,resample=False):
+    def propagate_state(self,x,dynmodel=None,policy=None,cost=None,resample=None):
         ''' Given a set of input states, this function returns predictions for the next states.
             This is done by 1) evaluating the current policy 2) using the dynamics model to estimate 
             the next state. If x has shape [n,D] where n is tthe number of samples and D is the state dimension,
@@ -60,7 +61,8 @@ class MC_PILCO(PILCO):
             policy= self.policy
         if cost is None:
             cost= self.cost
-
+        if resample is None:
+            resample=self.resample
 
         n,D = x.shape
         n= n.astype(theano.config.floatX)
@@ -93,7 +95,7 @@ class MC_PILCO(PILCO):
         #Sc_next = c_next.var(0)
 
         if resample:
-            z = self.m_rng.normal(x.shape) if z is None else z
+            z = self.m_rng.normal(x.shape)
             x_next = mx_next + z.dot(tt.slinalg.cholesky(Sx_next).T)
 
         return [mc_next, Sc_next, x_next]
@@ -123,20 +125,20 @@ class MC_PILCO(PILCO):
         mv0, Sv0 = self.cost(mx0,Sx0)
 
         # do first iteration of scan here (so if we have any learning iteration updates that depend on computations inside the scan loop, all the inputs are defined outisde the scan)
-        [mv1, Sv1, x1] = self.propagate_state(x0,dynmodel,policy,z=z0)
+        [mv1, Sv1, x1] = self.propagate_state(x0,dynmodel,policy)
         mv1 *= gamma0; Sv1 *= gamma0*gamma0
         
         updates = theano.updates.OrderedUpdates()
         updates += dynmodel.get_dropout_masks()
 
         # this defines the loop where the state is propaagated
-        def rollout_single_step(mv,Sv,x,gamma,gamma0,z0,*args):
-            [mv_next, Sv_next, x_next] = self.propagate_state(x,dynmodel,policy,z=z0)
+        def rollout_single_step(mv,Sv,x,gamma,gamma0,*args):
+            [mv_next, Sv_next, x_next] = self.propagate_state(x,dynmodel,policy)
             return [gamma*mv_next, gamma*gamma*Sv_next, x_next, gamma*gamma0]
         # loop over the planning horizon
         rollout_output, rollout_updts = theano.scan(fn=rollout_single_step, 
                                             outputs_info=[mv1,Sv1,x1,gamma0*gamma0], 
-                                            non_sequences=[gamma0,z0]+shared_vars,
+                                            non_sequences=[gamma0]+shared_vars,
                                             n_steps=H-1, 
                                             strict=True,
                                             allow_gc=False,
