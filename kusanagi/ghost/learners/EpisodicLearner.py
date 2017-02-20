@@ -150,8 +150,7 @@ class EpisodicLearner(Loadable):
                 utils.print_with_stamp('Compiling cost function',self.name)
                 utils.print_with_stamp('Cost parameters: %s'%(self.cost.keywords['params']),self.name)
                 mx = tt.vector('mx')
-                Sx = tt.matrix('Sx')
-                self.evaluate_cost = theano.function((mx,Sx),self.cost(mx,Sx), allow_input_downcast=True, on_unused_input='ignore')
+                self.evaluate_cost = theano.function([mx],self.cost(mx,None)[0], allow_input_downcast=True, on_unused_input='ignore')
             else:
                 utils.print_with_stamp('No cost function provided',self.name)
     
@@ -221,7 +220,6 @@ class EpisodicLearner(Loadable):
 
         exec_time = time.time()
         x_t, t = self.plant.get_plant_state()
-        Sx_t = np.zeros((x_t.shape[0],x_t.shape[0]))
         L_noise = np.linalg.cholesky(self.plant.noise)
         if self.plant.noise is not None:
             # randomize state
@@ -238,7 +236,7 @@ class EpisodicLearner(Loadable):
             self.plant.apply_control(u_t)
             if self.evaluate_cost is not None:
                 #  get cost:
-                c_t = self.evaluate_cost(x_t, Sx_t)
+                c_t = self.evaluate_cost(x_t)
                 # append to experience dataset
                 self.experience.add_sample(t,x_t,u_t,c_t)
                 #print x_t, c_t
@@ -272,7 +270,7 @@ class EpisodicLearner(Loadable):
         x_t_ = utils.gTrig_np(x_t[None,:], self.angle_idims).flatten()
         u_t = np.zeros_like(u_t)
         if self.evaluate_cost is not None:
-            c_t = self.evaluate_cost(x_t, Sx_t)
+            c_t = self.evaluate_cost(x_t)
             self.experience.add_sample(t,x_t,u_t,c_t)
         else:
             self.experience.add_sample(t,x_t,u_t,0)
@@ -394,7 +392,7 @@ class EpisodicLearner(Loadable):
                 p = self.policy.get_params(symbolic=False)
                 v_avg = 0.1*v + 0.9*v_avg
                 if v < self.best_p[0]:
-                  self.best_p = [v,p]
+                    self.best_p = [v,p]
                 self.n_evals+=1
                 utils.print_with_stamp('Current value: %E [Smoothed: %E], Total evaluations: %d, gMags: %s,'%(v,v_avg,self.n_evals,str(gmags)),
                                         self.name,True)

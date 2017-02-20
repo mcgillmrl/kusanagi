@@ -30,7 +30,7 @@ def default_params():
     policy_params = {}
     policy_params['m0'] = learner_params['x0']
     policy_params['S0'] = learner_params['S0']
-    policy_params['n_inducing'] = 10
+    policy_params['n_inducing'] = 30
     #policy_params['hidden_dims'] = [50,50,50]
     policy_params['maxU'] = [10]
     # dynamics model
@@ -73,10 +73,13 @@ def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
     Q[0,0] = 1; Q[0,-2] = ell; Q[-2,0] = ell; Q[-2,-2] = ell**2; Q[-1,-1]=ell**2
 
     if Sx is None:
+        flatten = False
         if mx.ndim == 1:
+            flatten = True
             mx = mx[None,:]
         mxa = utils.gTrig(mx,angle_dims,D)
-        mxa = mxa.flatten() # since we are dealing with one input vector at a time
+        if flatten:
+            mxa = mxa.flatten() # since we are dealing with one input vector at a time
         Sxa = None
 
         cost = [];

@@ -90,11 +90,13 @@ def quadratic_loss_d(x,dummy,params):
 
 def quadratic_saturating_loss_d(x,dummy,params):
     # 1 - e^(-0.5*quadratic_loss) penalty function
+    if x.ndim == 1:
+        x = x[None,:]
     Q = tt.constant(params['Q'],dtype=x.dtype)
     target = tt.constant(params['target'],dtype=x.dtype)
-    delta = x-target
-    deltaQ = delta.T.dot(Q)
-    cost = 1.0 - tt.exp(-0.5*deltaQ.dot(delta))
+    delta = x-target[None,:]
+    deltaQ = delta.dot(Q)
+    cost = 1.0 - tt.exp(-0.5*tt.sum(deltaQ*delta,1))
     return cost
 
 def generic_loss_d(x,dummy,params,loss_func,angle_idims=[]):

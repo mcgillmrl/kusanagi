@@ -11,7 +11,7 @@ from kusanagi.ghost.regression import BaseRegressor
 
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
-    def __init__(self,idims, odims,  dropout_samples=25, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
+    def __init__(self,idims, odims,  dropout_samples=10, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
         self.D = idims
         self.E = odims
         self.name=name
@@ -87,7 +87,7 @@ class BNN(BaseRegressor):
         
         if self.learn_noise:
             # default log of measurement noise variance is set to 1% of dataset variation
-            self.logsn.set_value(np.log((0.1*Y_dataset.std(0)).astype(theano.config.floatX)))
+            self.logsn.set_value(np.log((0.05*Y_dataset.std(0)).astype(theano.config.floatX)))
 
     def apppend_dataset(self,X_dataset,Y_dataset):
         # set dataset
@@ -114,7 +114,7 @@ class BNN(BaseRegressor):
 
         print self.Xm.get_value()
 
-    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, name=None):
+    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.1, name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear
