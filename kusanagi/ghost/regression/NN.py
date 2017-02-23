@@ -11,7 +11,7 @@ from kusanagi.ghost.regression import BaseRegressor
 
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
-    def __init__(self,idims, odims,  dropout_samples=20, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
+    def __init__(self,idims, odims,  dropout_samples=10, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
         self.D = idims
         self.E = odims
         self.name=name
@@ -112,9 +112,7 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
-        print self.Xm.get_value()
-
-    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, name=None):
+    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
@@ -131,10 +129,13 @@ class BNN(BaseRegressor):
         # input layer
         input_shape = [batchsize,input_dims]
         network_spec.append( (InputLayer, dict(shape=input_shape, name=name+'_input') ) )
+        if p_input > 0:
+            network_spec.append( (DropoutLayer, dict(p=p_input, rescale=False, name=name+'_drop_input', dropout_samples=self.dropout_samples.get_value()) ) )
         # hidden layers
         for i in range(len(hidden_dims)):
             network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=sigmoid, name=name+'_fc%d'%(i)) ) )
-            network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
+            if p[i] > 0:
+                network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
         # output layer
         network_spec.append( (DenseLayer, dict(num_units=output_dims, nonlinearity=linear,name=name+'_output')) )
 
@@ -225,38 +226,18 @@ class BNN(BaseRegressor):
         loss = 0.5*error.mean() + logsn_std.mean() 
 
         # compute regularization term
-        reg = 0
-        layers = lasagne.layers.get_all_layers(self.network)
-        
-        for i in range(len(layers)):
-            reg_weight = 1/(2.0*N)
-            # this assumes that the inputs at every input layer have the same prior lengthscale
-            if hasattr(layers[i],'input_layer') and isinstance(layers[i].input_layer,lasagne.layers.InputLayer):
-                reg_weight *= input_lengthscale**2
-            else:
-                reg_weight *= hidden_lengthscale**2
-
-            # if this layer has a weight layer and the next layer is a dropout layer
-            if hasattr(layers[i],'W'):
-                if i < len(layers)-1 and isinstance(layers[i+1],lasagne.layers.DropoutLayer):
-                    p = layers[i+1].p
-                    if p>0:
-                        reg_weight *= (1-p)
-                reg += reg_weight*lasagne.regularization.l2(layers[i].W)
-
-            if hasattr(layers[i],'b'):
-                reg += reg_weight*lasagne.regularization.l2(layers[i].b)
-
-        loss += reg
+        loss += self.get_regularizatoin_term(input_lengthscale,hidden_lengthscale)/N
 
         # build the updates dictionary ( sets the optimization algorithm for the network parameters)
         params = lasagne.layers.get_all_params(self.network, trainable=True)
 
         # SGD trainer
-        updates = lasagne.updates.adam(loss,params,learning_rate=1e-3)
+        #min_method = utils.updates.nadam
+        min_method = lasagne.updates.adam
+        updates = min_method(loss,params,learning_rate=1e-3)
         # if we are learning the noise
         if self.learn_noise and not self.heteroscedastic:
-            updates.update(lasagne.updates.adam(loss,[logsn],learning_rate=1e-4))
+            updates.update(min_method(loss,[logsn],learning_rate=1e-3))
         
         # compile the training function
         l2_error = tt.square(delta_y).sum(1).mean()
@@ -264,6 +245,32 @@ class BNN(BaseRegressor):
         self.train_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale],[loss,l2_error],updates=updates,allow_input_downcast=True)
         self.loss_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale],[loss,l2_error],allow_input_downcast=True)
         utils.print_with_stamp('Done compiling',self.name)
+
+    def get_regularizatoin_term(self,input_lengthscale,hidden_lengthscale):
+        reg = 0
+        layers = lasagne.layers.get_all_layers(self.network)
+        
+        for i in range(1,len(layers)):
+            reg_weight = 1/2.0
+            # apply different regularization weigths to the input, and the hidden dimension
+            ind = i if not (i >1 and isinstance(layers[i-1],lasagne.layers.DropoutLayer)) else i-1
+            if hasattr(layers[ind],'input_layer') and isinstance(layers[ind].input_layer,lasagne.layers.InputLayer):
+                reg_weight *= input_lengthscale**2
+            else:
+                reg_weight *= hidden_lengthscale**2
+
+            # if this layer has a weight layer and the previous layer is a DropoutLayer
+            if hasattr(layers[i],'W'):
+                if i >1 and isinstance(layers[i-1],lasagne.layers.DropoutLayer):
+                    p = layers[i-1].p
+                    if p>0:
+                        reg_weight *= (1-p)
+                reg += reg_weight*lasagne.regularization.l2(layers[i].W)
+
+            if hasattr(layers[i],'b'):
+                reg += reg_weight*lasagne.regularization.l2(layers[i].b)
+
+        return reg
 
     def get_dropout_masks(self,network=None):
         ''' returns a dictionary where the keys are lasagne layer instances and the values are their corresponding dropout masks'''

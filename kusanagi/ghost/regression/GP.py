@@ -1,5 +1,6 @@
 import climin
 import os
+import lasagne.utils
 import numpy as np
 import theano
 import theano.tensor as tt
@@ -16,6 +17,7 @@ import cov
 import SNRpenalty
 from kusanagi import utils
 from kusanagi.ghost.regression import BaseRegressor
+
 
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 class GP(BaseRegressor):
@@ -158,7 +160,7 @@ class GP(BaseRegressor):
         else:
             return [attr for attr in self.__dict__.values() if isinstance(attr,tt.sharedvar.SharedVariable)]
 
-    def init_loss(self, cache_vars=True, compile_funcs=True):
+    def init_loss(self, cache_vars=True, compile_funcs=True, unroll_scan=True):
         utils.print_with_stamp('Initialising expression graph for full GP training loss function',self.name)
         idims = self.D
         odims = self.E
@@ -204,8 +206,12 @@ class GP(BaseRegressor):
             nseq.append(self.nigp)
         if self.Y_var:
             nseq.append(self.Y_var.T)
-        (loss,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp,tt.arange(self.X.shape[0])], non_sequences=nseq, allow_gc=False, name="%s>logL_scan"%(self.name))
-
+        
+        if unroll_scan:
+            loss,iK,L,beta = lasagne.utils.unroll_scan(fn=log_marginal_likelihood, outputs_info=[], sequences=[self.Y.T,self.loghyp,tt.arange(self.X.shape[0])], non_sequences=nseq, n_steps=self.E)
+        else:
+            (loss,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp,tt.arange(self.X.shape[0])], non_sequences=nseq, allow_gc=False, name="%s>logL_scan"%(self.name))
+    
         iK = tt.unbroadcast(iK,0) if iK.broadcastable[0] else iK
         L = tt.unbroadcast(L,0) if L.broadcastable[0] else L
         beta = tt.unbroadcast(beta,0) if beta.broadcastable[0] else beta

@@ -92,7 +92,7 @@ def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
             cost_c = loss_func(mxa,None,loss_params)
             cost.append(cost_c)
         
-        return sum(cost), tt.constant(0.0)
+        return sum(cost)/len(cw), tt.constant(0.0)
     else:
         mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
         
@@ -108,7 +108,7 @@ def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
             M_cost.append(m_cost)
             S_cost.append(s_cost)
     
-        return sum(M_cost), sum(S_cost)
+        return sum(M_cost)/len(cw), sum(S_cost)/(len(cw)**2)
 
 class Cartpole(ODEPlant):
     def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Cartpole', integrator='dopri5', atol=1e-12, rtol=1e-12, angle_dims = []):

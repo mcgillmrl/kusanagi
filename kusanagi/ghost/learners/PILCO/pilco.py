@@ -355,61 +355,60 @@ class PILCO(EpisodicLearner):
         # call theano function
         return self.policy_gradient_fn()
 
-    def train_dynamics(self, dynmodel_class=None, dynmodel_params=None, max_episodes=None):
+    def train_dynamics(self,dynmodel=None, dynmodel_class=None, dynmodel_params=None, max_episodes=None):
         ''' Trains a dynamics model using the current experience dataset '''
         utils.print_with_stamp('Training dynamics model',self.name)
+        if dynmodel is None:
+            if hasattr(self,'dynamics_model'):
+                dynmodel = self.dynamics_model
 
         X = []
         Y = []
         n_episodes = len(self.experience.states)
         
-        if n_episodes>0:
-            # get dataset for dynamics model
-            episodes = range(self.next_episode,n_episodes) if max_episodes is None or n_episodes < max_episodes else range(max(0,n_episodes-max_episodes),n_episodes)
-            self.next_episode = n_episodes 
-            X,Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes, angle_dims=self.angle_idims)
-            
-            # wrap angles if requested (this might introduce error if the angular velocities are high )
-            if self.wrap_angles:
-                # wrap angle differences to [-pi,pi]
-                Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
+        # get dataset for dynamics model
+        episodes = range(self.next_episode,n_episodes) if max_episodes is None or n_episodes < max_episodes else range(max(0,n_episodes-max_episodes),n_episodes)
+        self.next_episode = n_episodes 
+        X,Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes, angle_dims=self.angle_idims)
+        
+        # wrap angles if requested (this might introduce error if the angular velocities are high )
+        if self.wrap_angles:
+            # wrap angle differences to [-pi,pi]
+            Y[:,self.angle_idims] = (Y[:,self.angle_idims] + np.pi) % (2 * np.pi ) - np.pi
 
-            # get distribution of initial states
-            x0 = np.array([x[0] for x in self.experience.states])
-            if n_episodes > 2:
-                self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
-                self.Sx0.set_value(np.cov(x0.T).astype(theano.config.floatX))
-            else:
-                self.mx0.set_value(x0.mean(0).astype(theano.config.floatX).flatten())
-                self.Sx0.set_value(1e-2*np.eye(self.mx0.get_value().size).astype(theano.config.floatX))
-
-            if not hasattr(self,'dynamics_model') or self.dynamics_model is None:
-                if dynmodel_class is None: dynmodel_class = self.dynmodel_class
-                if dynmodel_params is None: dynmodel_params = self.dynmodel_params
-                # initialize dynamics model
-                dynamics_filename = self.filename+'_dynamics'
-                self.dynamics_model = dynmodel_class(X,Y,filename=dynamics_filename,**dynmodel_params)
-            else:
-                if max_episodes is not None and len(episodes) ==  max_episodes:
-                    self.dynamics_model.set_dataset(X,Y)
-                else:
-                    # append data to the dynamics model
-                    self.dynamics_model.append_dataset(X,Y)
+        # get distribution of initial states
+        x0 = np.array([x[0] for x in self.experience.states])
+        if n_episodes > 2:
+            self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
+            self.Sx0.set_value(np.cov(x0.T).astype(theano.config.floatX))
         else:
-            x0 = np.array(self.plant.x0, dtype=theano.config.floatX).squeeze()
-            S0 = np.array(self.plant.S0, dtype=theano.config.floatX).squeeze()
-            self.mx0.set_value(x0)
-            self.Sx0.set_value(S0)
+            self.mx0.set_value(x0.mean(0).astype(theano.config.floatX).flatten())
+            self.Sx0.set_value(1e-2*np.eye(self.mx0.get_value().size).astype(theano.config.floatX))
+
+        if dynmodel is None:
+            if dynmodel_class is None: dynmodel_class = self.dynmodel_class
+            if dynmodel_params is None: dynmodel_params = self.dynmodel_params
+            # initialize dynamics model
+            dynamics_filename = self.filename+'_dynamics'
+            dynmodel = dynmodel_class(filename=dynamics_filename,**dynmodel_params)
+            dynmodel.set_dataset(X,Y)
+        else:
+            if max_episodes is not None and len(episodes) ==  max_episodes:
+                dynmodel.set_dataset(X,Y)
+            else:
+                # append data to the dynamics model
+                dynmodel.append_dataset(X,Y)
         
         #utils.print_with_stamp('%s, \n%s'%(self.mx0.get_value(), self.Sx0.get_value()),self.name)
-        utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(self.dynamics_model.X.get_value(borrow=True).shape,self.dynamics_model.Y.get_value(borrow=True).shape),self.name)
-        if self.dynamics_model.should_recompile:
+        utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(dynmodel.X.get_value(borrow=True).shape,dynmodel.Y.get_value(borrow=True).shape),self.name)
+        if dynmodel.should_recompile:
             # reinitialize log likelihood
-            self.dynamics_model.init_loss()
+            dynmodel.init_loss()
             self.should_recompile = True
  
-        self.dynamics_model.train()
+        dynmodel.train()
         utils.print_with_stamp('Done training dynamics model',self.name)
+        return dynmodel
 
     def value(self,return_grads=False):
         '''Returns the value of the current policy by computing long term predictions using a learned dynamics model. If return_grads is True, it will also return the policy gradients'''

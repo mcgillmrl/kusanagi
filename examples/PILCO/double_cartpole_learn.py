@@ -33,8 +33,9 @@ if __name__ == '__main__':
     else:
         # dropout network (BNN) based PILCO
         learner_params['params']['min_method'] = 'ADAM'
-        learner_params['params']['learning_rate'] = 1e-3
-        learner_params['params']['max_evals'] = 500
+        learner_params['params']['learning_rate'] = 1e-2
+        learner_params['params']['max_evals'] = 1000
+        learner_params['params']['clip'] = 1.0
         learner_params['dynmodel_class'] = kreg.BNN
 
         learner = MC_PILCO(**learner_params)
@@ -76,7 +77,7 @@ if __name__ == '__main__':
     for i in xrange(N):
         # train the dynamics models given the collected data
         if use_bnn:
-            learner.train_dynamics(max_episodes=10)
+            learner.train_dynamics()
         else:
             learner.train_dynamics()
 

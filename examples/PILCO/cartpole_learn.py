@@ -23,7 +23,7 @@ if __name__ == '__main__':
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
     learner_params['params']['realtime'] = False
-    learner_params['params']['H'] = 2.5
+    learner_params['params']['H'] = 4.0
     learner_params['params']['plant']['dt'] = 0.1
     learner_params['params']['plant']['params']['l'] = .6
     learner_params['params']['cost']['pendulum_length'] = .6
@@ -38,12 +38,12 @@ if __name__ == '__main__':
         learner_params['params']['min_method'] = 'ADAM'
         learner_params['params']['learning_rate'] = 1e-2
         learner_params['params']['max_evals'] = 1000
+        learner_params['params']['clip'] = 1.0
         learner_params['dynmodel_class'] = kreg.BNN
 
         learner = MC_PILCO(**learner_params)
-        #learner.resample=True
     try:
-        learner.load(load_compiled_fns=True)
+        #learner.load(load_compiled_fns=True)
         save_compiled_fns = False
     except:
         utils.print_with_stamp('Unable to load compiled fns','main')
@@ -79,7 +79,8 @@ if __name__ == '__main__':
     for i in xrange(N):
         # train the dynamics models given the collected data
         if use_bnn:
-            learner.train_dynamics(max_episodes=20)
+            #learner.train_dynamics(max_episodes=20)
+            learner.train_dynamics_from_rollouts()
         else:
             learner.train_dynamics()
 
@@ -100,4 +101,5 @@ if __name__ == '__main__':
         learner.save(save_compiled_fns=save_compiled_fns)
         save_compiled_fns = False  # only need to save the compiled functions once
     
+    raw_input('Finished training')
     sys.exit(0)

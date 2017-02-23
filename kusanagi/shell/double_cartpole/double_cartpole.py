@@ -34,11 +34,10 @@ def default_params():
     policy_params['maxU'] = [20]
     # dynamics model
     dynmodel_params = {}
-    dynmodel_params['n_inducing'] = 100
     # cost function
     cost_params = {}
     cost_params['target'] = [0,0,0,0,0,0]
-    cost_params['width'] = 0.25
+    cost_params['width'] = 0.5
     cost_params['expl'] = 0.0
     cost_params['pendulum_lengths'] = [ plant_params['params']['l2'], plant_params['params']['l3'] ]
 
@@ -95,7 +94,7 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
             cost_c = loss_func(mxa,None,loss_params)
             cost.append(cost_c)
         
-        return sum(cost), tt.constant(0.0)
+        return sum(cost)/len(cost), tt.constant(0.0)
     else:
         mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
         
@@ -112,7 +111,7 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
             M_cost.append(m_cost)
             S_cost.append(s_cost)
     
-        return sum(M_cost), sum(S_cost)
+        return sum(M_cost)/len(M_cost), sum(S_cost)/(len(M_cost)**2)
 
 def double_cartpole_loss_openAI(mx,Sx,params, loss_func=quadratic_saturating_loss):
     angle_dims = params['angle_dims']

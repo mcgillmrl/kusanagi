@@ -23,7 +23,10 @@ STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
                           'ADAGRAD': lasagne.updates.adagrad,
                           'RMSPROP': lasagne.updates.rmsprop,
                           'ADADELTA': lasagne.updates.adadelta,
-                          'ADAM': lasagne.updates.adam}
+                          'ADAM': lasagne.updates.adam, 
+                          'NADAM': utils.updates.nadam, 
+                          'ADAMAX': lasagne.updates.adamax,
+                          }
 # TODO remove any theano dependency from here
 class EpisodicLearner(Loadable):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
@@ -300,31 +303,12 @@ class EpisodicLearner(Loadable):
         v0 = self.value()
         utils.print_with_stamp('Initial value estimate [%f]'%(v0),self.name) 
         p0 = self.policy.get_params(symbolic=False)
-        self.best_p = [v0,p0]
+        self.best_p = [v0,p0,0]
+        if not hasattr(self,'average_p'):
+            self.p_avg = [np.zeros_like(p) for p in p0]
+        
         parameter_shapes = [p.shape for p in p0]
         m_loss = utils.MemoizeJac(self.loss,args=(parameter_shapes,))
-        '''
-        p0_vec = utils.wrap_params(p0)
-        opt = climin.Lbfgs(p0_vec,
-                           m_loss,
-                           m_loss.derivative,
-                           n_factors=100,
-                           line_search=climin.linesearch.ScipyLineSearch(p0_vec,
-                                                                         m_loss,
-                                                                         m_loss.derivative,
-                                                                         c1=1e-4,
-                                                                         c2=0.9,
-                                                                         amax=10,
-                                                                        )
-                          )
-        for info in opt:
-            print info['n_iter'], info['step_length']
-            if 'step_length' in info and abs(info['step_length']) < 1e-100:
-                break
-            if self.n_evals >= self.max_evals:
-                break
-        print ''        
-        '''
         min_method = self.min_method.upper()
         # deterministic gradients
         if min_method in DETERMINISTIC_MIN_METHODS:
@@ -376,26 +360,30 @@ class EpisodicLearner(Loadable):
                 dJdp = self.get_policy_gradients(v,p,clip=self.grad_clip)
                 lr = theano.tensor.scalar('lr')
                 updates = min_method_updt(dJdp,p,learning_rate=lr)
+                # add temporal smoothing
+
+                grad_updts = []
+                for u in updates:
+                    if u in p:
+                        grad_updts.append(updates[u]-u)
+
                 updates += updts
-                self.train_fn = theano.function([lr],[v]+dJdp,updates=updates)
+                self.train_fn = theano.function([lr],[v]+grad_updts,updates=updates)
                 utils.print_with_stamp("Done compiling.",self.name)
 
             # training loop
-            v_avg = self.best_p[0]
+            mv = self.best_p[0]
             for i in xrange(self.max_evals):
                 # evaluate current policy and update parameters
                 total_evals = self.n_evals + self.max_evals*self.learning_iteration
                 ret = self.train_fn(self.learning_rate)
-                v = ret[0]
-                dJdp = ret[1:]
-                gmags = [np.sqrt((djdp**2).sum()) for djdp in dJdp]
-                gmaxs = [np.absolute(djdp).max() for djdp in dJdp]
+                v = ret[0]; grad_updts = ret[1:]
                 p = self.policy.get_params(symbolic=False)
-                v_avg = 0.1*v + 0.9*v_avg
-                if v < self.best_p[0]:
-                    self.best_p = [v,p]
+                if v < self.best_p[0] and i > 0.1*self.max_evals:
+                    self.best_p = [v,p,i]
                 self.n_evals+=1
-                utils.print_with_stamp('Current value: %E [Smoothed: %E], Total evaluations: %d, gMags: %s,'%(v,v_avg,self.n_evals,str(gmags)),
+                updt_mags = [np.sqrt((g**2).sum()) for g in grad_updts]
+                utils.print_with_stamp('Current value: %E, Total evaluations: %d, updt_mags: %s'%(v,self.n_evals,str(updt_mags)),
                                         self.name,True)
         else:
             error_str = 'Unknown minimization method %s' % (self.min_method)
@@ -403,9 +391,9 @@ class EpisodicLearner(Loadable):
             raise ValueError(error_str)
      
         print '' 
-        v,p = self.best_p
+        v,p,i = self.best_p
         self.policy.set_params(p)
-        utils.print_with_stamp('Done training. New value [%f]'%(v),self.name)
+        utils.print_with_stamp('Done training. New value [%f] iter: [%d]'%(v,i),self.name)
         self.state_changed = True
 
     def loss(self, policy_parameters, parameter_shapes):
@@ -417,10 +405,11 @@ class EpisodicLearner(Loadable):
         v,dv = self.value(True)
         dv = utils.wrap_params(dv)
         v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
-        if v<self.best_p[0]:
-            self.best_p = [v,p]
-
         self.n_evals+=1
+        
+        if v<self.best_p[0]:
+            self.best_p = [v,p,self.n_evals]
+
         end_time = time.time()
         self.iter_time = ((end_time - self.start_time) - self.iter_time)/self.n_evals + self.iter_time
         
