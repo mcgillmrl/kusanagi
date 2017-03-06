@@ -105,18 +105,19 @@ class BaseRegressor(Loadable):
     
         # initialize variable for input covariance 
         input_vars = [mx] if not input_covariance else [mx,Sx]
+
         # get prediction
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
         output_vars = self.predict_symbolic(mx,Sx,**kwargs)
-            
+        
         # outputs
-        prediction = []
-        for o in output_vars:
-            if o is not None:
-                prediction.append(o)
+        if not any([isinstance(output_vars, cl) for cl in [tuple, list]]):
+            output_vars = [output_vars]
+        prediction = [o for o in output_vars if o is not None]
 
         # compile prediction
         utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
+
         fn_name = '%s>predict_ui'%(self.name) if input_covariance else '%s>predict'%(self.name)
         predict_fn = theano.function(input_vars,prediction,
                                      on_unused_input='ignore',
@@ -124,9 +125,13 @@ class BaseRegressor(Loadable):
                                      profile=self.profile,
                                      mode=self.compile_mode,
                                      allow_input_downcast=True)
+
         utils.print_with_stamp('Done compiling',self.name)
 
         return predict_fn
+
+    def get_updates(self):
+        return theano.updates.OrderedUpdates()
 
     def predict(self,mx,Sx=None):
         # check if we need to compile the prediction functions

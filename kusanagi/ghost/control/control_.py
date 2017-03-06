@@ -1,3 +1,4 @@
+import lasagne
 import numpy as np
 import theano
 import theano.tensor as tt
@@ -11,6 +12,7 @@ from kusanagi.base.Loadable import Loadable
 from functools import partial
 from scipy.optimize import minimize
 from scipy.cluster.vq import kmeans2,vq
+
 
 # GP based controller
 class RBFPolicy(RBFGP):
@@ -93,7 +95,7 @@ class RBFPolicy(RBFGP):
         # init the prediction function 
         self.evaluate(np.zeros((self.D,)))
 
-    def evaluate(self, m, s=None, t=None, symbolic=False):
+    def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
         D = m.shape[0]
         if symbolic:
             ret = self.predict_symbolic(m,s)
@@ -276,48 +278,99 @@ class AdjustedPolicy:
     def save(self, output_folder=None,output_filename=None):
         self.adjustment_model.save(output_folder,output_filename)
 
-# GP based controller
-class BNNPolicy(BNN):
-    def __init__(self, m0=None, S0=None, maxU=[10], hidden_dims=[20,20,20], angle_dims=[], name='NNPolicy', filename=None):
+# NN controller
+class NNPolicy(BNN):
+    def __init__(self, m0, maxU=[10], angle_dims=[], sat_func=None, name='NNPolicy', filename=None, **kwargs):
         self.maxU = np.array(maxU)
-        self.angle_dims = angle_dims
-        self.name = name
-        # set the model to be a RBF with saturated outputs
-        sat_func = partial(gSat, e=maxU)
+        self.D = np.array(m0).size + len(angle_dims)
+        self.E = len(maxU)
+        def sat_func(u,e):
+            from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
+            return e*tanh(u)
 
-        if filename is not None:
-            # try loading from file
-            self.uncertain_inputs = True
-            self.filename = filename
-            self.sat_func = sat_func
-            self.load()
+        if sat_func:
+            # set the model to be a RBF with saturated outputs
+            self.sat_func = partial(sat_func, e=maxU)
         else:
-            self.m0 = np.array(m0)
-            self.S0 = np.array(S0)
+            self.sat_func = None
+        print type(self), isinstance(self,NNPolicy)
+        super(NNPolicy,self).__init__(self.D, self.E, name=name, filename=filename, **kwargs)
+    
+    def get_params(self, symbolic=True):
+        if symbolic:
+            return lasagne.layers.get_all_params(self.network,trainable=True)
+        else:
+            return lasagne.layers.get_all_param_values(self.network,trainable=True)
 
-            policy_idims = len(self.m0) + len(self.angle_dims)
-            policy_odims = len(self.maxU)
-            super(NNPolicy, self).__init__(idims=policy_idims, hidden_dims=hidden_dims, odims=policy_odims, sat_func=sat_func, name=self.name)
-            
-            # check if we need to initialize
-            params = self.get_params()
-            for p in params:
-                if p is None or p.size == 0:
-                    self.init_params()
-                    break
+    def set_params(self,params):
+        lasagne.layers.set_all_param_values(self.network,params,trainable=True)
 
-    def init_params(self):
-        self.init_loss()
-        self.init_predict()
+    def get_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
+        from lasagne.layers import InputLayer, DenseLayer
+        from kusanagi.ghost.regression.layers import DropoutLayer, relu, weight_norm
+        from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
+        if name is None:
+            name = self.name
+        if input_dims is None:
+            input_dims = self.D
+        if output_dims is None:
+            output_dims = self.E
+        if type(p) is not list:
+            p = [p]*len(hidden_dims)
+        network_spec = []
 
-    def evaluate(self, m, s=None, t=None, derivs=False, symbolic=False):
+        # input layer
+        input_shape = [batchsize,input_dims]
+        network_spec.append( (InputLayer, dict(shape=input_shape, name=name+'_input') ) )
+        if p_input > 0:
+            network_spec.append( (DropoutLayer, dict(p=p_input, rescale=False, name=name+'_drop_input', dropout_samples=self.dropout_samples.get_value()) ) )
+        # hidden layers
+        for i in range(len(hidden_dims)):
+            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=elu, W=lasagne.init.HeUniform(gain='relu'), name=name+'_fc%d'%(i)) ) )
+            #network_spec.append( (weight_norm, dict(name=name+'_wn%d'%(i)) ) )
+            if p[i] > 0:
+                network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
+        # output layer
+        network_spec.append( (DenseLayer, dict(num_units=output_dims, nonlinearity=linear, W=lasagne.init.HeUniform(gain=1.0), name=name+'_output')) )
+        #network_spec.append( (weight_norm, dict(name=name+'_wn_output') ) )
+
+        return network_spec
+
+    def predict_symbolic(self,mx,Sx=None,**kwargs):
+        if self.network_spec is None:
+            self.network_spec = self.get_network_spec(input_dims=self.D, output_dims=self.E, hidden_dims=[50], p=0.0, name=self.name)
+
+        if self.network is None:
+            self.network = self.build_network( self.network_spec, params=self.network_params, name=self.name)
+
+        ret = super(NNPolicy,self).predict_symbolic(mx,Sx,**kwargs)
+        
+        if Sx is None:
+            if type(ret) is list:
+                ret=ret[0]
+            M = ret
+            if self.sat_func is not None:
+                # saturate the output
+                M = self.sat_func(M)
+            return M
+        else:
+            M,S,V = ret
+            # apply saturating function to the output if available
+            if self.sat_func is not None:
+                # saturate the output
+                M,S,U = self.sat_func(M,S)
+                # compute the joint input output covariance
+                V = V.dot(U)
+            return M, S, V
+
+    def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
         D = m.shape[0]
         if symbolic:
-            if s is None:
-                s = tt.zeros((D,D))
-            ret = self.predict_symbolic(m,s)
+            # by default, sample internal params (e.g. dropout masks) at every evaluation
+            kwargs['iid_per_eval'] = kwargs.get('iid_per_eval',True)
+            
+            ret = self.predict_symbolic(m,s,**kwargs)
+            theano.printing.Print('ret')(ret)
         else:
-            if s is None:
-                s = np.zeros((D,D))
-            ret = self.predict(m,s) if not derivs else self.predict_d(m,s)
+            ret = self.predict(m,s)
         return ret 

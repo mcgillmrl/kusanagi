@@ -473,7 +473,7 @@ def plot_results(learner,H=None):
         else:
             iters.append(i-n_random)
         cost_sums.append(np.array(learner.experience.immediate_cost[i]).sum())
-    plt.plot(np.array(iters), np.array(cost_sums))
+    plt.plot(np.array(iters)+1, np.array(cost_sums))
 
     plt.show(False)
     plt.waitforbuttonpress(0.05)

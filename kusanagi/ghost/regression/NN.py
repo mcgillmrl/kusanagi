@@ -11,7 +11,7 @@ from kusanagi.ghost.regression import BaseRegressor
 
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
-    def __init__(self,idims, odims,  dropout_samples=10, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
+    def __init__(self,idims, odims,  dropout_samples=15, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
         self.D = idims
         self.E = odims
         self.name=name
@@ -56,6 +56,10 @@ class BNN(BaseRegressor):
         dropout_samples = self.dropout_samples.get_value()
         super(BNN,self).load(output_folder,output_filename)
         self.dropout_samples.set_value(dropout_samples)
+        
+        if self.network_params is None:
+            self.network_params = {}
+        
         if self.network_spec is not None:
             self.network = self.build_network( self.network_spec, params=self.network_params, name=self.name)
         
@@ -83,7 +87,7 @@ class BNN(BaseRegressor):
         super(BNN,self).set_dataset(X_dataset.astype(theano.config.floatX),Y_dataset.astype(theano.config.floatX))
 
         # extra operations when setting the dataset (specific to this class)
-        self.update_dataset_statistics()
+        self.update_dataset_statistics(X_dataset,Y_dataset)
         
         if self.learn_noise:
             # default log of measurement noise variance is set to 1% of dataset variation
@@ -94,10 +98,9 @@ class BNN(BaseRegressor):
         super(BNN,self).append_dataset(X_dataset.astype(theano.config.floatX),Y_dataset.astype(theano.config.floatX))
 
         # extra operations when setting the dataset (specific to this class)
-        self.update_dataset_statistics()
+        self.update_dataset_statistics(X_dataset,Y_dataset)
 
-    def update_dataset_statistics(self):
-        X_dataset,Y_dataset = self.X.get_value(), self.Y.get_value()
+    def update_dataset_statistics(self,X_dataset,Y_dataset):
         if self.Xm is None:
             self.Xm = theano.shared(X_dataset.mean(0).astype(theano.config.floatX),name='%s>Xm'%(self.name),borrow=True)
             self.Xs = theano.shared(X_dataset.std(0).astype(theano.config.floatX),name='%s>Xs'%(self.name),borrow=True)
@@ -114,7 +117,7 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
         from lasagne.layers import InputLayer, DenseLayer
-        from kusanagi.ghost.regression.layers import DropoutLayer
+        from kusanagi.ghost.regression.layers import DropoutLayer, relu
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
         if name is None:
             name = self.name
@@ -133,7 +136,7 @@ class BNN(BaseRegressor):
             network_spec.append( (DropoutLayer, dict(p=p_input, rescale=False, name=name+'_drop_input', dropout_samples=self.dropout_samples.get_value()) ) )
         # hidden layers
         for i in range(len(hidden_dims)):
-            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=sigmoid, name=name+'_fc%d'%(i)) ) )
+            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=tanh, name=name+'_fc%d'%(i)) ) )
             if p[i] > 0:
                 network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
         # output layer
@@ -179,19 +182,23 @@ class BNN(BaseRegressor):
             
             if layer_name in params:
                 layer_args.update(params[layer_name])
-
             print layer_class.__name__, layer_args
             network = layer_class(network, **layer_args)
             # change the periods in variable names
             for p in network.get_params():
                 p.name = p.name.replace('.','>')
+
+        # force rebuilding the prediction functions, as they will be out of date
+        self.predict_fn = None
+        self.predict_ic_fn = None
+
         return network
     
     def init_loss(self):
         ''' initializes the loss function for training '''
         # build the network
         if self.network is None:
-            self.network = self.build_network()
+            self.network = self.build_network( self.network_spec, params=self.network_params, name=self.name)
 
         utils.print_with_stamp('Initialising loss function',self.name)
 
@@ -222,8 +229,8 @@ class BNN(BaseRegressor):
         N = N.astype(theano.config.floatX)
         E = E.astype(theano.config.floatX)
         # compute negative log likelihood
-        error = tt.square(delta_y*tt.exp(-logsn_std)).sum(1)
-        loss = 0.5*error.mean() + logsn_std.mean() 
+        nll = tt.square(delta_y*tt.exp(-logsn_std)).sum(-1) + logsn_std.sum(-1) # note that if we have logsn_std be a 1xD vector, broadcasting rules apply
+        loss = 0.5*nll.mean()
 
         # compute regularization term
         loss += self.get_regularizatoin_term(input_lengthscale,hidden_lengthscale)/N
@@ -232,12 +239,12 @@ class BNN(BaseRegressor):
         params = lasagne.layers.get_all_params(self.network, trainable=True)
 
         # SGD trainer
-        #min_method = utils.updates.nadam
         min_method = lasagne.updates.adam
-        updates = min_method(loss,params,learning_rate=1e-3)
+        lr = 1e-3
+        updates = min_method(loss,params,learning_rate=lr)
         # if we are learning the noise
         if self.learn_noise and not self.heteroscedastic:
-            updates.update(min_method(loss,[logsn],learning_rate=1e-3))
+            updates.update(min_method(loss,[logsn],learning_rate=lr))
         
         # compile the training function
         l2_error = tt.square(delta_y).sum(1).mean()
@@ -272,19 +279,19 @@ class BNN(BaseRegressor):
 
         return reg
 
-    def get_dropout_masks(self,network=None):
+    def get_updates(self,network=None):
         ''' returns a dictionary where the keys are lasagne layer instances and the values are their corresponding dropout masks'''
         if network is None:
             network = self.network
         mask_updates = []
         for l in lasagne.layers.get_all_layers(network):
-            if isinstance(l,kusanagi.ghost.regression.layers.DropoutLayer):
+            if isinstance(l,kusanagi.ghost.regression.layers.DropoutLayer) and l.mask_updates is not None:
                 mask_updates.append((l.mask,l.mask_updates))
 
         return mask_updates
 
 
-    def predict_symbolic(self,mx,Sx=None, reinit_network=False, iid_per_eval=False, return_samples=False, with_measurement_noise=True):
+    def predict_symbolic(self,mx,Sx=None, deterministic=False, iid_per_eval=False, return_samples=False, with_measurement_noise=True):
         ''' returns symbolic expressions for the evaluations of this objects neural network. If Sx is specified, the
         output will correspond to the mean, covariance and input-output covariance of the network predictions'''
         if Sx is not None:
@@ -298,15 +305,16 @@ class BNN(BaseRegressor):
         else:
             x = mx[None,:] if mx.ndim == 1 else mx
 
-        # standardize inputs
-        x = (x - self.Xm)/self.Xs
-
+        if hasattr(self,'Xm') and self.Xm is not None:
+            # standardize inputs
+            x = (x - self.Xm)/self.Xs
         # unless we set the shared_axes parameter on the droput layers, the dropout masks should be different per sample
-        y = lasagne.layers.get_output(self.network, x, deterministic=False, fixed_dropout_masks=not iid_per_eval)
+        y = lasagne.layers.get_output(self.network, x, deterministic=deterministic, fixed_dropout_masks=not iid_per_eval)
 
-        # scale and center outputs
-        y = y*self.Ys + self.Ym
-
+        if hasattr(self,'Ym') and self.Ym is not None:
+            # scale and center outputs
+            y = y*self.Ys + self.Ym
+        y.name='%s>output_samples'%(self.name)
         if return_samples:
             # nothing else to do!
             return y
@@ -327,10 +335,10 @@ class BNN(BaseRegressor):
             
         return [M,S,C]
 
-    def draw_network_samples(self, n_samples=10):
+    def draw_model_samples(self, n_samples=10):
         ''' Draws realizations of the neural network dropout masks.'''
-        if dropout_samples is not None:
-            if isinstance(dropout_samples, tt.sharedvar.SharedVariable):
+        if n_samples is not None:
+            if isinstance(n_samples, tt.sharedvar.SharedVariable):
                 self.dropout_samples = n_samples
             else:
                 self.dropout_samples.set_value(n_samples)
@@ -345,7 +353,7 @@ class BNN(BaseRegressor):
             self.sample_network_fn = theano.function([],[], updates = dropout_mask_updts, allow_input_downcast=True)
 
             # call it once to initialize the masks
-            self.draw_network_samples()
+            self.sample_network_fn
             
         # draw samples from the network
         self.sample_network_fn()

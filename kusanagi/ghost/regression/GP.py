@@ -465,7 +465,7 @@ class RBFGP(GP_UI):
                 # saturate the output
                 M = self.sat_func(M)
 
-            return M, tt.zeros((self.D,self.D)), tt.zeros((self.D,self.E))
+            return M
 
         #centralize inputs 
         zeta = self.X - mx

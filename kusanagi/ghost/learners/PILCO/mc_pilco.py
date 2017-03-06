@@ -41,7 +41,7 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
     return jac
 
 class MC_PILCO(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=10, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=15, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
         super(MC_PILCO, self).__init__(params, plant_class, policy_class, cost_func,viz_class, dynmodel_class, experience, async_plant, name, filename_prefix)
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
         self.trajectory_samples = theano.shared(np.array(n_samples).astype('int32'), name="%s>trajectory_samples"%(self.name) ) 
@@ -50,14 +50,16 @@ class MC_PILCO(PILCO):
         self.dxdxp = theano.shared(np.zeros((n_samples*D, n_samples, D),dtype=theano.config.floatX))
         self.resample = params['resample'] if 'resample' in params else False
     
-    def propagate_state(self,x,u=None,dynmodel=None,policy=None,resample=None):
+    def propagate_state(self,x,u=None,*args,**kwargs):
         ''' Given a set of input states, this function returns predictions for the next states.
             This is done by 1) evaluating the current policy 2) using the dynamics model to estimate 
             the next state. If x has shape [n,D] where n is tthe number of samples and D is the state dimension,
             this function will return x_next with shape [n,D] representing the next states and costs with shape [n,1]
         '''
-        if resample is None:
-            resample=self.resample
+        dynmodel = self.dynamics_model if kwargs.get('dynmodel',None) is None else kwargs.get('dynmodel',None)
+        policy = self.policy if kwargs.get('policy',None) is None else kwargs.get('policy',None)
+        resample = kwargs.get('resample',self.resample)
+        iid_per_eval = kwargs.get('iid_per_eval',False)
 
         # resample if requested
         if resample:
@@ -74,16 +76,16 @@ class MC_PILCO(PILCO):
 
         if u is None:
             # compute control signal (with noisy state measurement)
-            sn2 = tt.exp(2*dynmodel.logsn)
-            x_ = x + self.m_rng.normal(x.shape).dot(tt.diag(tt.sqrt(sn2)))
-            xa_ = utils.gTrig(x_,self.angle_idims,D_)
-            u = policy.evaluate(xa, symbolic=True)[0]
-
+            sn = tt.exp(dynmodel.logsn)
+            x_noisy = x + self.m_rng.normal(x.shape).dot(tt.diag(sn))
+            xa_noisy = utils.gTrig(x_noisy,self.angle_idims,D_)
+            u = policy.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
+        
         # build state-control vectors
         xu = tt.concatenate([xa,u],axis=1)
 
         # predict the change in state given current state-control for each particle 
-        delta_x = dynmodel.predict_symbolic(xu, iid_per_eval=False, return_samples=True)
+        delta_x = dynmodel.predict_symbolic(xu, iid_per_eval=iid_per_eval, return_samples=True)
         
         # compute the successor states
         x_next = x + delta_x
@@ -118,12 +120,6 @@ class MC_PILCO(PILCO):
         dynmodel = self.dynamics_model if dynmodel is None else dynmodel
         policy = self.policy if policy is None else policy
         cost = self.cost if cost is None else cost
-
-        # these are the shared variables that will be used in the graph.
-        # we need to pass them as non_sequences here (see: http://deeplearning.net/software/theano/library/scan.html)
-        shared_vars = [mx0,Sx0]
-        shared_vars.extend(dynmodel.get_all_shared_vars())
-        shared_vars.extend(policy.get_all_shared_vars())
         
         # draw initial set of particles
         z0 = self.m_rng.normal((n_samples,mx0.shape[0]))
@@ -141,8 +137,15 @@ class MC_PILCO(PILCO):
 
         # make sure we return the dictionary with the updates that should occur during rollouts and at the beginning of each rollout
         updates = theano.updates.OrderedUpdates()
-        updates += dynmodel.get_dropout_masks()  # this call need to happen **before** the call to scan! This is to ensure that the mask updates are initialized
+        updates += dynmodel.get_updates()  # this call need to happen **before** the call to scan! This is to ensure that the mask updates are initialized
+        if hasattr(policy,'get_updates'):
+            updates += policy.get_updates()  # this call need to happen **before** the call to scan! This is to ensure that the mask updates are initialized
 
+        # these are the shared variables that will be used in the scan graph.
+        # we need to pass them as non_sequences here (see: http://deeplearning.net/software/theano/library/scan.html)
+        shared_vars = [mx0,Sx0]
+        shared_vars.extend(dynmodel.get_all_shared_vars())
+        shared_vars.extend(policy.get_all_shared_vars())
         # loop over the planning horizon
         rollout_output, rollout_updts = theano.scan(fn=rollout_single_step, 
                                             outputs_info=[mv1,Sv1,x1,gamma1], 
@@ -215,6 +218,9 @@ class MC_PILCO(PILCO):
         p = policy.get_params(symbolic=True)
         # the policy gradients will have the same shape as the policy parameters (i.e. this returns a list
         # of theano tensor variables with the same dtype and ndim as the parameters in p )
+        if gamma0.get_value() == 1.0:
+            H = self.H_steps if H is None else H
+            expected_accumulated_cost = expected_accumulated_cost/H
         dJdp = self.get_policy_gradients(expected_accumulated_cost,p)
         retvars = [expected_accumulated_cost]
         retvars.extend(dJdp)
@@ -228,130 +234,88 @@ class MC_PILCO(PILCO):
         utils.print_with_stamp("Done compiling.",self.name)
         return policy_gradient_fn
 
-    def rollout(self, mx0, Sx0, H_steps, discount, use_scan=True, dynmodel=None, policy=None):
-        ''' Function that computes trajectory rollouts. Ensures the compiled rollout function is initialised before we can call it'''
-        # draw initial set of particles
-        if use_scan:
-            return super(MC_PILCO,self).rollout(mx0, Sx0, H_steps, discount)
 
-        utils.print_with_stamp('r')
-        D = mx0.size
-        z0 = np.random.multivariate_normal(np.zeros((D,)),np.eye(D),self.trajectory_samples.get_value().tolist())
-        Lx0 = np.linalg.cholesky(Sx0)
-        x0 = mx0 + z0.dot(Lx0.T)
-        self.xp.set_value(x0.astype(theano.config.floatX))
-
-        # call propagate_fn 
-        if not hasattr(self,'propagate_fn') or self.propagate_fn is None:
-            if dynmodel is None:
-                dynmodel = self.dynamics_model
-            if policy is None:
-                policy= self.policy
-            shared_vars = []
-            shared_vars.extend(dynmodel.get_all_shared_vars())
-            shared_vars.extend(policy.get_all_shared_vars())
-            [c_t, x_t], updates = self.propagate_state(self.xp,dynmodel,policy)
-            updates += [(self.xp,x_t)] # update the state variable
-            self.propagate_fn = theano.function([],[c_t,x_t], updates=updates, name='%s>propagate_fn'%(self.name))
-        
-        costs, trajectories = [],[]
-        for i in range(H_steps):
-            cost, x = self.propagate_fn()
-            costs.append(cost)
-            trajectories.append(x)
-            print cost.mean()
-
-        return [np.array(costs),np.array(trajectories)]
-
-    def policy_gradient(self, mx0, Sx0, H_steps, discount, use_scan=True, dynmodel=None, policy=None):
-        ''' Function that computes the gradients of the parameters of the current policy, from trajectory samples. 
-            Ensures the compiled policy gradients function is initialised before we can call it'''
-        if use_scan:
-            return super(MC_PILCO,self).rollout(mx0, Sx0, H_steps, discount)
-        utils.print_with_stamp('pg')
-        # draw initial set of particles
-        D = mx0.size
-        z0 = np.random.multivariate_normal(np.zeros((D,)),np.eye(D),self.trajectory_samples.get_value().tolist())
-        Lx0 = np.linalg.cholesky(Sx0)
-        x0 = mx0 + z0.dot(Lx0.T)
-        self.xp.set_value(x0.astype(theano.config.floatX))
-
-        # call propagate_d_fn 
-        if not hasattr(self,'propagate_d_fn') or self.propagate_d_fn is None:
-            if dynmodel is None:
-                dynmodel = self.dynamics_model
-            if policy is None:
-                policy= self.policy
-
-            # get the one step predictions
-            shared_vars = []
-            shared_vars.extend(dynmodel.get_all_shared_vars())
-            shared_vars.extend(policy.get_all_shared_vars())
-            [c_t, x_t], updates = self.propagate_state(self.xp,dynmodel,policy)
-            updates += [(self.xp,x_t)] # update the state variable
-            print updates
-            # get the policy parameters (as theano tensor variables)
-            p = policy.get_params(symbolic=True)
-            # the policy gradients will have the same shape as the policy parameters (i.e. this returns a list
-            # of theano tensor variables with the same dtype and ndim as the parameters in p )
-            dcdp = fast_jacobian(c_t, p) # [NxU0, NxU1, .. , NxUP ]
-            dxdp = fast_jacobian(x_t.flatten(), p) # [N*DxU0, N*DxU1, .. , N*DxUP ]
-            dxdxp = fast_jacobian(x_t.flatten(), self.xp) # [N*DxNxD ]
-            updates += [(self.dxdp,dxdp)] # update the state derivatives
-            retvars = [c_t]
-            retvars.extend([dcdp,dxdp,dxdxp])
-
-            self.propagate_d_fn = theano.function([],retvars, updates=updates, name='%s>propagate_d_fn'%(self.name))
-        
-        costs, trajectories = [],[]
-        for i in range(H_steps):
-            ret = self.propagate_d_fn()
-            print ret[0].mean()
-            print len(ret),len(ret[1]),len(ret[2]),len(ret[3])
-
-        return [np.array(costs),np.array(trajectories)]
-
-    def train_dynamics_from_rollouts(self,dynmodel=None):
+    def train_dynamics_from_rollouts(self,batchsize=100, maxiters=5000, dynmodel=None, dynmodel_class=None, dynmodel_params=None):
         ''' Treats the dynamics fitting as training a recurrent neural net. For training LSTMs, we need to
             make sure we can feed the data one step at a time, and reset the internal state of the LSTM
             at the start of every episode/sequence'''
+        # TODO this assumes we're using a neural net built with lasagne
         if dynmodel is None:
             if hasattr(self,'dynamics_model'):
                 dynmodel = self.dynamics_model
 
-        # get dataset as < (x_t,u_t), x_{t+1} >
-        X,Y = self.experience.get_dynmodel_dataset(angle_dims=self.angle_idims, deltas=False)
+        if dynmodel is None:
+            if dynmodel_class is None: dynmodel_class = self.dynmodel_class
+            if dynmodel_params is None: dynmodel_params = self.dynmodel_params
+            # initialize dynamics model
+            dynamics_filename = self.filename+'_dynamics'
+            dynmodel = dynmodel_class(filename=dynamics_filename,**dynmodel_params)
+
+            if self.dynamics_model is None:
+                self.dynamics_model = dynmodel
+
+        # get dataset as < (x_t,u_t), delta_x_{t+1} > for updating the dataset statstics (mean and stdev of inputs and outputs)
+        X,Y = self.experience.get_dynmodel_dataset(angle_dims=self.angle_idims, deltas=True)
+        dynmodel.update_dataset_statistics(X,Y)
 
         if not hasattr(self,'train_dynamics_fn'):
+            dynmodel.init_loss()
             # we will generate trajectories by applying actions from the experience data
             # and compute errors from the differences between predicted and observed states
-            X = tt.tensor3('X')
-            U = tt.tensor3('U')
+            X = tt.tensor3('X')  #  H x n x D
+            U = tt.tensor3('U')  #  H x n x U
 
             # do first iteration of scan here (so if we have any learning iteration updates that depend on computations inside the scan loop, all the inputs are defined outisde the scan)
-            propagate_fn = partial( self.propagate_state, dynmodel=dynmodel)
-            [x1] = propagate_fn(X[0],U[0])
+            def propagate_fn(u,x,*args):
+                return self.propagate_state(x,u,dynmodel=dynmodel)
+
+            x1 = propagate_fn(U[0],X[0])     # n x D
             updates = theano.updates.OrderedUpdates()
             updates += dynmodel.get_dropout_masks()
             
-            # loop over the planning horizon
-            shared_vars = []
-            shared_vars.extend(dynmodel.get_all_shared_vars())
-            shared_vars.extend(policy.get_all_shared_vars())
-            pred_trajs, updts = theano.scan(fn=propagate_state, 
-                                            outputs_info=[x1],
-                                            sequences=[U[1:]],
-                                            non_sequences=shared_vars,
-                                            strict=True,
-                                            allow_gc=False,
-                                            name="%s>rollout_scan"%(self.name))
-            updates += updts
-
-            loss = ((pred_trajs - X)**2).sum(1)
+            nll = tt.square((x1 - x[1])*tt.exp(-pred_noise)).sum(-1) + pred_noise.sum(-1)
+            #nll = tt.square(x1[None,:,:] - X[1]).sum(-1)
+            loss = nll.mean()
             if hasattr(dynmodel,'get_regularization_term'):
                 loss += dynmodel.get_regularization_term()
+            utils.print_with_stamp('Compiling rollout based dynamics model loss',self.name)
+            params = lasagne.layers.get_all_params(dynmodel.network,trainable=True)
+            updates += lasagne.updates.adam(loss,params,learning_rate=1e-3)
+            #if dynmodel.learn_noise and not dynmodel.heteroscedastic:
+            #    updates.update(lasagne.updates.adam(loss,[pred_noise],learning_rate=1e-4))
+            self.train_dynamics_fn = theano.function([X,U],loss,updates=updates)
+            utils.print_with_stamp("Done compiling.",self.name)
+
 
         # get trajectory data
-        X = self.experience.states
-        U = self.experience.actions
+        X = np.array(self.experience.states) # ep x H x D
+        U = np.array(self.experience.actions) # ep x H x U
 
+        # build all subsequences
+        seqs = {}
+        X_strides = (X.itemsize*X.shape[1]*X.shape[2],X.itemsize*X.shape[2],X.itemsize*X.shape[2],X.itemsize)
+        U_strides = (U.itemsize*U.shape[1]*U.shape[2],U.itemsize*U.shape[2],U.itemsize*U.shape[2],U.itemsize)
+        for l in xrange(2,4):
+            X_l = np.lib.stride_tricks.as_strided(X, shape=(X.shape[0],X.shape[1]-l+1,l,X.shape[2]), strides=X_strides)
+            U_l = np.lib.stride_tricks.as_strided(U, shape=(U.shape[0],U.shape[1]-l+1,l,U.shape[2]), strides=X_strides)
+            # The reshapes generate a data copy, so there might be better ways to handle this
+            X_l = X_l.reshape(X_l.shape[0]*X_l.shape[1],X_l.shape[2],X_l.shape[3])
+            U_l = U_l.reshape(U_l.shape[0]*U_l.shape[1],U_l.shape[2],U_l.shape[3])
+            seqs[l] = (X_l,U_l)
+
+        # make sure we have dropout samples of the appropriate size
+        dynmodel.draw_model_samples(batchsize)
+
+        # training loop
+        for i in xrange(maxiters):
+            # sample trajectories (or trajectory segments) from dataset 
+            seq_len = 2#np.random.randint(3,10)
+            X_l, U_l = seqs[seq_len]
+            indices = np.random.choice(X_l.shape[1],batchsize)
+            Xi, Ui =X_l[indices].transpose(1,0,2),U_l[indices].transpose(1,0,2)
+            loss = self.train_dynamics_fn(Xi,Ui)
+            #loss = self.train_dynamics_fn(X.tranpose(1,0,2),Y.transpose(1,0,2))
+            utils.print_with_stamp('loss: %f iter: %d'%(loss,i),same_line=True,name=self.name)
+        print ''
+        dynmodel.draw_model_samples(self.trajectory_samples.get_value())
+        return dynmodel

@@ -357,33 +357,28 @@ class EpisodicLearner(Loadable):
                 utils.print_with_stamp("Compiling optimizer",self.name)
                 min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
                 p = self.policy.get_params(symbolic=True)
-                dJdp = self.get_policy_gradients(v,p,clip=self.grad_clip)
+                reg=0
+                if hasattr(self.policy, 'get_regularization_term'):
+                    # get regularization term
+                    reg += p.self.policy.get_regularization_term(1e-1,1e-1)
+                dJdp = self.get_policy_gradients(v+reg,p,clip=self.grad_clip)
                 lr = theano.tensor.scalar('lr')
-                updates = min_method_updt(dJdp,p,learning_rate=lr)
-                # add temporal smoothing
-
-                grad_updts = []
-                for u in updates:
-                    if u in p:
-                        grad_updts.append(updates[u]-u)
-
+                updates = min_method_updt(dJdp,p,learning_rate=lr,beta1=0.5)
                 updates += updts
-                self.train_fn = theano.function([lr],[v]+grad_updts,updates=updates)
+                # add temporal smoothing
+                self.train_fn = theano.function([lr],v,updates=updates)
                 utils.print_with_stamp("Done compiling.",self.name)
 
             # training loop
-            mv = self.best_p[0]
             for i in xrange(self.max_evals):
                 # evaluate current policy and update parameters
                 total_evals = self.n_evals + self.max_evals*self.learning_iteration
-                ret = self.train_fn(self.learning_rate)
-                v = ret[0]; grad_updts = ret[1:]
+                v = self.train_fn(self.learning_rate)
                 p = self.policy.get_params(symbolic=False)
-                if v < self.best_p[0] and i > 0.1*self.max_evals:
+                if v < self.best_p[0]:
                     self.best_p = [v,p,i]
                 self.n_evals+=1
-                updt_mags = [np.sqrt((g**2).sum()) for g in grad_updts]
-                utils.print_with_stamp('Current value: %E, Total evaluations: %d, updt_mags: %s'%(v,self.n_evals,str(updt_mags)),
+                utils.print_with_stamp('Current value: %E, Total evaluations: %d'%(v,self.n_evals),
                                         self.name,True)
         else:
             error_str = 'Unknown minimization method %s' % (self.min_method)
@@ -392,7 +387,10 @@ class EpisodicLearner(Loadable):
      
         print '' 
         v,p,i = self.best_p
+        #beta=0.5
+        #p = [ (1-beta)*p[i] + beta*p0[i] for i in range(len(p)) ]
         self.policy.set_params(p)
+        v = self.value()
         utils.print_with_stamp('Done training. New value [%f] iter: [%d]'%(v,i),self.name)
         self.state_changed = True
 

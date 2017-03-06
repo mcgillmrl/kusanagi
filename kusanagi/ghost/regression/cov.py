@@ -45,14 +45,3 @@ def Sum(loghyp_l, cov_l, X1, X2=None, all_pairs=True):
     ''' Returns the sum of multiple covariance functions'''
     K = sum([cov_l[i](loghyp_l[i],X1,X2,all_pairs=all_pairs) for i in xrange(len(cov_l)) ] )
     return K
-
-def Grid(loghyp, U, cov,X1, X2=None, all_pairs=True):
-    ''' An approximation to the true covariance matrix by interpolation with inducing points on a grid (see Wilson and Nickisch, 2015)'''
-    #
-    Kuu = cov(loghyp,U,all_pairs=all_pairs)
-
-
-
-def createGrid(X1):
-    pass
-

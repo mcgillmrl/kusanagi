@@ -6,7 +6,7 @@ import kusanagi.ghost.regression as kreg
 from kusanagi import utils
 from kusanagi.shell.cartpole import default_params, CartpoleDraw
 from kusanagi.ghost.learners.PILCO import PILCO, MC_PILCO
-from kusanagi.ghost.control import BNNPolicy
+from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
 
 #np.random.seed(31337)
@@ -14,7 +14,7 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     # setup output directory
-    utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole_.5m'))
+    utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
     
     use_bnn = True
     J = 1                                                                  # number of random initial trials
@@ -40,10 +40,11 @@ if __name__ == '__main__':
         learner_params['params']['max_evals'] = 1000
         learner_params['params']['clip'] = 1.0
         learner_params['dynmodel_class'] = kreg.BNN
+        #learner_params['policy_class'] = NNPolicy
 
         learner = MC_PILCO(**learner_params)
     try:
-        #learner.load(load_compiled_fns=True)
+        learner.load(load_compiled_fns=True)
         save_compiled_fns = False
     except:
         utils.print_with_stamp('Unable to load compiled fns','main')
@@ -59,8 +60,6 @@ if __name__ == '__main__':
         for i in xrange(J):
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
-        #learner.plant.reset_state()
-        #learner.apply_controller()
     else:
         last_pp = learner.experience.policy_parameters[-1]
         current_pp = learner.policy.get_params(symbolic=False)
@@ -79,8 +78,8 @@ if __name__ == '__main__':
     for i in xrange(N):
         # train the dynamics models given the collected data
         if use_bnn:
-            #learner.train_dynamics(max_episodes=20)
-            learner.train_dynamics_from_rollouts()
+            learner.train_dynamics(max_episodes=30)
+            #learner.train_dynamics_from_rollouts()
         else:
             learner.train_dynamics()
 

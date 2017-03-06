@@ -408,6 +408,8 @@ class PILCO(EpisodicLearner):
  
         dynmodel.train()
         utils.print_with_stamp('Done training dynamics model',self.name)
+        if self.dynamics_model is None:
+            self.dynamics_model = dynmodel
         return dynmodel
 
     def value(self,return_grads=False):
@@ -420,8 +422,8 @@ class PILCO(EpisodicLearner):
             H_steps = min(2*max_steps, H_steps)
 
         # if we have no data to compute the value, return dummy values
-        if self.dynamics_model.N < 1:
-            return np.zeros((H_steps,)),np.ones((H_steps,))
+        #if self.dynamics_model.N < 1:
+        #    return np.zeros((H_steps,)),np.ones((H_steps,))
 
         # setup initial state
         if self.use_empirical_x0:

@@ -6,7 +6,7 @@ import kusanagi.ghost.regression as kreg
 from kusanagi import utils
 from kusanagi.shell.double_cartpole import default_params, DoubleCartpoleDraw
 from kusanagi.ghost.learners.PILCO import PILCO, MC_PILCO
-from kusanagi.ghost.control import BNNPolicy
+from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
 
 #np.random.seed(31337)
@@ -17,14 +17,14 @@ if __name__ == '__main__':
     utils.set_output_dir(os.path.join(utils.get_output_dir(),'double_cartpole'))
     
     use_bnn = True
-    J = 2                                                                  # number of random initial trials
+    J = 1                                                                  # number of random initial trials
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
     learner_params['params']['realtime'] = False
     learner_params['params']['H'] = 4.0
-    learner_params['params']['plant']['dt'] = 0.075
+    learner_params['params']['plant']['dt'] = 0.05
 
     if not use_bnn:
         # gp based PILCO
@@ -33,10 +33,11 @@ if __name__ == '__main__':
     else:
         # dropout network (BNN) based PILCO
         learner_params['params']['min_method'] = 'ADAM'
-        learner_params['params']['learning_rate'] = 1e-2
+        learner_params['params']['learning_rate'] = 2e-4
         learner_params['params']['max_evals'] = 1000
-        learner_params['params']['clip'] = 1.0
+        learner_params['params']['clip'] = 10.0
         learner_params['dynmodel_class'] = kreg.BNN
+        learner_params['policy_class'] = NNPolicy
 
         learner = MC_PILCO(**learner_params)
 
@@ -77,7 +78,7 @@ if __name__ == '__main__':
     for i in xrange(N):
         # train the dynamics models given the collected data
         if use_bnn:
-            learner.train_dynamics()
+            learner.train_dynamics(max_episodes=10)
         else:
             learner.train_dynamics()
 
@@ -98,4 +99,5 @@ if __name__ == '__main__':
         learner.save(save_compiled_fns=save_compiled_fns)
         save_compiled_fns = False  # only need to save the compiled functions once
     
+    raw_input('Finished training')
     sys.exit(0)
