@@ -136,7 +136,7 @@ class BNN(BaseRegressor):
             network_spec.append( (DropoutLayer, dict(p=p_input, rescale=False, name=name+'_drop_input', dropout_samples=self.dropout_samples.get_value()) ) )
         # hidden layers
         for i in range(len(hidden_dims)):
-            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=tanh, name=name+'_fc%d'%(i)) ) )
+            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=sigmoid, name=name+'_fc%d'%(i)) ) )
             if p[i] > 0:
                 network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
         # output layer

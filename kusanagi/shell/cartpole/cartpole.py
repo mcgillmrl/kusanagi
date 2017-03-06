@@ -17,7 +17,7 @@ def default_params():
     N = 100                                                                 # learning iterations
     learner_params = {}
     learner_params['x0'] = [0,0,0,0]                                        # initial state mean
-    learner_params['S0'] = np.eye(4)*(0.2**2)                               # initial state covariance
+    learner_params['S0'] = np.eye(4)*(0.1**2)                               # initial state covariance
     learner_params['angle_dims'] = [3]                                      # angle dimensions
     learner_params['H'] = 4.0                                               # control horizon
     learner_params['discount'] = 1.0                                        # discount factor
