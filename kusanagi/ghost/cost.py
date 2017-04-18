@@ -69,6 +69,8 @@ def generic_loss(mx,Sx,params,loss_func,angle_idims=[]):
 # deterministic loss functions
 def linear_loss_d(x,dummy,params,absolute=True):
     # linear penalty function
+    if x.ndim == 1:
+        x = x[None,:]
     Q = tt.constant(params['Q'],dtype=x.dtype)
     target = tt.constant(params['target'],dtype=x.dtype)
     if absolute:
@@ -79,6 +81,8 @@ def linear_loss_d(x,dummy,params,absolute=True):
 
 def quadratic_loss_d(x,dummy,params):
     # Quadratic penalty function
+    if x.ndim == 1:
+        x = x[None,:]
     Q = tt.constant(params['Q'],dtype=x.dtype) if 'Q' in params else tt.eye(Sx.shape[0])
     target = tt.constant(params['target'],dtype=x.dtype)
 

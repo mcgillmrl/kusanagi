@@ -92,7 +92,7 @@ def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
             cost_c = loss_func(mxa,None,loss_params)
             cost.append(cost_c)
         
-        return sum(cost)/len(cw), tt.constant(0.0)
+        return sum(cost)/len(cw)
     else:
         mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
         
