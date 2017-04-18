@@ -8,14 +8,15 @@ import traceback
 
 import random
 import numpy as np
-import lbfgs
 import csv
 import theano
 from theano import tensor as tt, ifelse
 from theano.gof import Variable
-from theano.sandbox.linalg import psd,matrix_inverse
+from theano.sandbox.linalg import psd, matrix_inverse
 import matplotlib as mpl
-#mpl.use('Agg') #this line is necessary for plot_and_save to work on server side without a GUI. Needs to be set before plt is imported.
+# This line is necessary for plot_and_save to work on server side without a GUI. 
+# Needs to be set before plt is imported.
+#mpl.use('Agg') 
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 

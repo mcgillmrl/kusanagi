@@ -1,4 +1,3 @@
-import climin
 import os
 import lasagne.utils
 import numpy as np
@@ -10,7 +9,7 @@ from functools import partial
 from scipy.optimize import minimize, basinhopping
 from theano import function as F, shared as S
 from theano.tensor.nlinalg import matrix_dot
-from theano.sandbox.linalg import matrix_inverse,det,cholesky
+from theano.sandbox.linalg import matrix_inverse, det, cholesky
 from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular, solve
 
 import cov
@@ -21,54 +20,64 @@ from kusanagi.ghost.regression import BaseRegressor
 
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 class GP(BaseRegressor):
-    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None, profile=theano.config.profile, snr_penalty=SNRpenalty.SEard, filename=None, **kwargs):
+    def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None,
+                 profile=theano.config.profile, snr_penalty=SNRpenalty.SEard, filename=None,
+                 **kwargs):
         # theano options
-        self.profile= profile
+        self.profile = profile
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
 
         # GP options
         self.max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 500
         self.conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
-        self.min_method = kwargs['min_method'] if 'min_method' in kwargs else 'L-BFGS-B'#utils.fmin_lbfgs
+        self.min_method = kwargs['min_method'] if 'min_method' in kwargs else 'L-BFGS-B'
         self.state_changed = True
         self.should_recompile = False
         self.trained = False
         self.snr_penalty = snr_penalty
         self.covs = (cov.SEard, cov.Noise)
-	self.uncertain_inputs = True
-        
+        self.uncertain_inputs = True
+
         # dimension related variables
         self.N = 0
         if X_dataset is None:
             if idims is None:
-                raise ValueError('You need to either provide X_dataset (n x idims numpy array) or a value for idims') 
+                raise ValueError('You need to either provide X_dataset (n x idims numpy array) or a\
+                                   value for idims')
             self.D = idims
         else:
             self.D = X_dataset.shape[1]
 
         if Y_dataset is None:
             if odims is None:
-                raise ValueError('You need to either provide Y_dataset (n x odims numpy array) or a value for odims') 
+                raise ValueError('You need to either provide Y_dataset (n x odims numpy array) or a\
+                                   value for odims')
             self.E = odims
         else:
             self.E = Y_dataset.shape[1]
 
         #symbolic varianbles
         self.loghyp = None; self.logsn = None
-        self.X = None; self.Y = None;
-        self.iK = None; self.L = None; self.beta = None; self.nigp=None; self.Y_var=None; self.X_cov=None
+        self.X = None; self.Y = None
+        self.iK = None; self.L = None
+        self.beta = None; self.nigp = None
+        self.Y_var = None; self.X_cov = None
         self.kernel_func = None
-        self.loss_fn = None; self.dloss_fn=None
+        self.loss_fn = None; self.dloss_fn = None
 
         # compiled functions
         self.predict_fn = None
         self.predict_d_fn = None
-        
+
         # name of this class for printing command line output and saving
         self.name = name
         # filename for saving
-        self.filename = filename if filename is not None else  '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX)
-        BaseRegressor.__init__(self,name=name,filename=self.filename)
+        self.filename = filename if not filename else '%s_%d_%d_%s_%s' % (self.name,
+                                                                          self.D,
+                                                                          self.E,
+                                                                          theano.config.device,
+                                                                          theano.config.floatX)
+        BaseRegressor.__init__(self, name=name, filename=self.filename)
         if filename is not None:
             self.load()
 
@@ -76,41 +85,41 @@ class GP(BaseRegressor):
         self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
         # register additional variables for saving
         self.register(['trained'])
-        
+
         # initialize the class if no pickled version is available
         if X_dataset is not None and Y_dataset is not None:
-            utils.print_with_stamp('Initialising new GP regressor',self.name)
-            self.set_dataset(X_dataset,Y_dataset)
-            utils.print_with_stamp('Finished initialising GP regressor',self.name)
-        
+            utils.print_with_stamp('Initialising new GP regressor', self.name)
+            self.set_dataset(X_dataset, Y_dataset)
+            utils.print_with_stamp('Finished initialising GP regressor', self.name)
+
         self.ready = False
         self.predict_fn = None
 
-    def load(self, output_folder=None,output_filename=None):
+    def load(self, output_folder=None, output_filename=None):
         ''' loads the state from file, and initializes additional variables'''
         # load state
-        super(GP,self).load(output_folder,output_filename)
-        
+        super(GP, self).load(output_folder, output_filename)
+
         # initialize missing variables
-        if hasattr(self,'X') and self.X:
+        if hasattr(self, 'X') and self.X:
             self.N = self.X.get_value(borrow=True).shape[0]
             self.D = self.X.get_value(borrow=True).shape[1]
-        if hasattr(self,'Y') and self.Y:
+        if hasattr(self, 'Y') and self.Y:
             self.E = self.Y.get_value(borrow=True).shape[1]
-        if hasattr(self,'loghyp') and self.loghyp:
-            self.logsn = self.loghyp[:,-1]
+        if hasattr(self, 'loghyp') and self.loghyp:
+            self.logsn = self.loghyp[:, -1]
 
-    def set_dataset(self,X_dataset,Y_dataset,X_cov=None,Y_var=None):
+    def set_dataset(self, X_dataset, Y_dataset, X_cov=None, Y_var=None):
         # set dataset
-        super(GP,self).set_dataset(X_dataset,Y_dataset)
+        super(GP, self).set_dataset(X_dataset, Y_dataset)
 
         # extra operations when setting the dataset (specific to this class)
         self.X_cov = X_cov
         if Y_var is not None:
             if self.Y_var is None:
-                self.Y_var = S(Y_var,name='%s>Y_var'%(self.name),borrow=True)
+                self.Y_var = S(Y_var, name='%s>Y_var'%(self.name), borrow=True)
             else:
-                self.Y_var.set_value(Y_var,borrow=True)
+                self.Y_var.set_value(Y_var, borrow=True)
 
         if not self.trained:
             # init log hyperparameters
@@ -118,68 +127,74 @@ class GP(BaseRegressor):
 
         # we should be saving, since we updated the trianing dataset
         self.state_changed = True
-        if (self.N > 0):
+        if self.N > 0:
             self.ready = True
 
-    def append_dataset(self,X_dataset,Y_dataset,X_cov=None,Y_var=None):
+    def append_dataset(self, X_dataset, Y_dataset, X_cov=None, Y_var=None):
         # overrides append_dataset from BaseRegressor
         if self.X is None:
-            self.set_dataset(X_dataset,Y_dataset,X_cov,Y_var)
+            self.set_dataset(X_dataset, Y_dataset, X_cov, Y_var)
         else:
             X_ = np.vstack((self.X.get_value(), X_dataset.astype(self.X.dtype)))
             Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(self.Y.dtype)))
             X_cov_ = None
-            if X_cov is not None and hasattr(self,'X_cov') and self.X_cov:
+            if X_cov is not None and hasattr(self, 'X_cov') and self.X_cov:
                 X_cov_ = np.vstack((self.X_cov, X_cov.astype(self.X_cov.dtype)))
             Y_var_ = None
-            if Y_var is not None and hasattr(self,'Y_var'):
+            if Y_var is not None and hasattr(self, 'Y_var'):
                 Y_var_ = np.vstack((self.Y_var.get_value(), Y_var.astype(self.Y_var.dtype)))
-            
-            self.set_dataset(X_,Y_,X_cov_,Y_var_)
+
+            self.set_dataset(X_, Y_, X_cov_, Y_var_)
 
     def init_params(self):
-        utils.print_with_stamp('Initialising parameters' ,self.name)
-        idims = self.D; odims = self.E; 
-        # initialize the loghyperparameters of the gp ( this code supports squared exponential only, at the moment)
+        utils.print_with_stamp('Initialising parameters', self.name)
+        idims = self.D; odims = self.E
+        # initialize the loghyperparameters of the gp
+        # this code supports squared exponential only, at the moment
         X = self.X.get_value(); Y = self.Y.get_value()
-        loghyp = np.zeros((odims,idims+2))
-        loghyp[:,:idims] = 0.5*X.std(0,ddof=1)
-        loghyp[:,idims] = 0.5*Y.std(0,ddof=1)
-        loghyp[:,idims+1] = 0.1*loghyp[:,idims]
+        loghyp = np.zeros((odims, idims+2))
+        loghyp[:, :idims] = 0.5*X.std(0, ddof=1)
+        loghyp[:, idims] = 0.5*Y.std(0, ddof=1)
+        loghyp[:, idims+1] = 0.1*loghyp[:, idims]
         loghyp = np.log(loghyp)
-        
+
         # set params will either create the loghyp attribute, or update its value
         self.set_params({'loghyp': loghyp})
         # create logsn (used in PILCO)
         if self.logsn is None:
-            self.logsn = self.loghyp[:,-1]
+            self.logsn = self.loghyp[:, -1]
 
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
-            return [(attr_name,self.__dict__[attr_name]) for attr_name in self.__dict__.keys() if isinstance(self.__dict__[attr_name],tt.sharedvar.SharedVariable)]
+            return [(attr_name, self.__dict__[attr_name])
+                    for attr_name in self.__dict__.keys()
+                    if isinstance(self.__dict__[attr_name], tt.sharedvar.SharedVariable)]
         else:
-            return [attr for attr in self.__dict__.values() if isinstance(attr,tt.sharedvar.SharedVariable)]
+            return [attr for attr in self.__dict__.values()
+                    if isinstance(attr, tt.sharedvar.SharedVariable)]
 
     def init_loss(self, cache_vars=True, compile_funcs=True, unroll_scan=True):
-        utils.print_with_stamp('Initialising expression graph for full GP training loss function',self.name)
+        utils.print_with_stamp('Initialising expression graph\
+                                for full GP training loss function', self.name)
         idims = self.D
         odims = self.E
 
-        # these are shared variables for the kernel matrix, its cholesky decomposition and K^-1 dot Y
+        # these are shared variables for the kernel matrix,
+        # its cholesky decomposition and K^-1 dot Y
         if self. iK is None:
-            self.iK = S(np.zeros((self.E,self.N,self.N)), name="%s>iK"%(self.name))
+            self.iK = S(np.zeros((self.E, self.N, self.N)), name="%s>iK"%(self.name))
         if self.L is None:
-            self.L = S(np.zeros((self.E,self.N,self.N)), name="%s>L"%(self.name))
+            self.L = S(np.zeros((self.E, self.N, self.N)), name="%s>L"%(self.name))
         if self.beta is None:
-            self.beta = S(np.zeros((self.E,self.N)), name="%s>beta"%(self.name))
+            self.beta = S(np.zeros((self.E, self.N)), name="%s>beta"%(self.name))
         if self.X_cov is not None and self.nigp is None:
-            self.nigp = S(np.zeros((self.E,self.N)), name="%s>nigp"%(self.name))
+            self.nigp = S(np.zeros((self.E, self.N)), name="%s>nigp"%(self.name))
 
         N = self.X.shape[0].astype(theano.config.floatX)
-        
-        def log_marginal_likelihood(Y,loghyp,i,X,EyeN,nigp=None,y_var=None):
+
+        def log_marginal_likelihood(Y, loghyp, i, X, EyeN, nigp=None, y_var=None):
             # initialise the (before compilation) kernel function
-            loghyps = (loghyp[:idims+1],loghyp[idims+1])
+            loghyps = (loghyp[:idims+1], loghyp[idims+1])
             kernel_func = partial(cov.Sum, loghyps, self.covs)
 
             # We initialise the kernel matrices (one for each output dimension)
@@ -191,34 +206,45 @@ class GP(BaseRegressor):
             if y_var:
                 K += tt.diag(y_var[i])
             L = cholesky(K)
-            iK = solve_upper_triangular(L.T, solve_lower_triangular(L,EyeN))
-            Yc = solve_lower_triangular(L,Y)
-            beta = solve_upper_triangular(L.T,Yc)
+            iK = solve_upper_triangular(L.T, solve_lower_triangular(L, EyeN))
+            Yc = solve_lower_triangular(L, Y)
+            beta = solve_upper_triangular(L.T, Yc)
 
-            # And finally, the negative log marginal likelihood ( again, one for each dimension; although we could share
-            # the loghyperparameters across all output dimensions and train the GPs jointly)
-            loss = 0.5*(Yc.T.dot(Yc) + 2*tt.sum(tt.log(tt.diag(L))) + N*tt.log(2*np.pi) )
+            # And finally, the negative log marginal likelihood ( again, one for each dimension;
+            # although we could share the loghyperparameters across all output dimensions and
+            # train the GPs jointly)
+            loss = 0.5*(Yc.T.dot(Yc) + 2*tt.sum(tt.log(tt.diag(L))) + N*tt.log(2*np.pi))
 
-            return loss,iK,L,beta
-        
-        nseq = [self.X,tt.eye(self.X.shape[0])]
+            return loss, iK, L, beta
+
+        nseq = [self.X, tt.eye(self.X.shape[0])]
         if self.nigp:
             nseq.append(self.nigp)
         if self.Y_var:
             nseq.append(self.Y_var.T)
-        
+
+        seq = [self.Y.T, self.loghyp, tt.arange(self.X.shape[0])]
         if unroll_scan:
-            loss,iK,L,beta = lasagne.utils.unroll_scan(fn=log_marginal_likelihood, outputs_info=[], sequences=[self.Y.T,self.loghyp,tt.arange(self.X.shape[0])], non_sequences=nseq, n_steps=self.E)
+            from lasagne.utils import unroll_scan
+            loss, iK, L, beta = unroll_scan(fn=log_marginal_likelihood,
+                                            outputs_info=[],
+                                            sequences=seq,
+                                            non_sequences=nseq, n_steps=self.E)
         else:
-            (loss,iK,L,beta),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp,tt.arange(self.X.shape[0])], non_sequences=nseq, allow_gc=False, name="%s>logL_scan"%(self.name))
-    
-        iK = tt.unbroadcast(iK,0) if iK.broadcastable[0] else iK
-        L = tt.unbroadcast(L,0) if L.broadcastable[0] else L
-        beta = tt.unbroadcast(beta,0) if beta.broadcastable[0] else beta
-    
+            (loss, iK, L, beta), updts = theano.scan(fn=log_marginal_likelihood,
+                                                     sequences=seq,
+                                                     non_sequences=nseq,
+                                                     allow_gc=False,
+                                                     name="%s>logL_scan"%(self.name))
+
+        iK = tt.unbroadcast(iK, 0) if iK.broadcastable[0] else iK
+        L = tt.unbroadcast(L, 0) if L.broadcastable[0] else L
+        beta = tt.unbroadcast(beta, 0) if beta.broadcastable[0] else beta
+
         if cache_vars:
-            # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
-            updts =[(self.iK,iK),(self.L,L),(self.beta,beta)]
+            # we are going to save the intermediate results in the following shared variables,
+            # so we can use them during prediction without having to recompute them
+            updts =[(self.iK, iK), (self.L, L), (self.beta, beta)]
         else:
             self.iK = iK 
             self.L = L 
