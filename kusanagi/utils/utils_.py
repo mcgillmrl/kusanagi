@@ -422,7 +422,7 @@ def plot_results(learner,H=None):
         H = learner.H
     H_steps =int( np.ceil(H/dt))
     T_range = np.arange(0,H+dt,dt)
-    cost = np.array(learner.experience.immediate_cost[-1])[:,0]
+    cost = np.array(learner.experience.immediate_cost[-1])
     rollout_ =  learner.rollout(x0,S0,H_steps,1)
     states = np.array(learner.experience.states[-1])
 
