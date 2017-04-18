@@ -227,7 +227,6 @@ class PILCO(EpisodicLearner):
         shared_vars.extend(dynmodel.get_all_shared_vars())
         shared_vars.extend(policy.get_all_shared_vars())
 
-        print [ (s,id(s)) for s in  shared_vars]
         # create the nodes that return the result from scan
         rollout_output, updts = theano.scan(fn=rollout_single_step, 
                                             outputs_info=[mv0,Sv0,mx0,Sx0,gamma0], 
@@ -378,12 +377,12 @@ class PILCO(EpisodicLearner):
 
         # get distribution of initial states
         x0 = np.array([x[0] for x in self.experience.states])
-        if n_episodes > 2:
-            self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
-            self.Sx0.set_value(np.cov(x0.T).astype(theano.config.floatX))
-        else:
-            self.mx0.set_value(x0.mean(0).astype(theano.config.floatX).flatten())
-            self.Sx0.set_value(1e-2*np.eye(self.mx0.get_value().size).astype(theano.config.floatX))
+        if self.use_empirical_x0:
+            if n_episodes > 2:
+                self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
+                self.Sx0.set_value(np.cov(x0.T).astype(theano.config.floatX))
+        print x0
+        print self.Sx0.get_value()
 
         if dynmodel is None:
             if dynmodel_class is None: dynmodel_class = self.dynmodel_class
@@ -414,6 +413,10 @@ class PILCO(EpisodicLearner):
 
     def value(self,return_grads=False):
         '''Returns the value of the current policy by computing long term predictions using a learned dynamics model. If return_grads is True, it will also return the policy gradients'''
+
+        if hasattr(self,'update'):
+            # if there are any variable we want to update before computing the value
+            self.update()
 
         # we will perform a rollout with a horizon that is as long as the longest run, but at most self.H
         max_steps = max([len(episode_states) for episode_states in self.experience.states])
