@@ -11,7 +11,7 @@ from kusanagi.ghost.regression import BaseRegressor
 
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
-    def __init__(self,idims, odims,  dropout_samples=15, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
+    def __init__(self,idims, odims,  dropout_samples=10, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
         self.D = idims
         self.E = odims
         self.name=name
@@ -198,7 +198,8 @@ class BNN(BaseRegressor):
         ''' initializes the loss function for training '''
         # build the network
         if self.network is None:
-            self.network = self.build_network( self.network_spec, params=self.network_params, name=self.name)
+            params = self.network_params if self.network_params is not None else {}
+            self.network = self.build_network( self.network_spec, params=params, name=self.name)
 
         utils.print_with_stamp('Initialising loss function',self.name)
 
@@ -215,9 +216,9 @@ class BNN(BaseRegressor):
         # evaluate nework output for batch
         if self.heteroscedastic:
             # this assumes that self.logsn is obtained from the network output
-            train_predictions, logsn = lasagne.layers.get_output([self.network,self.logsn], train_inputs_std, deterministic=False)#, batch_norm_update_averages=True, batch_norm_use_averages=True)
+            train_predictions, logsn = lasagne.layers.get_output([self.network,self.logsn], train_inputs_std, deterministic=False)
         else:
-            train_predictions = lasagne.layers.get_output(self.network, train_inputs_std, deterministic=False)#, batch_norm_update_averages=True, batch_norm_use_averages=True)
+            train_predictions = lasagne.layers.get_output(self.network, train_inputs_std, deterministic=False)
             logsn = self.logsn
 
         # scale logsn since ouotput network output is standardized
@@ -233,7 +234,7 @@ class BNN(BaseRegressor):
         loss = 0.5*nll.mean()
 
         # compute regularization term
-        loss += self.get_regularizatoin_term(input_lengthscale,hidden_lengthscale)/N
+        loss += self.get_regularization_term(input_lengthscale,hidden_lengthscale)/N
 
         # build the updates dictionary ( sets the optimization algorithm for the network parameters)
         params = lasagne.layers.get_all_params(self.network, trainable=True)
@@ -253,7 +254,7 @@ class BNN(BaseRegressor):
         self.loss_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale],[loss,l2_error],allow_input_downcast=True)
         utils.print_with_stamp('Done compiling',self.name)
 
-    def get_regularizatoin_term(self,input_lengthscale,hidden_lengthscale):
+    def get_regularization_term(self,input_lengthscale,hidden_lengthscale):
         reg = 0
         layers = lasagne.layers.get_all_layers(self.network)
         
@@ -335,33 +336,33 @@ class BNN(BaseRegressor):
             
         return [M,S,C]
 
-    def draw_model_samples(self, n_samples=10):
-        ''' Draws realizations of the neural network dropout masks.'''
+    def update(self, n_samples=None):
+        ''' Updates the dropout masks'''
         if n_samples is not None:
             if isinstance(n_samples, tt.sharedvar.SharedVariable):
                 self.dropout_samples = n_samples
             else:
                 self.dropout_samples.set_value(n_samples)
 
-        if self.sample_network_fn is None:
+        if not hasattr(self,'update_fn') or self.update_fn is None:
             # get prediction with non deterministic samples
             mx = tt.zeros((self.dropout_samples,self.D))
             output_vars = self.predict_symbolic(mx,iid_per_eval=False)
 
             # create a function to update the masks manually. Here the dropout masks should be shared variables
-            dropout_mask_updts = self.get_dropout_masks()
-            self.sample_network_fn = theano.function([],[], updates = dropout_mask_updts, allow_input_downcast=True)
+            updts = self.get_updates()
+            self.update_fn = theano.function([],[], updates = updts, allow_input_downcast=True)
 
             # call it once to initialize the masks
-            self.sample_network_fn
+            self.update_fn
             
         # draw samples from the network
-        self.sample_network_fn()
+        self.update_fn()
 
     def train(self, batchsize=100, maxiters=5000, input_ls=None, hidden_ls=None):
         if input_ls is None:
             # set to some proportion of the standard deviation (inputs are scaled and centered to N(0,1) )
-            input_ls = 0.1
+            input_ls = 0.05
         if hidden_ls is None:
             hidden_ls = input_ls
 

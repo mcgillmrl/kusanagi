@@ -63,7 +63,7 @@ class DropoutLayer(lasagne.layers.noise.DropoutLayer):
                 # note that if the batch size changes, the update will only have an effect at the next call causing a shape
                 # mis-match in the elementwise product. To avoid this, the user should update the masks before performing
                 # a forward pass on this layer.
-                self.mask_updates = mask #theano.printing.Print('\n'+self.name+'_updates\n')(mask)
+                self.mask_updates = mask
 
                 # make sure that we use the local shared variable as the mask
                 mask = self.mask
