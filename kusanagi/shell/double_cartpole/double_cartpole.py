@@ -30,7 +30,7 @@ def default_params():
     policy_params = {}
     policy_params['m0'] = learner_params['x0']
     policy_params['S0'] = learner_params['S0']
-    policy_params['n_inducing'] = 200
+    policy_params['n_inducing'] = 100
     policy_params['maxU'] = [20]
     # dynamics model
     dynmodel_params = {}
@@ -94,7 +94,7 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
             cost_c = loss_func(mxa,None,loss_params)
             cost.append(cost_c)
         
-        return sum(cost)/len(cost), tt.constant(0.0)
+        return sum(cost)/len(cost)
     else:
         mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
         
