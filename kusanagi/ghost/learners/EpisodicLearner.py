@@ -14,7 +14,6 @@ from kusanagi.base.Loadable import Loadable
 from kusanagi.utils import probls
 
 from scipy.optimize import minimize, basinhopping
-import climin
 from kusanagi import utils
 DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
@@ -24,13 +23,14 @@ STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
                           'ADAGRAD': lasagne.updates.adagrad,
                           'RMSPROP': lasagne.updates.rmsprop,
                           'ADADELTA': lasagne.updates.adadelta,
-                          'ADAM': lasagne.updates.adam, 
-                          'NADAM': utils.updates.nadam, 
+                          'ADAM': lasagne.updates.adam,
+                          'NADAM': utils.updates.nadam,
                           'ADAMAX': lasagne.updates.adamax,
                           }
 # TODO remove any theano dependency from here
 class EpisodicLearner(Loadable):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, experience = None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None,
+                 experience=None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
         self.name = name
         # initialize plant
         if 'x0' not in params['plant']:

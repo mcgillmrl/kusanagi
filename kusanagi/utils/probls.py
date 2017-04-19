@@ -4,7 +4,7 @@ from kusanagi import utils
 from scipy.stats import mvn
 from scipy.special import erf
 from matplotlib import pyplot as plt
-from thirdparty.probls.gaussian_process import ProbLSGaussianProcess
+
 class cubic_spline_gp(object):
     '''
     Implements the cubic spline GP from the Mahsereci and Hennig NIPS 2015 paper
@@ -218,14 +218,13 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
     
     # gp model for line search
     gp = cubic_spline_gp()
-    gp2 = ProbLSGaussianProcess()
+
     # initialize gp with measurement at line search step = 0
     y = 0.0
     t_curr = 0.0
     dy = df0.dot(search_direction)/beta
     gp.update(t_curr, y, dy, sigma_y, sigma_dy)
-    gp2.add(t_curr, y, dy, sigma_y**2, sigma_dy**2)
-    gp2.update()
+
     print '||||||start|||||||'
     print f0,df0.dot(search_direction),0.0,t_curr
     # start line search with step = 1.0
@@ -254,7 +253,6 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
 
         # update gp
         gp.update(t_curr, y, dy, sigma_y, sigma_dy)
-        gp2.add(t_curr, y, dy, sigma_y**2, sigma_dy**2); gp2.update()
 
         plt.figure('gp1')
         plt.clf()
@@ -270,19 +268,7 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
             upper_bound = y_plot + i*np.sqrt(var_plot).squeeze()
             plt.fill_between(t_plot, lower_bound, upper_bound, alpha=alpha)
         
-        plt.figure('gp2')
-        plt.clf()
-        ax21 = plt.subplot(211)
-        y2_plot = np.array([gp2.mu(ti) for ti in t_plot])
-        var2_plot = np.array([gp2.V(ti) for ti in t_plot])
-        plt.plot(t_plot,y2_plot)
-        alpha = 0.5
-        for i in xrange(6):
-            alpha = alpha/1.5
-            lower_bound = y2_plot - i*np.sqrt(var2_plot).squeeze()
-            upper_bound = y2_plot + i*np.sqrt(var2_plot).squeeze()
-            plt.fill_between(t_plot, lower_bound, upper_bound, alpha=alpha)
-
+      
         plt.show()
         plt.waitforbuttonpress(0.01)
 
@@ -292,9 +278,6 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
                 plt.figure('gp1')
                 ax11 = plt.subplot(211)
                 plt.scatter(np.array([ti]),np.array([gp.m(ti)]),c='g',marker='o')
-                plt.figure('gp2')
-                ax21 = plt.subplot(211)
-                plt.scatter(np.array([ti]),np.array([gp2.mu(ti)]),c='g',marker='o')
                 plt.show()
                 plt.waitforbuttonpress(0.01)
                 #pdb.set_trace()
@@ -341,20 +324,7 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
         plt.legend(handles=[l1,l2,l3])
         plt.show()
         plt.waitforbuttonpress(0.01)
-        
-        plt.figure('gp2')
-        ax22 = plt.subplot(212, sharex=ax21)
-        ei_plot   = np.array([ gp2.expected_improvement(ti) for ti in t_plot])
-        pw_plot   = np.array([ gp2.compute_p_wolfe(ti) for ti in t_plot])
-        eipw_plot = np.array([ gp2.expected_improvement(ti)*gp2.compute_p_wolfe(ti) for ti in t_plot])
-        l1, = plt.plot( t_plot,   ei_plot, label='EI'   )
-        l2, = plt.plot( t_plot,   pw_plot, label='pW'   )
-        l3, = plt.plot( t_plot, eipw_plot, label='EIpW' )
-        plt.plot([t_plot[0],t_plot[-1]],[0.3,0.3],c='k')
-        plt.legend(handles=[l1,l2,l3])
-        plt.show()
-        plt.waitforbuttonpress(0.01)
-        
+     
         # if the extrapolation point was selected, increase extrapolation step
         if t_curr == t_cand[-1]:
             ext *= 1.3
@@ -364,11 +334,7 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
         plt.scatter(t_cand,np.array([gp.m(ti) for ti in t_cand]), c='k', marker='o')
         plt.scatter(gp.t,np.array([gp.m(ti) for ti in gp.t]), c='k', marker='x')
         plt.scatter(np.array([t_curr]),np.array([gp.m(t_curr)]),c='r',marker='o')
-        plt.figure('gp2')
-        ax21 = plt.subplot(211)
-        plt.scatter(t_cand,np.array([gp2.mu(ti) for ti in t_cand]), c='k', marker='o')
-        plt.scatter(gp2.ts,np.array([gp2.mu(ti) for ti in gp2.ts]), c='k', marker='x')
-        plt.scatter(np.array([t_curr]),np.array([gp2.mu(t_curr)]),c='r',marker='o')
+       
         plt.show()
         plt.waitforbuttonpress(0.01)
         #pdb.set_trace()
