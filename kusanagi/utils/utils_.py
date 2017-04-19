@@ -592,7 +592,8 @@ def get_output_dir():
     variable. If not set, it will default to $HOME/.kusanagi/output. The directory will be created 
     by this method, if it does not exist.'''
     if not 'KUSANAGI_OUTPUT' in os.environ:
-        os.environ['KUSANAGI_OUTPUT'] = os.path.join(os.path.join(os.environ['HOME'],".kusanagi"),"output")
+        homefolder = os.environ['HOME'] if 'HOME' in os.environ else os.environ['USERPROFILE']
+        os.environ['KUSANAGI_OUTPUT'] = os.path.join(os.path.join(homefolder, ".kusanagi"), "output")
     try: 
         os.makedirs(os.environ['KUSANAGI_OUTPUT'])
         chmod_cmd = 'chmod a+rwx -R ' + os.path.abspath(os.environ['KUSANAGI_OUTPUT'])
