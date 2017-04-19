@@ -16,7 +16,9 @@ from scipy.cluster.vq import kmeans2,vq
 
 # GP based controller
 class RBFPolicy(RBFGP):
-    def __init__(self, idims=None, odims=None, sat_func=gSat,  m0=None, S0=None, maxU=[10], n_inducing=10, angle_dims=[], name='RBFPolicy', filename=None, max_evals=750 ,*kwargs):
+    def __init__(self, idims=None, odims=None, sat_func=gSat,  m0=None, S0=None, maxU=[10],
+                 n_inducing=10, angle_dims=[], name='RBFPolicy', filename=None, max_evals=750,
+                 *kwargs):
         self.maxU = np.array(maxU)
         self.n_inducing = n_inducing
         self.angle_dims = angle_dims
@@ -28,21 +30,24 @@ class RBFPolicy(RBFGP):
 
         if filename is not None:
             # try loading from file
-            super(RBFPolicy, self).__init__(idims=0, odims=0, sat_func=sat_func, max_evals=max_evals, name=self.name, filename=filename)
+            super(RBFPolicy, self).__init__(idims=0, odims=0, sat_func=sat_func,
+                                            max_evals=max_evals, name=self.name,
+                                            filename=filename)
             #self.load()
         else:
-            self.m0 = np.array(m0,dtype=theano.config.floatX)
-            self.S0 = np.array(S0,dtype=theano.config.floatX)
-            
+            self.m0 = np.array(m0, dtype=theano.config.floatX)
+            self.S0 = np.array(S0, dtype=theano.config.floatX)
+
             if not idims:
                 idims = len(self.m0) + len(self.angle_dims)
             if not odims:
                 odims = len(self.maxU)
-            super(RBFPolicy, self).__init__(idims=idims, odims=odims, sat_func=sat_func, max_evals=max_evals, name=self.name)
+            super(RBFPolicy, self).__init__(idims=idims, odims=odims, sat_func=sat_func,
+                                            max_evals=max_evals, name=self.name)
             self.init_params()
-        
+
         # make sure we always get the parameters in the same order
-        self.param_names = ['X','Y','loghyp_full']
+        self.param_names = ['X', 'Y', 'loghyp_full']
 
     def load(self, output_folder=None,output_filename=None):
         ''' loads the state from file, and initializes additional variables'''

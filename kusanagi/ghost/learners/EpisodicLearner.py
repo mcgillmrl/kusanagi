@@ -407,8 +407,7 @@ class EpisodicLearner(Loadable):
                 gmag = [np.sqrt((p**2).sum()) for p in dJdp]
                 gmax = [p.max() for p in dJdp]
                 utils.print_with_stamp('Current value: %E, Total evaluations: \
-                                        %d, gm: %s, lr: %f'%(v, self.n_evals, gmag, lr),
-                                        self.name,True)
+                %d, gm: %s, lr: %f'%(v, self.n_evals, gmag, lr), self.name,True)
         # probabilistic line searches
         elif min_method == 'PROBLS':
             if not hasattr(self,'loss_fn'):
