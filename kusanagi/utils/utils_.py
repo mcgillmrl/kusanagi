@@ -1,4 +1,4 @@
-import os,sys,stat
+import os, sys, stat
 from datetime import datetime
 
 import math
@@ -14,13 +14,13 @@ from theano import tensor as tt, ifelse
 from theano.gof import Variable
 from theano.sandbox.linalg import psd, matrix_inverse
 import matplotlib as mpl
-# This line is necessary for plot_and_save to work on server side without a GUI. 
+# This line is necessary for plot_and_save to work on server side without a GUI.
 # Needs to be set before plt is imported.
 #mpl.use('Agg') 
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 
-def maha(X1,X2=None,M=None, all_pairs=True):
+def maha(X1, X2=None, M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
     D = []
     deltaM = []
@@ -77,10 +77,10 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
             i * chunk_size,
             axis=1)
         return tt.grad(cost=None,
-                      wrt=wrt_rep,
-                      known_grads={
+                       wrt=wrt_rep,
+                       known_grads={
                           expr_rep: chunk_expr_grad
-                      })
+                       })
 
     grads, _ = theano.scan(chunk_grad, sequences=steps)
     grads = grads.reshape((chunk_size * grads.shape[0], wrt.shape[0]))
@@ -88,14 +88,18 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
     return jac
 
 def print_with_stamp(message, name=None, same_line=False, use_log=True):
+    '''
+    Helper function to print with a current time stamp.
+    '''
     out_str = ''
     if name is None:
-        out_str = '[%s] %s'%(str(datetime.now()),message)
+        out_str = '[%s] %s'%(str(datetime.now()), message)
     else:
-        out_str = '[%s] %s > %s'%(str(datetime.now()),name,message)
+        out_str = '[%s] %s > %s'%(str(datetime.now()), name, message)
 
     logfile = get_logfile()
-    # this will only log to a file if 1) use_log is True and 2) $KUSANAGI_LOGFILE is set ( can be set with utils.set_logfile(new_path) )
+    # this will only log to a file if 1) use_log is True and 2) $KUSANAGI_LOGFILE
+    # is set ( can be set with utils.set_logfile(new_path) )
     if not use_log or len(logfile) == 0:
         if same_line:
             sys.stdout.write('\r'+out_str)
@@ -105,23 +109,23 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
         sys.stdout.flush()
     else:
         write_mode = 'a+'
-        with open(logfile,write_mode) as f:
+        with open(logfile, write_mode) as f:
             if same_line:
-                f.seek(0,os.SEEK_END)
+                f.seek(0, os.SEEK_END)
                 pos = f.tell() - 1
                 c = f.read(1)
                 while pos > 0 and c != '\r' and c != os.linesep:
                     pos = pos - 1
-                    f.seek(pos,os.SEEK_SET)
+                    f.seek(pos, os.SEEK_SET)
                     c = f.read(1)
-                if pos >0 and c == '\r':
-                    f.seek(pos,os.SEEK_SET)
+                if pos > 0 and c == '\r':
+                    f.seek(pos, os.SEEK_SET)
                     f.truncate()
                 f.write('\r')
             f.write(out_str+os.linesep)
         os.system('chmod 666 %s'%(logfile))
 
-def kmeanspp(X,k):
+def kmeanspp(X, k):
     import random
     N,D = X.shape
     c = [ X[random.randint(0,N)] ]
@@ -140,7 +144,7 @@ def kmeanspp(X,k):
 
     return np.array(c)
 
-def gTrig(x,angi,D):
+def gTrig(x, angi, D):
     Da = 2*len(angi)
     n = x.shape[0]
     xang = tt.zeros((n,Da))
@@ -197,7 +201,7 @@ def gTrig2(m, v, angi, D, derivs=False):
     Va = 0.5*Va
 
     # inv times input output covariance
-    Is = 2*np.arange(len(angi)); Ic = Is +1;
+    Is = 2*np.arange(len(angi)); Ic = Is +1
     Ca = tt.set_subtensor( Ca[angi,Is], Ma[1::2]) 
     Ca = tt.set_subtensor( Ca[angi,Ic], -Ma[::2]) 
 
