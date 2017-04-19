@@ -4,3 +4,6 @@
 *.swn
 *.swm
 *.swl
+~*
+.vscode*
+*.egg-info*

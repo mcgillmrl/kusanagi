@@ -8,3 +8,5 @@ syntax: glob
 *.swl
 *.orig
 *~
+.vscode*
+*.egg-info*
