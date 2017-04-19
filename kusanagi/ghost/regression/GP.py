@@ -175,7 +175,7 @@ class GP(BaseRegressor):
 
     def init_loss(self, cache_vars=True, compile_funcs=True, unroll_scan=False):
         utils.print_with_stamp('Initialising expression graph\
-                                for full GP training loss function', self.name)
+        for full GP training loss function', self.name)
         idims = self.D
         odims = self.E
 

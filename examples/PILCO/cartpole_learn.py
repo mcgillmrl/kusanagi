@@ -1,10 +1,15 @@
+'''
+Example of how to use the library for learning using the PILCO learner on the cartpole task
+'''
+# pylint: disable=C0103
 import atexit
-import signal,sys,os
+import sys
+import os
 import numpy as np
 import kusanagi.ghost.regression as kreg
 
 from kusanagi import utils
-from kusanagi.shell.cartpole import default_params, CartpoleDraw
+from kusanagi.shell.cartpole import default_params#, CartpoleDraw
 from kusanagi.ghost.learners.PILCO import PILCO, MC_PILCO
 from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
@@ -14,11 +19,11 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     # setup output directory
-    utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole'))
-    
+    utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
+
     use_bnn = True
-    J = 1                                                                  # number of random initial trials
-    N = 100                                                                 # learning iterations
+    J = 1                                                       # number of random initial trials
+    N = 100                                                     #learning iterations
     learner_params = default_params()
     # initialize learner
     learner_params['params']['use_empirical_x0'] = True
@@ -46,8 +51,8 @@ if __name__ == '__main__':
     try:
         learner.load(load_compiled_fns=True)
         save_compiled_fns = False
-    except:
-        utils.print_with_stamp('Unable to load compiled fns','main')
+    except Exception:
+        utils.print_with_stamp('Unable to load compiled fns', 'main')
         save_compiled_fns = True
 
     atexit.register(learner.stop)
@@ -64,13 +69,13 @@ if __name__ == '__main__':
         last_pp = learner.experience.policy_parameters[-1]
         current_pp = learner.policy.get_params(symbolic=False)
         should_run = True
-        for lastp,curp in zip(last_pp,current_pp):
-            should_run = should_run and not np.allclose(lastp,curp)
+        for lastp, curp in zip(last_pp, current_pp):
+            should_run = should_run and not np.allclose(lastp, curp)
 
         if should_run:
             learner.plant.reset_state()
             learner.apply_controller()
-        
+
         # plot results
         plot_results(learner)
 
@@ -92,13 +97,13 @@ if __name__ == '__main__':
         # execute it on the robot
         learner.plant.reset_state()
         learner.apply_controller()
-        
+
         # plot results with new policy
         plot_results(learner)
 
         # save latest state of the learner
         learner.save(save_compiled_fns=save_compiled_fns)
         save_compiled_fns = False  # only need to save the compiled functions once
-    
+
     raw_input('Finished training')
     sys.exit(0)

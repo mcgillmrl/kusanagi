@@ -1,4 +1,7 @@
-import os, sys, stat
+# pylint: disable=C0103
+import os
+import sys
+import stat
 from datetime import datetime
 
 import math
@@ -16,7 +19,7 @@ from theano.sandbox.linalg import psd, matrix_inverse
 import matplotlib as mpl
 # This line is necessary for plot_and_save to work on server side without a GUI.
 # Needs to be set before plt is imported.
-#mpl.use('Agg') 
+# mpl.use('Agg')
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 
@@ -26,18 +29,14 @@ def maha(X1, X2=None, M=None, all_pairs=True):
     deltaM = []
     if X2 is None:
         X2 = X1
-    
     if all_pairs:
         if M is None:
-            #D, updts = theano.scan(fn=lambda xi,X: tt.sum(tt.square(xi-X),1), sequences=[X1], non_sequences=[X2])
-            #D = tt.square(X1-X2[:,None,:]).sum(2)
-            D = tt.sum(tt.square(X1),1).dimshuffle(0,'x') + tt.sum(tt.square(X2),1) - 2*X1.dot(X2.T);
+            D = tt.sum(tt.square(X1), 1).dimshuffle(0, 'x')\
+                + tt.sum(tt.square(X2), 1)\
+                - 2*X1.dot(X2.T)
         else:
-            #D, updts = theano.scan(fn=lambda xi,X,V: tt.sum(((xi-X).dot(V))*(xi-X),1), sequences=[X1], non_sequences=[X2,M])
-            #delta = (X1-X2[:,None,:])
-            #D = ((delta.dot(M))*delta).sum(2)
-            X1M = X1.dot(M);
-            D = tt.sum(X1M*X1,1).dimshuffle(0,'x') + tt.sum(X2.dot(M)*X2,1) - 2*X1M.dot(X2.T)
+            X1M = X1.dot(M)
+            D = tt.sum(X1M*X1, 1).dimshuffle(0, 'x') + tt.sum(X2.dot(M)*X2, 1) - 2*X1M.dot(X2.T)
     else:
         # computes the distance  x1i - x2i for each row i
         if X1 is X2:
@@ -49,10 +48,14 @@ def maha(X1, X2=None, M=None, all_pairs=True):
             deltaM = delta
         else:
             deltaM = delta.dot(M)
-        D = tt.sum(deltaM*delta,1)
+        D = tt.sum(deltaM*delta, 1)
     return D
 
 def fast_jacobian(expr, wrt, chunk_size=16, func=None):
+    '''
+    Computes the jacobian by tiling the inputs
+    Copied from https://gist.github.com/aam-at/2b2bc5c35850b553d4ec
+    '''
     assert isinstance(expr, Variable), \
         "tensor.jacobian expects a Variable as `expr`"
     assert expr.ndim < 2, \
@@ -65,6 +68,7 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
     remainder = expr.shape[0] % chunk_size
 
     def chunk_grad(i):
+        ''' operates on a subset of the gradient variables '''
         wrt_rep = tt.tile(wrt, (chunk_size, 1))
         if func is not None:
             expr_rep = func(wrt_rep)
@@ -79,7 +83,7 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
         return tt.grad(cost=None,
                        wrt=wrt_rep,
                        known_grads={
-                          expr_rep: chunk_expr_grad
+                           expr_rep: chunk_expr_grad
                        })
 
     grads, _ = theano.scan(chunk_grad, sequences=steps)
@@ -100,7 +104,7 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
     logfile = get_logfile()
     # this will only log to a file if 1) use_log is True and 2) $KUSANAGI_LOGFILE
     # is set ( can be set with utils.set_logfile(new_path) )
-    if not use_log or len(logfile) == 0:
+    if not use_log or not logfile:
         if same_line:
             sys.stdout.write('\r'+out_str)
         else:
@@ -126,193 +130,198 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
         os.system('chmod 666 %s'%(logfile))
 
 def kmeanspp(X, k):
-    import random
-    N,D = X.shape
-    c = [ X[random.randint(0,N)] ]
-    d = np.full((k,N),np.inf)
+    '''
+    Initializer for kmeans
+    '''
+    N = X.shape[0]
+    c = [X[random.randint(0, N)]]
+    d = np.full((k, N), np.inf)
     while len(c) < k:
         i = len(c) - 1
         # get distance from dataset to latest center
-        d[i] =  np.sum((X-c[i])**2,1)
+        d[i] = np.sum((X-c[i])**2, 1)
         # get minimum distances
         min_dists = d[:i+1].min(0)
         # select next center with probability proportional to the inverse minimum distance
         selection_prob = np.cumsum(min_dists/min_dists.sum())
-        r = random.uniform(0,1)
-        j = np.searchsorted(selection_prob,r)
+        r = random.uniform(0, 1)
+        j = np.searchsorted(selection_prob, r)
         c.append(X[j])
 
     return np.array(c)
 
 def gTrig(x, angi, D):
+    '''
+    Replaces angle dimensions with their complex representation.
+    i.e. if x[i] is an angle ( i in angi ), then x[i] will be replaced
+    with cos[x[i]] and sin[x[i]]
+    '''
     Da = 2*len(angi)
     n = x.shape[0]
-    xang = tt.zeros((n,Da))
-    xi = x[:,angi]
-    xang = tt.set_subtensor(xang[:,::2], tt.sin(xi))
-    xang = tt.set_subtensor(xang[:,1::2], tt.cos(xi))
+    xang = tt.zeros((n, Da))
+    xi = x[:, angi]
+    xang = tt.set_subtensor(xang[:, ::2], tt.sin(xi))
+    xang = tt.set_subtensor(xang[:, 1::2], tt.cos(xi))
 
     non_angle_dims = list(set(range(D)).difference(angi))
-    if len(non_angle_dims)>0:
-        xnang = x[:,non_angle_dims]
-        m = tt.concatenate([xnang,xang],axis=1)
+    if non_angle_dims:
+        xnang = x[:, non_angle_dims]
+        m = tt.concatenate([xnang, xang], axis=1)
     else:
         m = xang
     return m
 
-def gTrig2(m, v, angi, D, derivs=False):
-    if len(angi)<1:
-        return m,v,None
-    
+def gTrig2(m, v, angi, D):
+    '''
+    Replaces angle dimensions with their complex representation.
+    i.e. if x[i] is an angle ( i in angi ), then x[i] will be replaced
+    with cos[x[i]] and sin[x[i]].
+    Since the input is a gaussian distribution, the output mean and covariance
+    are computed via moment matching
+    '''
+    if len(angi) < 1:
+        return m, v, None
+
     non_angle_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
     Dna = len(non_angle_dims)
     Ma = tt.zeros((Da,))
-    Va = tt.zeros((Da,Da))
-    Ca = tt.zeros((D,Da))
+    Va = tt.zeros((Da, Da))
+    Ca = tt.zeros((D, Da))
 
     # compute the mean
     mi = m[angi]
-    vi = v[angi,:][:,angi]
-    vii = v[angi,angi]
+    vi = v[angi, :][:, angi]
+    vii = v[angi, angi]
     exp_vii_h = tt.exp(-vii/2)
 
     Ma = tt.set_subtensor(Ma[::2], exp_vii_h*tt.sin(mi))
     Ma = tt.set_subtensor(Ma[1::2], exp_vii_h*tt.cos(mi))
-    
+
     # compute the entries in the augmented covariance matrix
-    vii_c = vii.dimshuffle(0,'x')
-    vii_r = vii.dimshuffle('x',0)
+    vii_c = vii.dimshuffle(0, 'x')
+    vii_r = vii.dimshuffle('x', 0)
     lq = -0.5*(vii_c+vii_r); q = tt.exp(lq)
     exp_lq_p_vi = tt.exp(lq+vi)
     exp_lq_m_vi = tt.exp(lq-vi)
-    mi_c = mi.dimshuffle(0,'x')
-    mi_r = mi.dimshuffle('x',0)
+    mi_c = mi.dimshuffle(0, 'x')
+    mi_r = mi.dimshuffle('x', 0)
     U1 = (exp_lq_p_vi - q)*(tt.sin(mi_c-mi_r))
     U2 = (exp_lq_m_vi - q)*(tt.sin(mi_c+mi_r))
     U3 = (exp_lq_p_vi - q)*(tt.cos(mi_c-mi_r))
     U4 = (exp_lq_m_vi - q)*(tt.cos(mi_c+mi_r))
-    
-    Va = tt.set_subtensor(Va[::2,::2], U3-U4)
-    Va = tt.set_subtensor(Va[1::2,1::2], U3+U4)
+
+    Va = tt.set_subtensor(Va[::2, ::2], U3-U4)
+    Va = tt.set_subtensor(Va[1::2, 1::2], U3+U4)
     U12 = U1+U2
-    Va = tt.set_subtensor(Va[::2,1::2],U12)
-    Va = tt.set_subtensor(Va[1::2,::2],U12.T)
+    Va = tt.set_subtensor(Va[::2, 1::2], U12)
+    Va = tt.set_subtensor(Va[1::2, ::2], U12.T)
     Va = 0.5*Va
 
     # inv times input output covariance
     Is = 2*np.arange(len(angi)); Ic = Is +1
-    Ca = tt.set_subtensor( Ca[angi,Is], Ma[1::2]) 
-    Ca = tt.set_subtensor( Ca[angi,Ic], -Ma[::2]) 
+    Ca = tt.set_subtensor(Ca[angi, Is], Ma[1::2])
+    Ca = tt.set_subtensor(Ca[angi, Ic], -Ma[::2])
 
     # construct mean vectors ( non angle dimensions come first, then angle dimensions)
     Mna = m[non_angle_dims]
-    M = tt.concatenate([Mna,Ma])
+    M = tt.concatenate([Mna, Ma])
 
-    # construct the corresponding covariance matrices ( just the blocks for the non angle dimensions and the angle dimensions separately)
-    V = tt.zeros((Dna+Da,Dna+Da))
-    Vna = v[non_angle_dims,:][:,non_angle_dims]
-    V = tt.set_subtensor(V[:Dna,:Dna], Vna)
-    V = tt.set_subtensor(V[Dna:,Dna:], Va)
+    # construct the corresponding covariance matrices
+    # just the blocks for the non angle dimensions and the angle dimensions separately
+    V = tt.zeros((Dna+Da, Dna+Da))
+    Vna = v[non_angle_dims, :][:, non_angle_dims]
+    V = tt.set_subtensor(V[:Dna, :Dna], Vna)
+    V = tt.set_subtensor(V[Dna:, Dna:], Va)
 
     # fill in the cross covariances
-    q = v.dot(Ca)[non_angle_dims,:]
-    V = tt.set_subtensor(V[:Dna,Dna:], q )
-    V = tt.set_subtensor(V[Dna:,:Dna], q.T )
+    q = v.dot(Ca)[non_angle_dims, :]
+    V = tt.set_subtensor(V[:Dna, Dna:], q)
+    V = tt.set_subtensor(V[Dna:, :Dna], q.T)
     #V = tt.concatenate([tt.concatenate([Vna,q],axis=1),tt.concatenate([q.T,Va],axis=1)], axis=0)
 
-    retvars = [M,V,Ca]
+    return [M, V, Ca]
 
-    # compute derivatives
-    if derivs:
-        dretvars = []
-        for r in retvars:
-            dretvars.append( tt.jacobian(r.flatten(),m) )
-        for r in retvars:
-            dretvars.append( tt.jacobian(r.flatten(),v) )
-        retvars.extend(dretvars)
-
-    return retvars
-
-def gTrig_np(x,angi):
+def gTrig_np(x, angi):
     if type(x) is list:
         x = np.array(x)
     if x.ndim == 1:
-        x = x[None,:]
+        x = x[None, :]
     D = x.shape[1]
     Da = 2*len(angi)
     n = x.shape[0]
-    xang = np.zeros((n,Da))
-    xi = x[:,angi]
-    xang[:,::2] =  np.sin(xi)
-    xang[:,1::2] =  np.cos(xi)
+    xang = np.zeros((n, Da))
+    xi = x[:, angi]
+    xang[:, ::2] = np.sin(xi)
+    xang[:, 1::2] = np.cos(xi)
 
     non_angle_dims = list(set(range(D)).difference(angi))
-    xnang = x[:,non_angle_dims]
-    m = np.concatenate([xnang,xang],axis=1)
+    xnang = x[:, non_angle_dims]
+    m = np.concatenate([xnang, xang], axis=1)
 
     return m
 
-def gTrig2_np(m,v,angi,D):
+def gTrig2_np(m, v, angi, D):
     non_angle_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
-    Dna = len(non_angle_dims) 
+    Dna = len(non_angle_dims)
     n = m.shape[0]
-    Ma = np.zeros((n,Da))
-    Va = np.zeros((n,Da,Da))
-    Ca = np.zeros((n,D,Da))
-    Is = 2*np.arange(len(angi)); Ic = Is +1;
+    Ma = np.zeros((n, Da))
+    Va = np.zeros((n, Da, Da))
+    Ca = np.zeros((n, D, Da))
+    Is = 2*np.arange(len(angi)); Ic = Is +1
 
     # compute the mean
-    mi = m[:,angi]
-    vi = (v[:,angi,:][:,:,angi])
-    vii = (v[:,angi,angi])
+    mi = m[:, angi]
+    vi = (v[:, angi, :][:, :, angi])
+    vii = (v[:, angi, angi])
     exp_vii_h = np.exp(-vii/2)
-    
-    Ma[:,::2] = exp_vii_h*np.sin(mi)
-    Ma[:,1::2] = exp_vii_h*np.cos(mi)
-    
+
+    Ma[:, ::2] = exp_vii_h*np.sin(mi)
+    Ma[:, 1::2] = exp_vii_h*np.cos(mi)
+
     # compute the entries in the augmented covariance matrix
-    lq = -0.5*(vii[:,:,None]+vii[:,None,:]); q = np.exp(lq)
+    lq = -0.5*(vii[:, :, None] + vii[:, None, :]); q = np.exp(lq)
     exp_lq_p_vi = np.exp(lq+vi)
     exp_lq_m_vi = np.exp(lq-vi)
-    U1 = (exp_lq_p_vi - q)*(np.sin(mi[:,:,None]-mi[:,None,:]))
-    U2 = (exp_lq_m_vi - q)*(np.sin(mi[:,:,None]+mi[:,None,:]))
-    U3 = (exp_lq_p_vi - q)*(np.cos(mi[:,:,None]-mi[:,None,:]))
-    U4 = (exp_lq_m_vi - q)*(np.cos(mi[:,:,None]+mi[:,None,:]))
-    
-    Va[:,::2,::2] = U3-U4
-    Va[:,1::2,1::2] = U3+U4
-    Va[:,::2,1::2] = U1+U2
-    Va[:,1::2,::2] = Va[:,::2,1::2].transpose(0,2,1)
+    U1 = (exp_lq_p_vi - q)*(np.sin(mi[:, :, None]-mi[:, None, :]))
+    U2 = (exp_lq_m_vi - q)*(np.sin(mi[:, :, None]+mi[:, None, :]))
+    U3 = (exp_lq_p_vi - q)*(np.cos(mi[:, :, None]-mi[:, None, :]))
+    U4 = (exp_lq_m_vi - q)*(np.cos(mi[:, :, None]+mi[:, None, :]))
+
+    Va[:, ::2, ::2] = U3-U4
+    Va[:, 1::2, 1::2] = U3+U4
+    Va[:, ::2, 1::2] = U1+U2
+    Va[:, 1::2, ::2] = Va[:, ::2, 1::2].transpose(0, 2, 1)
     Va = 0.5*Va
 
     # inv times input output covariance
-    Ca[:,angi,Is] = Ma[:,1::2]
-    Ca[:,angi,Ic] = -Ma[:,::2] 
+    Ca[:, angi, Is] = Ma[:, 1::2]
+    Ca[:, angi, Ic] = -Ma[:, ::2]
 
     # construct mean vectors ( non angle dimensions come first, then angle dimensions)
     Mna = m[:, non_angle_dims]
-    M = np.concatenate([Mna,Ma],axis=1)
+    M = np.concatenate([Mna, Ma], axis=1)
 
-    # construct the corresponding covariance matrices ( just the blocks for the non angle dimensions and the angle dimensions separately)
-    V = np.zeros((n,Dna+Da,Dna+Da))
-    Vna = v[:,non_angle_dims,:][:,:,non_angle_dims]
-    V[:,:Dna,:Dna] = Vna
-    V[:,Dna:,Dna:] = Va
+    # construct the corresponding covariance matrices
+    # (ust the blocks for the non angle dimensions and the angle dimensions separately
+    V = np.zeros((n, Dna+Da, Dna+Da))
+    Vna = v[:, non_angle_dims, :][:, :, non_angle_dims]
+    V[:, :Dna, :Dna] = Vna
+    V[:, Dna:, Dna:] = Va
 
     # fill in the cross covariances
-    V[:,:Dna,Dna:] = (v[:,:,:,None]*Ca[:,:,None,:]).sum(1)[:,non_angle_dims,:] 
-    V[:,Dna:,:Dna] = V[:,:Dna,Dna:].transpose(0,2,1)
+    V[:, :Dna, Dna:] = (v[:, :, :, None]*Ca[:, :, None, :]).sum(1)[:, non_angle_dims, :]
+    V[:, Dna:, :Dna] = V[:, :Dna, Dna:].transpose(0, 2, 1)
 
-    return [M,V]
+    return [M, V]
 
-def get_compiled_gTrig(angi,D,derivs=True):
+def get_compiled_gTrig(angi, D, derivs=True):
     m = tt.dvector('x')      # n_samples x idims
     v = tt.dmatrix('x_cov')  # n_samples x idims x idims
 
     gt = gTrig2(m, v, angi, D, derivs=derivs)
-    return theano.function([m,v],gt)
+    return theano.function([m, v], gt)
 
 def wrap_params(p_list):
     # flatten out and concatenate the parameters
@@ -320,20 +329,22 @@ def wrap_params(p_list):
         p_list = [p_list]
     P = []
     for pi in p_list:
-        pi = np.array(pi.__array__()) # to deal with other types that do not implement the numpy array API. TODO this will cause a GPU memory transfer!
+        # to deal with other types that do not implement the numpy array API.
+        # TODO this will cause a GPU memory transfer!
+        pi = np.array(pi.__array__())
         P.append(pi.flatten())
     P = np.concatenate(P)
     return P
-    
-def unwrap_params(P,parameter_shapes):
+
+def unwrap_params(P, parameter_shapes):
     # get the correct sizes for the parameters
     p = []
     i = 0
     for pshape in parameter_shapes:
         # get the number of elemebt for current parameter
-        npi = reduce(lambda x,y: x*y, pshape) if len(pshape)>0 else 1
+        npi = reduce(lambda x, y: x*y, pshape) if len(pshape) > 0 else 1
         # select corresponding elements and reshape into appropriate shape
-        p.append( P[i:i+npi].reshape(pshape) )
+        p.append(P[i:i+npi].reshape(pshape))
         # set index to the beginning  of next parameter
         i += npi
     if len(p) == 1:
@@ -345,7 +356,7 @@ class MemoizeJac(object):
         self.fun = fun
         self.value, self.jac = None, None
         self.x = None
-        self.args=tuple(args)
+        self.args = tuple(args)
 
     def _compute(self, x, *args):
         self.x = np.asarray(x).copy()
@@ -365,22 +376,6 @@ class MemoizeJac(object):
         else:
             self._compute(x, *args)
             return self.jac
-
-def fmin_lbfgs(f, x0, args=(), callback=None, options={}, **kwargs):
-    opt = lbfgs.LBFGS()
-
-    for name in kwargs:
-        value=kwargs[name]
-        if hasattr(opt,name):
-            setattr(opt,name,value)
-
-    for name in options:
-        value=options[name]
-        if hasattr(opt,name):
-            setattr(opt,name,value)
-
-    return opt.minimize(f, x0, progress=callback, args=args)
-
 
 def integer_generator(i=0):
     while True:
@@ -418,53 +413,58 @@ def update_errorbar(errobj, x, y, y_error):
     new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
     barsy.set_segments(new_segments_y)
 
-def plot_results(learner,H=None):
-
+def plot_results(learner, H=None):
+    '''
+    Plots learning results. One plot for cost vs learning iteration,
+    one for cost vs timestep for last episode, and plots for each state dimension vs
+    time step for the last episode.
+    '''
     dt = learner.plant.dt
     x0 = np.array(learner.plant.x0)
     S0 = np.array(learner.plant.S0)
     if H is None:
         H = learner.H
-    H_steps =int( np.ceil(H/dt))
-    T_range = np.arange(0,H+dt,dt)
+    H_steps = int(np.ceil(H/dt))
+    T_range = np.arange(0, H+dt, dt)
     cost = np.array(learner.experience.immediate_cost[-1])
-    rollout_ =  learner.rollout(x0,S0,H_steps,1)
+    rollout_ = learner.rollout(x0, S0, H_steps, 1)
     states = np.array(learner.experience.states[-1])
 
-    if hasattr(learner,'trajectory_samples'):
+    if hasattr(learner, 'trajectory_samples'):
         predicted_costs_means = np.array(rollout_[0])
         predicted_costs_vars = np.array(rollout_[1])
         predicted_trajectories = np.array(rollout_[2])
         # plot  cost of trajectories
         plt.figure('Cost of last run and Predicted cost')
         plt.gca().clear()
-        plt.errorbar(T_range,predicted_costs_means,color='b',yerr=2*np.sqrt(predicted_costs_vars))
-        plt.plot(T_range,cost,color='g', linewidth=2)
-        
+        plt.errorbar(T_range, predicted_costs_means,
+                     color='b', yerr=2*np.sqrt(predicted_costs_vars))
+        plt.plot(T_range, cost, color='g', linewidth=2)
+
         # plot all trajectories
         for d in xrange(x0.size):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
             for tr_d in predicted_trajectories:
-                plt.plot(T_range,tr_d[:,d],color='b', alpha=0.3)
-            plt.plot(T_range,states[:,d],color='g', linewidth=2)
+                plt.plot(T_range, tr_d[:, d], color='b', alpha=0.3)
+            plt.plot(T_range, states[:, d], color='g', linewidth=2)
     else:
         # plot last run cost vs predicted cost
         plt.figure('Cost of last run and Predicted cost')
         plt.gca().clear()
 
         # plot predictive distributions
-        plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
-        plt.plot(T_range,cost)
-        print_with_stamp('Predicted value: [%f]'%(np.array(rollout_[0]).sum()),'plot_results')
+        plt.errorbar(T_range, rollout_[0], yerr=2*np.sqrt(rollout_[1]))
+        plt.plot(T_range, cost)
+        print_with_stamp('Predicted value: [%f]'%(np.array(rollout_[0]).sum()), 'plot_results')
         predicted_means = np.array(rollout_[2])
         predicted_vars = np.array(rollout_[3])
-        
+
         for d in xrange(x0.size):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
-            plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
-            plt.plot(T_range,states[:,d])
+            plt.errorbar(T_range, predicted_means[:, d], yerr=2*np.sqrt(predicted_vars[:, d, d]))
+            plt.plot(T_range, states[:, d])
 
     plt.figure('Total cost per learning iteration')
     plt.gca().clear()
@@ -496,15 +496,15 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
             S0 = np.array(learner.plant.S0)
             if H is None:
                 H = learner.H
-            H_steps =int( np.ceil(H/dt))
+            H_steps = int(np.ceil(H/dt))
             # plot last run cost vs predicted cost
             plt.figure('Cost of last run and Predicted cost')
             plt.gca().clear()
-            T_range = np.arange(0,H+dt,dt)
-            cost = np.array(learner.experience.immediate_cost[-1])[:,0]
-            rollout_ =  learner.rollout(x0,S0,H_steps,1)
-            plt.errorbar(T_range,rollout_[0],yerr=2*np.sqrt(rollout_[1]))
-            plt.plot(T_range,cost)
+            T_range = np.arange(0, H+dt, dt)
+            cost = np.array(learner.experience.immediate_cost[-1])
+            rollout_ =  learner.rollout(x0, S0, H_steps, 1)
+            plt.errorbar(T_range, rollout_[0], yerr=2*np.sqrt(rollout_[1]))
+            plt.plot(T_range, cost)
             plt.title('Cost of last run and Predicted cost')
 
             header = ['T_range, actual cost, expected cost mean, expected cost error']
@@ -521,21 +521,23 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
             states = np.array(learner.experience.states[-1])
             predicted_means = np.array(rollout_[2])
             predicted_vars = np.array(rollout_[3])
-            
+
             for d in xrange(x0.size):
                 plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
                 plt.gca().clear()
-                plt.errorbar(T_range,predicted_means[:,d],yerr=2*np.sqrt(predicted_vars[:,d,d]))
-                plt.plot(T_range,states[:,d])
+                plt.errorbar(T_range, predicted_means[:, d], 
+                             yerr=2*np.sqrt(predicted_vars[:, d, d]))
+                plt.plot(T_range, states[:, d])
                 if target:
                     plt.plot(T_range, [target[d]]*len(T_range))
                 plt.title('Last run vs Predicted rollout for state dimension %d'%(d))
-                header = ['T_range, actual state, expected state, expected state error. (State dimension %d)'%(d)]
+                header = ['T_range, actual state, expected state, expected state error. \
+                (State dimension %d)'%(d)]
                 writer.writerow(header)
                 writer.writerow(T_range)
-                writer.writerow(states[:,d])
-                writer.writerow(predicted_means[:,d])
-                writer.writerow(2*np.sqrt(predicted_vars[:,d,d]))
+                writer.writerow(states[:, d])
+                writer.writerow(predicted_means[:, d])
+                writer.writerow(2*np.sqrt(predicted_vars[:, d, d]))
                 endline = ['-------------------------------------------------------------']
                 writer.writerow(endline)
                 pdf.savefig()
@@ -555,7 +557,7 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
             plt.figure('Total episode cost vs Iteration number')
             plt.gca().clear()
             plt.plot(np.array(ep_nums), np.array(ep_sums))
-            plt.axis([0,ep_nums[-1],0,max(ep_sums)])
+            plt.axis([0, ep_nums[-1], 0, max(ep_sums)])
             plt.title('Total episode cost vs Iteration number')
             header = ['Iteration number, Total episode Cost']
             writer.writerow(header)
@@ -566,6 +568,77 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
             pdf.savefig()
             plt.close()
     return output_file
+
+def plot_learning_results(plant, H=None):
+    ''' 
+    Generates plots of the current learning run. Uses bokeh to dislpay the plots
+    One plot for cost vs learning iteration,
+    one for cost vs timestep for last episode, and plots for each state dimension vs
+    time step for the last episode.
+    '''
+    dt = learner.plant.dt
+    x0 = np.array(learner.plant.x0)
+    S0 = np.array(learner.plant.S0)
+    if H is None:
+        H = learner.H
+    H_steps = int(np.ceil(H/dt))
+    T_range = np.arange(0, H+dt, dt)
+    cost = np.array(learner.experience.immediate_cost[-1])
+    rollout_ = learner.rollout(x0, S0, H_steps, 1)
+    states = np.array(learner.experience.states[-1])
+
+    if hasattr(learner, 'trajectory_samples'):
+        predicted_costs_means = np.array(rollout_[0])
+        predicted_costs_vars = np.array(rollout_[1])
+        predicted_trajectories = np.array(rollout_[2])
+        # plot  cost of trajectories
+        plt.figure('Cost of last run and Predicted cost')
+        plt.gca().clear()
+        plt.errorbar(T_range, predicted_costs_means,
+                     color='b', yerr=2*np.sqrt(predicted_costs_vars))
+        plt.plot(T_range, cost, color='g', linewidth=2)
+
+        # plot all trajectories
+        for d in xrange(x0.size):
+            plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
+            plt.gca().clear()
+            for tr_d in predicted_trajectories:
+                plt.plot(T_range, tr_d[:, d], color='b', alpha=0.3)
+            plt.plot(T_range, states[:, d], color='g', linewidth=2)
+    else:
+        # plot last run cost vs predicted cost
+        plt.figure('Cost of last run and Predicted cost')
+        plt.gca().clear()
+
+        # plot predictive distributions
+        plt.errorbar(T_range, rollout_[0], yerr=2*np.sqrt(rollout_[1]))
+        plt.plot(T_range, cost)
+        print_with_stamp('Predicted value: [%f]'%(np.array(rollout_[0]).sum()), 'plot_results')
+        predicted_means = np.array(rollout_[2])
+        predicted_vars = np.array(rollout_[3])
+
+        for d in xrange(x0.size):
+            plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
+            plt.gca().clear()
+            plt.errorbar(T_range, predicted_means[:, d], yerr=2*np.sqrt(predicted_vars[:, d, d]))
+            plt.plot(T_range, states[:, d])
+
+    plt.figure('Total cost per learning iteration')
+    plt.gca().clear()
+    iters = []
+    cost_sums = []
+    n_random = 0
+    for i in xrange(learner.experience.n_episodes()):
+        if not learner.experience.policy_parameters[i]:
+            iters.append(0)
+            n_random += 1
+        else:
+            iters.append(i-n_random)
+        cost_sums.append(np.array(learner.experience.immediate_cost[i]).sum())
+    plt.plot(np.array(iters)+1, np.array(cost_sums))
+
+    plt.show(False)
+    plt.waitforbuttonpress(0.05)
 
 def get_logfile():
     ''' Returns the path of the file where the output of print_with_stamp wil be redirected. This can be set 
