@@ -72,11 +72,11 @@ class GP(BaseRegressor):
         # name of this class for printing command line output and saving
         self.name = name
         # filename for saving
-        self.filename = filename if not filename else '%s_%d_%d_%s_%s' % (self.name,
-                                                                          self.D,
-                                                                          self.E,
-                                                                          theano.config.device,
-                                                                          theano.config.floatX)
+        self.filename = filename if filename else '%s_%d_%d_%s_%s' % (self.name,
+                                                                      self.D,
+                                                                      self.E,
+                                                                      theano.config.device,
+                                                                      theano.config.floatX)
         BaseRegressor.__init__(self, name=name, filename=self.filename)
         if filename is not None:
             self.load()
@@ -400,8 +400,8 @@ class GP_UI(GP):
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
         iLdotSx = iL.dot(Sx) # force the matrix inverse to be done with double precision
-        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + tt.eye(idims)                              #TODO vectorize this
-        #t = tt.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
+        #TODO vectorize this
+        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + tt.eye(idims)
         t = tt.stack([solve(B[i].T, inp[i].T).T for i in xrange(odims)])      # E x N x D
         c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in xrange(odims)]))
         l = tt.exp(-0.5*tt.sum(inp*t,2))
