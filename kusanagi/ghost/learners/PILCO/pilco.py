@@ -438,7 +438,8 @@ class PILCO(EpisodicLearner):
         if self.use_empirical_x0:
             if n_episodes > 3:
                 self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
-                self.Sx0.set_value(np.cov(x0.T, ddof=1).astype(theano.config.floatX))
+                cov0 = np.diag(np.diag(np.cov(x0.T, ddof=1).astype(theano.config.floatX)))
+                self.Sx0.set_value(cov0)
         #print x0
         #print self.Sx0.get_value()
 
