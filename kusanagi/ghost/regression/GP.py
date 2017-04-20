@@ -174,8 +174,8 @@ class GP(BaseRegressor):
                     if isinstance(attr, tt.sharedvar.SharedVariable)]
 
     def init_loss(self, cache_vars=True, compile_funcs=True, unroll_scan=False):
-        utils.print_with_stamp('Initialising expression graph\
-        for full GP training loss function', self.name)
+        msg = 'Initialising expression graph for full GP training loss function'
+        utils.print_with_stamp(msg, self.name)
         idims = self.D
         odims = self.E
 
@@ -244,12 +244,12 @@ class GP(BaseRegressor):
         if cache_vars:
             # we are going to save the intermediate results in the following shared variables,
             # so we can use them during prediction without having to recompute them
-            updts =[(self.iK, iK), (self.L, L), (self.beta, beta)]
+            updts = [(self.iK, iK), (self.L, L), (self.beta, beta)]
         else:
-            self.iK = iK 
-            self.L = L 
+            self.iK = iK
+            self.L = L
             self.beta = beta
-            updts=None
+            updts = None
 
         # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
@@ -266,7 +266,7 @@ class GP(BaseRegressor):
             utils.print_with_stamp('Compiling gradient of full GP training loss function',self.name)
             self.dloss_fn = F((),(loss,dloss),name='%s>dloss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
         self.state_changed = True # for saving
-    
+
     def predict_symbolic(self,mx,Sx):
         idims = self.D
         odims = self.E

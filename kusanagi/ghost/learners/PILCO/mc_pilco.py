@@ -2,21 +2,27 @@ from kusanagi.ghost.learners.PILCO import *
 from functools import partial
 
 class MC_PILCO(PILCO):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, n_samples=10, experience = None, async_plant=False, name='MC_PILCO', filename_prefix=None):
-        super(MC_PILCO, self).__init__(params, plant_class, policy_class, cost_func,viz_class, dynmodel_class, experience, async_plant, name, filename_prefix)
+    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None,
+                 dynmodel_class=kreg.GP_UI, n_samples=10, experience=None, async_plant=False,
+                 name='MC_PILCO', filename_prefix=None):
+        super(MC_PILCO, self).__init__(params, plant_class, policy_class, cost_func,
+                                       viz_class, dynmodel_class, experience, async_plant,
+                                       name, filename_prefix)
         self.resample = params['resample'] if 'resample' in params else False
-        
-        self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
-        self.trajectory_samples = theano.shared(np.array(n_samples).astype('int32'), name="%s>trajectory_samples"%(self.name) ) 
-        
+
+        randint = lasagne.random.get_rng().randint(1, 2147462579)
+        self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
+        self.trajectory_samples = theano.shared(np.array(n_samples).astype('int32'),
+                                                name="%s>trajectory_samples"%(self.name))
+
         # draw initial set of particles
-        z0 = np.random.randn(n_samples,self.mx0.get_value().size)
+        z0 = np.random.randn(n_samples, self.mx0.get_value().size)
         Lx0 = np.linalg.cholesky(self.Sx0.get_value())
         x0 = self.mx0.get_value() + z0.dot(Lx0.T)
         # create shared variables for initial state samples
         self.x0 = theano.shared(x0.astype(tt.config.floatX), name=self.name+'_x0')
-    
-    def propagate_state(self,x,u=None,*args,**kwargs):
+
+    def propagate_state(self, x, u=None,*args, **kwargs):
         ''' Given a set of input states, this function returns predictions for the next states.
             This is done by 1) evaluating the current policy 2) using the dynamics model to estimate 
             the next state. If x has shape [n,D] where n is tthe number of samples and D is the state dimension,
@@ -58,15 +64,24 @@ class MC_PILCO(PILCO):
 
         return x_next
 
-    def rollout_single_step(self,x,gamma,gamma0,*args,**kwargs):
-        ''' 
+    def rollout_single_step(self, x, gamma, gamma0, *args, **kwargs):
+        '''
         Propagates the state distribution and computes the associated cost
         '''
-        dynmodel = self.dynamics_model if kwargs.get('dynmodel',None) is None else kwargs.get('dynmodel',None)
-        policy = self.policy if kwargs.get('policy',None) is None else kwargs.get('policy',None)
-        cost = self.cost if kwargs.get('cost',None) is None else kwargs.get('cost',None)
+        dynmodel = self.dynamics_model\
+        if kwargs.get('dynmodel', None) is None\
+        else kwargs.get('dynmodel', None)
+        
+        policy = self.policy\
+        if kwargs.get('policy', None) is None\
+        else kwargs.get('policy', None)
+        
+        cost = self.cost\
+        if kwargs.get('cost', None) is None\
+        else kwargs.get('cost', None)
+
         # compute next state distribution
-        x_next = self.propagate_state(x,None,dynmodel,policy)
+        x_next = self.propagate_state(x, None, dynmodel,policy)
 
         # get cost
         sn = tt.exp(dynmodel.logsn)
@@ -120,7 +135,8 @@ class MC_PILCO(PILCO):
 
         return [costs, trajectories], rollout_updts
     
-    def get_policy_value(self, x0 = None, H = None, gamma0 = None, n_samples=None, dynmodel=None, policy=None, cost_per_sample=False):
+    def get_policy_value(self, x0 = None, H = None, gamma0 = None, n_samples=None,
+                         dynmodel=None, policy=None, cost_per_sample=False):
         ''' Returns a symbolic expression (theano tensor variable) for the value of the current policy '''
         x0 = self.x0 if x0 is None else x0
         H = self.H_steps if H is None else H
@@ -137,7 +153,8 @@ class MC_PILCO(PILCO):
             expected_accumulated_cost.name = 'J'
             return expected_accumulated_cost, updts
     
-    def compile_rollout(self, x0 = None, H = None, gamma0 = None, n_samples=None, dynmodel=None, policy=None, cost_per_sample=False):
+    def compile_rollout(self, x0 = None, H = None, gamma0 = None, n_samples=None,
+                        dynmodel=None, policy=None, cost_per_sample=False):
         ''' Compiles a theano function graph that compute the predicted states and discounted costs for a given
         inital state and prediction horizon. Unlike GP based PILCO, This function returns trajectory samples instead
         of means and covariances for everty time step'''
@@ -162,7 +179,8 @@ class MC_PILCO(PILCO):
         utils.print_with_stamp("Done compiling.",self.name)
         return rollout_fn
 
-    def compile_policy_gradients(self, x0 = None, H = None, gamma0 = None, n_samples=None, dynmodel=None, policy=None):
+    def compile_policy_gradients(self, x0 = None, H = None, gamma0 = None, n_samples=None,
+                                 dynmodel=None, policy=None):
         ''' Compiles a theano function graph that computes the gradients of the expected accumulated a given
         initial state and prediction horizon. The function will return the value of the policy, followed by 
         the policy gradients.'''

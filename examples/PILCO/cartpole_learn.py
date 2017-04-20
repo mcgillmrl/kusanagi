@@ -21,7 +21,7 @@ if __name__ == '__main__':
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
-    use_bnn = False
+    use_bnn = True
     J = 1                                                       # number of random initial trials
     N = 100                                                     #learning iterations
     learner_params = default_params()
