@@ -1,1 +1,1 @@
-from double_cartpole import *
+from .double_cartpole import *

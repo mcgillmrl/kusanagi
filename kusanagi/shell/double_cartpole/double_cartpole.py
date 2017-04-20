@@ -57,7 +57,7 @@ def default_params():
 def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
     angle_dims = params['angle_dims']
     cw = params['width']
-    if type(cw) is not list:
+    if not isinstance(cw, list):
         cw = [cw]
     b = params['expl']
     ell1,ell2 = params['pendulum_lengths']
@@ -116,7 +116,7 @@ def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
 def double_cartpole_loss_openAI(mx,Sx,params, loss_func=quadratic_saturating_loss):
     angle_dims = params['angle_dims']
     cw = params['width']
-    if type(cw) is not list:
+    if not isinstance(cw, list):
         cw = [cw]
     b = params['expl']
     ell1,ell2 = params['pendulum_lengths']

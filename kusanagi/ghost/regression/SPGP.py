@@ -1,4 +1,4 @@
-from GP import *
+from .GP import *
 from scipy.cluster.vq import kmeans
 
 class SPGP(GP):
@@ -198,7 +198,7 @@ class SPGP(GP):
             utils.print_with_stamp('loss SP: %s'%(np.array(self.loss_sp_fn())),self.name)
             m_loss_sp = utils.MemoizeJac(self.loss_sp)
             opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(self.max_evals)})
-            print ''
+            print('')
             X_sp = opt_res.x.reshape(self.X_sp.get_value(borrow=True).shape)
             self.set_params({'X_sp': X_sp})
             utils.print_with_stamp('loss SP: %s'%(np.array(self.loss_sp_fn())),self.name)
@@ -229,17 +229,17 @@ class SPGP_UI(SPGP,GP_UI):
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
         iLdotSx = iL.dot(Sx)
-        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + tt.eye(idims)   #TODO vectorize this
-        t = tt.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
-        c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in xrange(odims)]))
+        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in range(odims)]) + tt.eye(idims)   #TODO vectorize this
+        t = tt.stack([inp[i].dot(matrix_inverse(B[i])) for i in range(odims)])      # E x N x D
+        c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))
         l = tt.exp(-0.5*tt.sum(inp*t,2))
         lb = l*self.beta_sp # beta_sp should have been precomputed in init_loss # E x N dot E x N
         M = tt.sum(lb,1)*c
         
         # input output covariance
-        tiL = tt.stack([t[i].dot(iL[i]) for i in xrange(odims)])
+        tiL = tt.stack([t[i].dot(iL[i]) for i in range(odims)])
         #V = Sx.dot(tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
-        V = tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+        V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*tt.sum(inp*inp,2)

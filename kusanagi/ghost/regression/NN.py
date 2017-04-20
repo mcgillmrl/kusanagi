@@ -74,11 +74,11 @@ class BNN(BaseRegressor):
     
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
-            v = [(attr_name,self.__dict__[attr_name]) for attr_name in self.__dict__.keys() if isinstance(self.__dict__[attr_name],tt.sharedvar.SharedVariable)]
+            v = [(attr_name,self.__dict__[attr_name]) for attr_name in list(self.__dict__.keys()) if isinstance(self.__dict__[attr_name],tt.sharedvar.SharedVariable)]
             v += [(p.name,p) for p in lasagne.layers.get_all_params(self.network, unwrap_shared=True) ]
             return dict(v)
         else:
-            v = [attr for attr in self.__dict__.values() if isinstance(attr,tt.sharedvar.SharedVariable)]
+            v = [attr for attr in list(self.__dict__.values()) if isinstance(attr,tt.sharedvar.SharedVariable)]
             v += lasagne.layers.get_all_params(self.network, unwrap_shared=True)
             return v
     
@@ -125,12 +125,12 @@ class BNN(BaseRegressor):
             input_dims = self.D
         if output_dims is None:
             output_dims = self.E
-        if type(p) is not list:
+        if not isinstance(p, list):
             p = [p]*len(hidden_dims)
         network_spec = []
 
         # input layer
-        input_shape = [batchsize,input_dims]
+        input_shape = (batchsize,input_dims)
         network_spec.append( (InputLayer, dict(shape=input_shape, name=name+'_input') ) )
         if p_input > 0:
             network_spec.append( (DropoutLayer, dict(p=p_input, rescale=False, name=name+'_drop_input', dropout_samples=self.dropout_samples.get_value()) ) )
@@ -170,7 +170,7 @@ class BNN(BaseRegressor):
                 # change the input shape
                 network_spec[0][1]['shape'] = input_shape
             layer_class, layer_args = network_spec[0]
-            print layer_class.__name__, layer_args
+            print(layer_class.__name__, layer_args)
             network = layer_class(**layer_args)
             network_spec = network_spec[1:]
         else:
@@ -182,7 +182,7 @@ class BNN(BaseRegressor):
             
             if layer_name in params:
                 layer_args.update(params[layer_name])
-            print layer_class.__name__, layer_args
+            print(layer_class.__name__, layer_args)
             network = layer_class(network, **layer_args)
             # change the periods in variable names
             for p in network.get_params():
@@ -385,4 +385,4 @@ class BNN(BaseRegressor):
             utils.print_with_stamp('iter: %d, loss: %E, error: %E, elapsed: %E, sn2: %s'%(iters,ret[0],ret[1],elapsed_time, np.exp(2*self.logsn.get_value())),self.name,True)
             if should_exit:
                 break
-        print ''
+        print('')

@@ -1,4 +1,4 @@
-from GP import *
+from .GP import *
 
 class SKIGP(GP):
     '''Structured Kernel Interpolation GP (otherwise known as KISS-GP (with further extensions from MSGP) by Wilson, Nkish et al 2015'''

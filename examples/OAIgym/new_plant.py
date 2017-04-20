@@ -16,7 +16,7 @@ from multiprocessing import Process
 from multiprocessing.managers import BaseManager
 from utils import print_with_stamp
 
-color_generator = cnames.iteritems()
+color_generator = iter(cnames.items())
 
 class Plant(object):
     def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='Plant'):
@@ -152,14 +152,14 @@ class ODEPlant(Plant):
 
 class SerialPlant(Plant):
     cmds = ['RESET_STATE','GET_STATE','APPLY_CONTROL','CMD_OK','STATE']
-    cmds = dict(zip(cmds,[str(i) for i in xrange(len(cmds))]))
+    cmds = dict(list(zip(cmds,[str(i) for i in range(len(cmds))])))
 
     def __init__(self, params, x0, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None):
         super(SerialPlant,self).__init__(params, x0, S0, dt, noise, name)
         self.port = port
         self.baud_rate = baud_rate
         self.serial = serial.Serial(self.port,self.baud_rate)
-        self.state_indices = state_indices if state_indices is not None else range(len(x0))
+        self.state_indices = state_indices if state_indices is not None else list(range(len(x0)))
         self.U_scaling = 1.0/np.array(maxU);
         self.t=-1
     
@@ -221,7 +221,7 @@ class SerialPlant(Plant):
 
     def reset_state(self):
         print_with_stamp('Please reset your plant to its initial state and hit Enter',self.name)
-        raw_input()
+        input()
         if not self.serial.isOpen():
             self.serial.open()
         self.serial.flushInput()
@@ -303,7 +303,7 @@ class PlantDraw(object):
         print_with_stamp('Stopped drawing loop',self.name)
     
     def update(self):
-        print "You need to implement the self.update(qp) function in your PlantDraw class."
+        print("You need to implement the self.update(qp) function in your PlantDraw class.")
 
 # an example that plots lines
 class LivePlot(PlantDraw):
@@ -316,7 +316,7 @@ class LivePlot(PlantDraw):
         self.data = np.array([state])
         self.t_labels = np.array([t])
         # initialize the patches to draw the cartpole
-        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in xrange(self.data.shape[1]) ]
+        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in range(self.data.shape[1]) ]
         # keep track of latest time stamp and state
         self.current_t = t
 
@@ -337,7 +337,7 @@ class LivePlot(PlantDraw):
             self.current_t = t
             self.data = np.vstack((self.data,state))[-self.H:,:]
             self.t_labels = np.append(self.t_labels,t)[-self.H:]
-            for i in xrange(len(self.lines)):
+            for i in range(len(self.lines)):
                 self.lines[i].set_data(self.t_labels,self.data[:,i])
             plt.xlim([self.t_labels.min(),self.t_labels.max()])
             mm = self.data.mean()

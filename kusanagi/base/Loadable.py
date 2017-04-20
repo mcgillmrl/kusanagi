@@ -15,7 +15,7 @@ class Loadable(object):
     def set_state(self,state):
         ''' sets the class state from the input dictionary.'''
         assert isinstance(state,dict), "The state must be a dictionary (Files that saved a lit of variables will need to be converted)"
-        for key in state.keys():
+        for key in list(state.keys()):
             value = state[key]
             if hasattr(value,'name'):
                 if value.name is not None:
@@ -31,7 +31,7 @@ class Loadable(object):
         for key in self.registered_keys:
             state[key] = self.__dict__[key]
 
-        for attr_name in self.__dict__.keys():
+        for attr_name in list(self.__dict__.keys()):
             value = self.__dict__[attr_name]
             if any([isinstance(value,type_) for type_ in self.registered_types]):
                 state[attr_name] = value
@@ -40,7 +40,7 @@ class Loadable(object):
 
     def register(self,variable_names):
         ''' registers a variable name ( or each variable name in a list ) as a state variable'''
-        if not type(variable_names) is list:
+        if not isinstance(variable_names, list):
             variable_names = [variable_names]
 
         for varname in variable_names:
@@ -49,7 +49,7 @@ class Loadable(object):
 
     def unregister(self,variable_names):
         ''' unregisters a variable name ( or each variable name in a list ) as a state variable'''
-        if not type(variable_names) is list:
+        if not isinstance(variable_names, list):
             variable_names = [variable_names]
 
         for varname in variable_names:
@@ -59,7 +59,7 @@ class Loadable(object):
     def register_types(self,types_):
         ''' registers every variables of the given type ( or of every given type in types_) as state variables'''
         # TODO we are trusting the user on this
-        if not type(types_) is list:
+        if not isinstance(types_, list):
             types_ = [types_]
 
         for type_ in types_:
@@ -68,7 +68,7 @@ class Loadable(object):
     def unregister_types(self,types_):
         ''' unregisters every variables of the given type ( or of every given type in types_) as state variables'''
         # TODO we are trusting the user on this
-        if not type(types_) is list:
+        if not isinstance(types_, list):
             types_ = [types_]
 
         for type_ in types_:

@@ -33,13 +33,13 @@ if __name__ == '__main__':
     atexit.register(draw_cp.stop)
     
     # apply random controls to obtain initial experience
-    for i in xrange(J):
+    for i in range(J):
         learner.policy.t = 0
         learner.plant.reset_state()
         learner.apply_controller(random_controls=True)
 
     # learning loop
-    for i in xrange(N):
+    for i in range(N):
         #train the dynamics models given the collected data
         learner.train_dynamics()
 
@@ -53,7 +53,7 @@ if __name__ == '__main__':
         learner.plant.reset_state()
         learner.apply_controller()
         # J-1 times to obtain randomized data
-        for i in xrange(J-1):
+        for i in range(J-1):
             learner.policy.t = 0
             learner.policy.noise = 1e-1*np.array(learner.policy.maxU)
             learner.plant.reset_state()

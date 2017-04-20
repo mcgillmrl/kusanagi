@@ -36,9 +36,9 @@ class ExperienceDataset(Loadable):
         super(ExperienceDataset,self).load(output_folder,output_filename)
 
         # if the policy parameters were saved as shared variables
-        for i in xrange(len(self.policy_parameters)):
+        for i in range(len(self.policy_parameters)):
             pi = self.policy_parameters[i]
-            for j in xrange(len(pi)):
+            for j in range(len(pi)):
                 pij = self.policy_parameters[i][j]
                 if isinstance(pij, theano.tensor.sharedvar.SharedVariable):
                     self.policy_parameters[i][j] = pij.get_value()
@@ -96,13 +96,13 @@ class ExperienceDataset(Loadable):
             self.state_changed = True
 
     def get_dynmodel_dataset(self, deltas=True, filter_episodes=[], angle_dims=[]):
-	''' Returns a dataset where the inputs are state_actions and the outputs are next steps'''
+        ''' Returns a dataset where the inputs are state_actions and the outputs are next steps'''
         X,Y=[],[]
-	if type(filter_episodes) is not list:
-	    filter_episodes = [filter_episodes]
-	if len(filter_episodes) < 1:
-	    # use all data
-	    filter_episodes = range(self.n_episodes())
+        if not isinstance(filter_episodes, list):
+            filter_episodes = [filter_episodes]
+        if len(filter_episodes) < 1:
+            # use all data
+            filter_episodes = list(range(self.n_episodes()))
         for ep in filter_episodes:
             states,actions = np.array(self.states[ep]),np.array(self.actions[ep])
             states_ = utils.gTrig_np(np.array(states), angle_dims)

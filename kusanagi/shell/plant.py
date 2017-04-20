@@ -13,7 +13,7 @@ from threading import Thread, Lock
 from multiprocessing import Process,Pipe,Event
 from kusanagi.utils import print_with_stamp, gTrig_np
 
-color_generator = cnames.iteritems()
+color_generator = iter(cnames.items())
 
 class Plant(object):
     def __init__(self, params=None, x0=None, S0=None, dt=0.01, noise=None, name='Plant', angle_dims = []):
@@ -116,14 +116,14 @@ class ODEPlant(Plant):
 
 class SerialPlant(Plant):
     cmds = ['RESET_STATE','GET_STATE','APPLY_CONTROL','CMD_OK','STATE']
-    cmds = dict(zip(cmds,[str(i) for i in xrange(len(cmds))]))
+    cmds = dict(list(zip(cmds,[str(i) for i in range(len(cmds))])))
 
     def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None, angle_dims = []):
         super(SerialPlant,self).__init__(params, x0, S0, dt, noise, name, angle_dims)
         self.port = port
         self.baud_rate = baud_rate
         self.serial = serial.Serial(self.port,self.baud_rate)
-        self.state_indices = state_indices if state_indices is not None else range(len(x0))
+        self.state_indices = state_indices if state_indices is not None else list(range(len(x0)))
         self.U_scaling = 1.0/np.array(maxU);
         self.t=-1
     
@@ -189,7 +189,7 @@ class SerialPlant(Plant):
 
     def reset_state(self):
         print_with_stamp('Please reset your plant to its initial state and hit Enter',self.name)
-        raw_input()
+        input()
         if not self.serial.isOpen():
             self.serial.open()
         self.serial.flushInput()
@@ -328,7 +328,7 @@ class LivePlot(PlantDraw):
         self.update_period = refresh_period
 
     def init_artists(self):
-        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in xrange(self.data.shape[1]) ]
+        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in range(self.data.shape[1]) ]
         self.ax.set_aspect('auto','datalim')
         for line in self.lines:
             self.ax.add_line(line)
@@ -353,7 +353,7 @@ class LivePlot(PlantDraw):
             self.t_labels = np.append(self.t_labels,t)[-history_size:]
 
             # update the lines
-            for i in xrange(len(self.lines)):
+            for i in range(len(self.lines)):
                 self.lines[i].set_data(self.t_labels,self.data[:,i])
 
             # update the plot limits

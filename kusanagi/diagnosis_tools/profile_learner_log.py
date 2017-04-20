@@ -16,7 +16,7 @@ def analyse_log(logpath):
   csvpath  = os.path.abspath(os.path.join(dirname, csvname))
   pngpath  = os.path.abspath(os.path.join(dirname, pngname))
   
-  print '- Analyzing timings: %s' % (logpath)
+  print('- Analyzing timings: %s' % (logpath))
   
   with open(csvpath, 'w') as csvfile:
     csvfile.write('% ' + logpath + '\n')
@@ -61,20 +61,20 @@ def analyse_log(logpath):
       csvfile.write('%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f\n' % (end_t-ini_t, dyn_t-ini_t, pol_t-dyn_t, end_t-pol_t, new_ini_t-end_t, ini_t, dyn_t, pol_t, end_t))
       csvlines += 1
   
-  print '- Wrote %d lines to %s' % (csvlines, csvpath)
+  print('- Wrote %d lines to %s' % (csvlines, csvpath))
   
-  print '- Generating plot: %s' % (pngpath)
+  print('- Generating plot: %s' % (pngpath))
   plot_cmd = 'matlab -nosplash -nodesktop -r "plot_learner_profile(\'%s\', \'%s\', 1, \'%s\'); exit"' % (basename, csvpath, pngpath)
-  print '> ' + plot_cmd
+  print('> ' + plot_cmd)
   os.system(plot_cmd)
   if os.path.isfile(pngpath):
-    print '- Wrote to %s' % pngpath
+    print('- Wrote to %s' % pngpath)
   else:
-    print '! Plotting command unsuccessful; debug by hand'
+    print('! Plotting command unsuccessful; debug by hand')
 
 if __name__=='__main__':
   if len(sys.argv) != 2:
-    print 'Usage: %s LOGPATH' % sys.argv[0]
+    print('Usage: %s LOGPATH' % sys.argv[0])
     sys.exit(-1)
   else:
     analyse_log(sys.argv[1])

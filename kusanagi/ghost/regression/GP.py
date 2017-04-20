@@ -12,8 +12,8 @@ from theano.tensor.nlinalg import matrix_dot
 from theano.sandbox.linalg import matrix_inverse, det, cholesky
 from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular, solve
 
-import cov
-import SNRpenalty
+from . import cov
+from . import SNRpenalty
 from kusanagi import utils
 from kusanagi.ghost.regression import BaseRegressor
 
@@ -167,10 +167,10 @@ class GP(BaseRegressor):
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
             return [(attr_name, self.__dict__[attr_name])
-                    for attr_name in self.__dict__.keys()
+                    for attr_name in list(self.__dict__.keys())
                     if isinstance(self.__dict__[attr_name], tt.sharedvar.SharedVariable)]
         else:
-            return [attr for attr in self.__dict__.values()
+            return [attr for attr in list(self.__dict__.values())
                     if isinstance(attr, tt.sharedvar.SharedVariable)]
 
     def init_loss(self, cache_vars=True, compile_funcs=True, unroll_scan=False):
@@ -345,7 +345,7 @@ class GP(BaseRegressor):
         utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
         m_loss = utils.MemoizeJac(self.loss)
         self.n_evals=0
-        min_methods = self.min_method if type(self.min_method) is list else [self.min_method]
+        min_methods = self.min_method if isinstance(self.min_method, list) else [self.min_method]
         min_methods.extend([m for m in DETERMINISTIC_MIN_METHODS if m != self.min_method])
         self.besthyp = [np.array(self.loss_fn()).sum(), p0]
         for m in min_methods:
@@ -366,11 +366,11 @@ class GP(BaseRegressor):
                                   )
                 break
             except ValueError:
-                print ''
+                print('')
                 utils.print_with_stamp("Optimization with %s failed"%(m),self.name)
                 loghyp0 = self.besthyp[1]
 
-        print ''
+        print('')
         loghyp = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.state_changed = not np.allclose(utils.wrap_params(p0),opt_res.x,1e-6,1e-9)
         self.set_params({'loghyp': loghyp})
@@ -401,17 +401,17 @@ class GP_UI(GP):
         inp = iL.dot(zeta.T).transpose(0,2,1) 
         iLdotSx = iL.dot(Sx) # force the matrix inverse to be done with double precision
         #TODO vectorize this
-        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + tt.eye(idims)
-        t = tt.stack([solve(B[i].T, inp[i].T).T for i in xrange(odims)])      # E x N x D
-        c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in xrange(odims)]))
+        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in range(odims)]) + tt.eye(idims)
+        t = tt.stack([solve(B[i].T, inp[i].T).T for i in range(odims)])      # E x N x D
+        c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))
         l = tt.exp(-0.5*tt.sum(inp*t,2))
         lb = l*self.beta # beta should have been precomputed in init_loss # E x N dot E x N
         M = tt.sum(lb,1)*c
         
         # input output covariance
-        tiL = tt.stack([t[i].dot(iL[i]) for i in xrange(odims)])
+        tiL = tt.stack([t[i].dot(iL[i]) for i in range(odims)])
         #V = Sx.dot(tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
-        V = tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+        V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*tt.sum(inp*inp,2)
@@ -499,18 +499,18 @@ class RBFGP(GP_UI):
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0,2,1) 
         iLdotSx = iL.dot(Sx)
-        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in xrange(odims)]) + tt.eye(idims)   #TODO vectorize this
+        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in range(odims)]) + tt.eye(idims)   #TODO vectorize this
         #t = tt.stack([inp[i].dot(matrix_inverse(B[i])) for i in xrange(odims)])      # E x N x D
-        t = tt.stack([solve(B[i].T, inp[i].T).T for i in xrange(odims)])      # E x N x D
-        c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in xrange(odims)]))
+        t = tt.stack([solve(B[i].T, inp[i].T).T for i in range(odims)])      # E x N x D
+        c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))
         l = tt.exp(-0.5*tt.sum(inp*t,2))
         lb = l*self.beta # beta should have been precomputed in init_loss # E x N
         M = tt.sum(lb,1)*c
         
         # input output covariance
-        tiL = tt.stack([t[i].dot(iL[i]) for i in xrange(odims)])
+        tiL = tt.stack([t[i].dot(iL[i]) for i in range(odims)])
         #V = Sx.dot(tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
-        V = tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
+        V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*tt.sum(inp*inp,2)

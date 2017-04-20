@@ -193,13 +193,6 @@ class PDDP(PILCO):
         grads = self.trajectory_jac_fn()
         end = time()-start
         utils.print_with_stamp("Elapsed: %f"%(end))
-
-        #for r in zip(*grads):
-        for r in grads:
-            print r.shape,
-        #for r in self.trajectory_jac_fn():
-        #    print r.shape,
-        utils.print_with_stamp('')
         
         while not converged and self.n_evals<self.max_evals:
             # initialize V, Vx and Vxx

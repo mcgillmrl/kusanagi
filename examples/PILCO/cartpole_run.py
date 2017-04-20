@@ -28,7 +28,7 @@ if __name__ == '__main__':
     draw_cp.start()
     atexit.register(draw_cp.stop)
     #learner.policy.predict_fn = None
-    for i in xrange(N):
+    for i in range(N):
         learner.plant.reset_state()
         learner.apply_controller()
     

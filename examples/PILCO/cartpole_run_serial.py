@@ -14,8 +14,8 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     # setup output directory
-    print utils.get_output_dir()
-    print os.path.join(utils.get_output_dir(),'cartpole_serial')
+    print(utils.get_output_dir())
+    print(os.path.join(utils.get_output_dir(),'cartpole_serial'))
     utils.set_output_dir(os.path.join(utils.get_output_dir(),'cartpole_serial'))
 
     J = 4                                                                   # number of random initial trials
@@ -37,7 +37,7 @@ if __name__ == '__main__':
     atexit.register(learner.stop)
 
     # gather data with random trials
-    for i in xrange(J):
+    for i in range(J):
         learner.plant.reset_state()
         learner.apply_controller(10*learner_params['params']['H'])
     

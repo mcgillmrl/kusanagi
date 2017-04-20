@@ -225,8 +225,8 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
     dy = df0.dot(search_direction)/beta
     gp.update(t_curr, y, dy, sigma_y, sigma_dy)
 
-    print '||||||start|||||||'
-    print f0,df0.dot(search_direction),0.0,t_curr
+    print('||||||start|||||||')
+    print(f0,df0.dot(search_direction),0.0,t_curr)
     # start line search with step = 1.0
     t_curr = 1.0
     # extrapolation step
@@ -239,8 +239,8 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
         
         xt = x0+step_size*search_direction
         f,df,var_f,var_df = func(xt)
-        print '||||||'+str(ls)+'|||||||'
-        print f,df.dot(search_direction), step_size, t_curr
+        print('||||||'+str(ls)+'|||||||')
+        print(f,df.dot(search_direction), step_size, t_curr)
         #print df
         
         # scaled noise
@@ -262,7 +262,7 @@ def prob_line_search(func, x0, f0, df0, var_f0, var_df0, alpha0, search_directio
         var_plot = np.array([gp.V(ti,ti) for ti in t_plot])
         plt.plot(t_plot,y_plot)
         alpha = 0.5
-        for i in xrange(6):
+        for i in range(6):
             alpha = alpha/1.5
             lower_bound = y_plot - i*np.sqrt(var_plot).squeeze()
             upper_bound = y_plot + i*np.sqrt(var_plot).squeeze()
@@ -378,7 +378,7 @@ def compile_loss_fn(losses, params, updates=None, callback=None):
     # TODO compute the variance of gradients efficiently
     utils.print_with_stamp("Computing gradient mean and variance",'ProbLS')
     grads = theano.tensor.jacobian(losses, params)
-    m_grad, S_grad = zip(*[(g.mean(0).flatten(),g.var(0).flatten()) for g in grads])
+    m_grad, S_grad = list(zip(*[(g.mean(0).flatten(),g.var(0).flatten()) for g in grads]))
     m_grad, S_grad = theano.tensor.concatenate(m_grad), theano.tensor.concatenate(S_grad)
     loss_fn = theano.function([],[m_loss,m_grad,S_loss,S_grad], updates=updates)
 

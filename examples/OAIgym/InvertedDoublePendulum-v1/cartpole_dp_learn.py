@@ -56,7 +56,7 @@ if __name__ == '__main__':
     learner = PILCO(plant, policy, cost, angle_dims, async_plant=False)
     
     def signal_handler(signal, frame):                               # initialize signal handler to capture ctrl-c
-        print 'Caught CTRL-C!'
+        print('Caught CTRL-C!')
         #draw_cp.stop()
         #plant.stop()
         sys.exit(0)
@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
     if learner.dynamics_model.X_ is None: #if we have no prior data
         # gather data with random trials
-        for i in xrange(J):
+        for i in range(J):
             plant.reset_state()
             learner.apply_controller(H=T,random_controls=True)
 
@@ -74,7 +74,7 @@ if __name__ == '__main__':
     plant.reset_state()
     learner.apply_controller(H=T)
         
-    for i in xrange(N):
+    for i in range(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()
 

@@ -22,6 +22,7 @@ import matplotlib as mpl
 # mpl.use('Agg')
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
+from functools import reduce
 
 def maha(X1, X2=None, M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
@@ -109,7 +110,7 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
             sys.stdout.write('\r'+out_str)
         else:
             sys.stdout.write(out_str)
-            print ''
+            print('')
         sys.stdout.flush()
     else:
         write_mode = 'a+'
@@ -243,7 +244,7 @@ def gTrig2(m, v, angi, D):
     return [M, V, Ca]
 
 def gTrig_np(x, angi):
-    if type(x) is list:
+    if isinstance(x, list):
         x = np.array(x)
     if x.ndim == 1:
         x = x[None, :]
@@ -325,7 +326,7 @@ def get_compiled_gTrig(angi, D, derivs=True):
 
 def wrap_params(p_list):
     # flatten out and concatenate the parameters
-    if type(p_list) is not list:
+    if not isinstance(p_list, list):
         p_list = [p_list]
     P = []
     for pi in p_list:
@@ -442,7 +443,7 @@ def plot_results(learner, H=None):
         plt.plot(T_range, cost, color='g', linewidth=2)
 
         # plot all trajectories
-        for d in xrange(x0.size):
+        for d in range(x0.size):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
             for tr_d in predicted_trajectories:
@@ -460,7 +461,7 @@ def plot_results(learner, H=None):
         predicted_means = np.array(rollout_[2])
         predicted_vars = np.array(rollout_[3])
 
-        for d in xrange(x0.size):
+        for d in range(x0.size):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
             plt.errorbar(T_range, predicted_means[:, d], yerr=2*np.sqrt(predicted_vars[:, d, d]))
@@ -471,7 +472,7 @@ def plot_results(learner, H=None):
     iters = []
     cost_sums = []
     n_random = 0
-    for i in xrange(learner.experience.n_episodes()):
+    for i in range(learner.experience.n_episodes()):
         if not learner.experience.policy_parameters[i]:
             iters.append(0)
             n_random += 1
@@ -522,7 +523,7 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
             predicted_means = np.array(rollout_[2])
             predicted_vars = np.array(rollout_[3])
 
-            for d in xrange(x0.size):
+            for d in range(x0.size):
                 plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
                 plt.gca().clear()
                 plt.errorbar(T_range, predicted_means[:, d], 
@@ -545,7 +546,7 @@ def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
             ep_nums = []
             ep_sums = []
             n_random = 0
-            for i in xrange(learner.experience.n_episodes()):
+            for i in range(learner.experience.n_episodes()):
                 if learner.experience.policy_parameters[i]:
                     ep_nums.append(i-n_random)
                     total_c = 0.0
@@ -599,7 +600,7 @@ def plot_learning_results(plant, H=None):
         plt.plot(T_range, cost, color='g', linewidth=2)
 
         # plot all trajectories
-        for d in xrange(x0.size):
+        for d in range(x0.size):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
             for tr_d in predicted_trajectories:
@@ -617,7 +618,7 @@ def plot_learning_results(plant, H=None):
         predicted_means = np.array(rollout_[2])
         predicted_vars = np.array(rollout_[3])
 
-        for d in xrange(x0.size):
+        for d in range(x0.size):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
             plt.errorbar(T_range, predicted_means[:, d], yerr=2*np.sqrt(predicted_vars[:, d, d]))
@@ -628,7 +629,7 @@ def plot_learning_results(plant, H=None):
     iters = []
     cost_sums = []
     n_random = 0
-    for i in xrange(learner.experience.n_episodes()):
+    for i in range(learner.experience.n_episodes()):
         if not learner.experience.policy_parameters[i]:
             iters.append(0)
             n_random += 1

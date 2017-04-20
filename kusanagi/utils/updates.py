@@ -5,7 +5,7 @@ import theano.tensor as tt
 from collections import OrderedDict
 
 def polyak_averaging(updates, params,alpha=0.999):
-    if type(params) is not list:
+    if not isinstance(params, list):
         params = [params]
     
     t_prev = theano.shared(lasagne.utils.floatX(0.))

@@ -1,1 +1,1 @@
-from cartpole import *
+from .cartpole import *

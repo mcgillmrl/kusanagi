@@ -30,7 +30,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     x_train = 15*(np.random.rand(n_train,idims) - 0.25)
     # generate the output at the training points
     y_train = np.empty((n_train,odims))
-    for i in xrange(odims):
+    for i in range(odims):
         y_train[:,i] =  (i+1)*f(x_train) + output_noise*(np.random.randn(n_train))
     x_train = utils.gTrig_np(x_train, angi)
     
@@ -43,7 +43,7 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
     x_test = 120*(np.random.rand(n_test,idims) - 0.5)
     # generate the output at the test points
     y_test = np.empty((n_test,odims))
-    for i in xrange(odims):
+    for i in range(odims):
         y_test[:,i] =  (i+1)*f(x_test)
     if len(angi)>0:
         x_test,s_test = utils.gTrig2_np(x_test,s_test, angi, idims)
@@ -84,25 +84,25 @@ if __name__=='__main__':
     errors = []
     probs = []
     preds = []
-    for i in xrange(n_test):
+    for i in range(n_test):
         ret = nn.predict(test_mX[i], test_sX[i])
         preds.append(ret)
-        print '============%04d============'%(i)
-        print 'Test Point:\n%s'%(test_mX[i])
-        print 'Ground Truth:\n%s'%(test_Y[i])
-        print 'Mean Prediction:\n%s'%(ret[0])
-        print 'Prediction Covariance:\n%s'%(ret[1])
-        print 'Input/Output Covariance:\n%s'%(ret[2])
+        print('============%04d============'%(i))
+        print('Test Point:\n%s'%(test_mX[i]))
+        print('Ground Truth:\n%s'%(test_Y[i]))
+        print('Mean Prediction:\n%s'%(ret[0]))
+        print('Prediction Covariance:\n%s'%(ret[1]))
+        print('Input/Output Covariance:\n%s'%(ret[2]))
         errors.append(np.sqrt(((ret[0]-test_Y[i])**2).sum()))
-        print 'Error:\t%f'%(errors[-1])
+        print('Error:\t%f'%(errors[-1]))
         probs.append(np.log(multivariate_normal.pdf(test_Y[i],mean=ret[0],cov=ret[1])))
-        print 'Log Probability of Ground Truth:\t%f'%(probs[-1])
+        print('Log Probability of Ground Truth:\t%f'%(probs[-1]))
 
     errors = np.array(errors)
     probs = np.array(probs)
-    print '============================='
-    print 'Min/Max/Mean Prediction Error:\t %f / %f / %f'%(errors.min(),errors.max(),errors.mean())
-    print 'Min/Max/Mean Log Probablity:\t %f / %f / %f'%(probs.min(),probs.max(),probs.mean())
+    print('=============================')
+    print('Min/Max/Mean Prediction Error:\t %f / %f / %f'%(errors.min(),errors.max(),errors.mean()))
+    print('Min/Max/Mean Log Probablity:\t %f / %f / %f'%(probs.min(),probs.max(),probs.mean()))
 
     if idims==1 and odims==1:
         # plot regression result
@@ -119,11 +119,11 @@ if __name__=='__main__':
         plt.scatter(Xtr,Ytr)
         plt.plot(Xts,Yts)
         
-        Ypred,Yvar,Yio = zip(*preds)
+        Ypred,Yvar,Yio = list(zip(*preds))
         Ypred = np.concatenate(Ypred,axis=0)[idx]
         Yvar = np.concatenate(Yvar,axis=0)[idx]
         alpha = 0.5
-        for i in xrange(4):
+        for i in range(4):
             alpha = alpha/2.0
             lower_bound = Ypred - i*np.sqrt(Yvar).squeeze()
             upper_bound = Ypred + i*np.sqrt(Yvar).squeeze()

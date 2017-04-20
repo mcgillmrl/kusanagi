@@ -1,4 +1,4 @@
-from GP import *
+from .GP import *
 
 class SSGP(GP):
     ''' Sparse Spectrum Gaussian Process Regression LAzaro-GRedilla et al 2010'''
@@ -143,10 +143,10 @@ class SSGP(GP):
         best_w = self.w.get_value()
 
         # try a couple spectrum samples and pick the one with the lowest loss
-        for i in xrange(100):
+        for i in range(100):
             self.set_spectrum_samples()
             loss_i = self.loss_ss_fn()
-            for d in xrange(odims):
+            for d in range(odims):
                 if np.all(loss_i[d] < loss[d]):
                     loss[d] = loss_i[d]
                     best_w[:,d,:] = self.w.get_value()[:,d,:]
@@ -160,7 +160,7 @@ class SSGP(GP):
         parameter_shapes = [p.shape for p in p0]
         m_loss_ss = utils.MemoizeJac(self.loss_ss)
         self.n_evals=0
-        min_methods = self.min_method if type(self.min_method) is list else [self.min_method]
+        min_methods = self.min_method if isinstance(self.min_method, list) else [self.min_method]
         min_methods.extend([m for m in DETERMINISTIC_MIN_METHODS if m != self.min_method])
         self.besthyp = [np.array(self.loss_ss_fn()).sum(), p0]
         for m in min_methods:
@@ -181,11 +181,11 @@ class SSGP(GP):
                                   )
                 break
             except ValueError:
-                print ''
+                print('')
                 utils.print_with_stamp("Optimization with %s failed"%(m),self.name)
                 p0 = self.besthyp[1]
 
-        print ''
+        print('')
         loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.set_params({'loghyp': loghyp, 'w': w})
         utils.print_with_stamp('loss SS: %s'%(np.array(self.loss_ss_fn())),self.name)
@@ -198,7 +198,7 @@ class SSGP(GP):
         # compute the mean and variance for each output dimension
         mean = [[]]*odims
         variance = [[]]*odims
-        for i in xrange(odims):
+        for i in range(odims):
             sr = self.sr[i]
             M = sr.shape[0].astype('float64')
             sf2 = tt.exp(2*self.loghyp[i,idims])

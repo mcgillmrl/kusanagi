@@ -50,7 +50,7 @@ class TrajectoryMatching(PILCO):
         
         if n_episodes>0:
             # construct training dataset
-            for i in xrange(self.next_episode_inv,n_episodes):
+            for i in range(self.next_episode_inv,n_episodes):
                 x = np.array(self.experience.states[i])
                 u = np.array(self.experience.actions[i])
 
@@ -101,7 +101,7 @@ class TrajectoryMatching(PILCO):
         Y_var = []
         
         # from sourcce trajectories
-        for i in xrange(max(0,total_trajectories-n_source_traj),total_trajectories):
+        for i in range(max(0,total_trajectories-n_source_traj),total_trajectories):
             # for every state transition in the source experience, use the target inverse dynamics
             # to find an action that would produce the desired transition
             x = np.array(self.source_experience.states[i])
@@ -148,7 +148,7 @@ class TrajectoryMatching(PILCO):
             self.src_models = {}
 
         if len(episodes) < 1:
-            episodes = range(target_exp.states)
+            episodes = list(range(target_exp.states))
 
         # compile rollout for given dynmodel
 

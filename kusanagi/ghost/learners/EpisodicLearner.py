@@ -251,7 +251,7 @@ class EpisodicLearner(Loadable):
 
         H_steps = int(np.ceil(H/self.plant.dt))
         # do rollout
-        for i in xrange(H_steps):
+        for i in range(H_steps):
             # convert input angle dimensions to complex representation
             x_t_ = utils.gTrig_np(x_t[None, :], self.angle_idims).flatten()
             #  get command from policy
@@ -338,7 +338,7 @@ class EpisodicLearner(Loadable):
 
             # setup alternative minimization methods (in case the one selected fails)
             min_methods = [min_method]
-            for i in xrange(len(DETERMINISTIC_MIN_METHODS)):
+            for i in range(len(DETERMINISTIC_MIN_METHODS)):
                 if DETERMINISTIC_MIN_METHODS[i] not in min_methods:
                     min_methods.append(DETERMINISTIC_MIN_METHODS[i])
 
@@ -363,13 +363,13 @@ class EpisodicLearner(Loadable):
                     self.policy.set_params(utils.unwrap_params(opt_res.x, parameter_shapes))
                     break
                 except ValueError:
-                    print ''
+                    print('')
                     utils.print_with_stamp("Optimization with %s failed"%(min_methods[i]), self.name)
                     v0,p0 = self.best_p
                     self.policy.set_params(p0)
 
         # stochastic gradients
-        elif min_method in STOCHASTIC_MIN_METHODS.keys():
+        elif min_method in list(STOCHASTIC_MIN_METHODS.keys()):
             utils.print_with_stamp("Using %s optimizer"%(min_method), self.name)
             # compile optimizer f not available
             if not hasattr(self,'train_fn'):
@@ -392,7 +392,7 @@ class EpisodicLearner(Loadable):
                 utils.print_with_stamp("Done compiling.", self.name)
 
             # training loop
-            for i in xrange(self.max_evals):
+            for i in range(self.max_evals):
                 # evaluate current policy and update parameters
                 if hasattr(self,'update'):
                     # if there are any variable we want to update before evaluating the gradient
@@ -432,7 +432,7 @@ class EpisodicLearner(Loadable):
             utils.print_with_stamp(error_str, self.name)
             raise ValueError(error_str)
      
-        print '' 
+        print('') 
         v,p,i = self.best_p
         #beta=0.5
         #p = [ (1-beta)*p[i] + beta*p0[i] for i in range(len(p)) ]

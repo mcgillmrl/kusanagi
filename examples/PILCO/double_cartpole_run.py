@@ -27,7 +27,7 @@ if __name__ == '__main__':
     draw_cdp.start()
     atexit.register(draw_cdp.stop)
 
-    for i in xrange(N):
+    for i in range(N):
         learner.plant.reset_state()
         learner.apply_controller()
 

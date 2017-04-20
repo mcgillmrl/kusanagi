@@ -10,9 +10,9 @@ class Fixer(object):
         self.env = env
         
     def get_action(self):
-        for i_episode in xrange(20):
+        for i_episode in range(20):
             observation = self.env.reset()
-            for t in xrange(100):
+            for t in range(100):
                 self.env.render()
                 action = self.env.action_space.sample()
                 #print action
@@ -26,9 +26,9 @@ class Fixer(object):
         return self.action_list
                    
     def get_step(self):
-        for i_episode in xrange(20):
+        for i_episode in range(20):
             observation = self.env.reset()
-            for t in xrange(100):
+            for t in range(100):
                 #self.env.render()
                 action = self.env.action_space.sample()
                 #print action

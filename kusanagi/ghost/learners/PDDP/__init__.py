@@ -1,2 +1,2 @@
-from pddp import *
+from .pddp import *
 

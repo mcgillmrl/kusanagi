@@ -43,7 +43,7 @@ if __name__ == '__main__':
 
     if learner.experience.n_samples() == 0: #if we have no prior data
         # gather data with random trials
-        for i in xrange(J-1):
+        for i in range(J-1):
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
         learner.plant.reset_state()
@@ -56,7 +56,7 @@ if __name__ == '__main__':
         plot_results(learner)
 
     # learning loop
-    for i in xrange(N):
+    for i in range(N):
         # train the dynamics models given the collected data
         learner.train_dynamics()
 

@@ -421,9 +421,9 @@ class PILCO(EpisodicLearner):
         n_episodes = len(self.experience.states)
 
         # get dataset for dynamics model
-        episodes = range(self.next_episode, n_episodes)\
+        episodes = list(range(self.next_episode, n_episodes))\
         if max_episodes is None or n_episodes < max_episodes\
-        else range(max(0, n_episodes-max_episodes), n_episodes)
+        else list(range(max(0, n_episodes-max_episodes), n_episodes))
         self.next_episode = n_episodes
         X, Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes,
                                                     angle_dims=self.angle_idims)

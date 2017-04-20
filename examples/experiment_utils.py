@@ -58,8 +58,8 @@ def setup_transfer(N=100, J=100, simulation= False,
 
     # initialize target plant
     if not simulation:
-        print target_params['params']['policy']['maxU']
-        print target_params['params']['plant']['maxU']
+        print(target_params['params']['policy']['maxU'])
+        print(target_params['params']['plant']['maxU'])
     else:
         # TODO get these as command line arguments
         target_params['params']['plant']['params'] = {'l': 0.5, 'm': 1.5, 'M': 1.5, 'b': 0.1, 'g': 9.82}

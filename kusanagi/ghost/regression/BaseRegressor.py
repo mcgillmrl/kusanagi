@@ -21,9 +21,9 @@ class BaseRegressor(Loadable):
         ''' Adds a a new parameter to the class instance. Every parameter will be stored as a Theano shared variable. 
         This function exists so that we do not end up with different compiled functions referencing different shared variables 
         in memory; which can be a problem when loading pickled compiled theano functions'''
-        if type(params) is list:
-            params = dict(zip(self.param_names,params))
-        for pname in params.keys():
+        if isinstance(params, list):
+            params = dict(list(zip(self.param_names,params)))
+        for pname in list(params.keys()):
             # if the parameter that was passed here is a shared variable
             if isinstance(params[pname],tt.sharedvar.SharedVariable):
                 p = params[pname]
@@ -56,7 +56,7 @@ class BaseRegressor(Loadable):
         if not symbolic:
             params = [ p.get_value() for p in params]
         if as_dict:
-            params = dict(zip(self.param_names,params))
+            params = dict(list(zip(self.param_names,params)))
         return params
     
     def set_dataset(self,X_dataset,Y_dataset,**kwargs):

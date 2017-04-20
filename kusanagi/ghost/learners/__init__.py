@@ -1,2 +1,2 @@
-from PILCO import *
-from PDDP import *
+from .PILCO import *
+from .PDDP import *

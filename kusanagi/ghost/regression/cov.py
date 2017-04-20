@@ -43,5 +43,5 @@ def Noise(loghyp,X1,X2=None, all_pairs=True):
 
 def Sum(loghyp_l, cov_l, X1, X2=None, all_pairs=True):
     ''' Returns the sum of multiple covariance functions'''
-    K = sum([cov_l[i](loghyp_l[i],X1,X2,all_pairs=all_pairs) for i in xrange(len(cov_l)) ] )
+    K = sum([cov_l[i](loghyp_l[i],X1,X2,all_pairs=all_pairs) for i in range(len(cov_l)) ] )
     return K

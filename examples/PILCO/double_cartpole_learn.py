@@ -55,7 +55,7 @@ if __name__ == '__main__':
 
     if learner.experience.n_samples() == 0: #if we have no prior data
         # gather data with random trials
-        for i in xrange(J):
+        for i in range(J):
             learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
         #learner.plant.reset_state()
@@ -75,7 +75,7 @@ if __name__ == '__main__':
         plot_results(learner)
 
     # learning loop
-    for i in xrange(N):
+    for i in range(N):
         # train the dynamics models given the collected data
         if use_bnn:
             learner.train_dynamics(max_episodes=10)
@@ -99,5 +99,5 @@ if __name__ == '__main__':
         learner.save(save_compiled_fns=save_compiled_fns)
         save_compiled_fns = False  # only need to save the compiled functions once
     
-    raw_input('Finished training')
+    input('Finished training')
     sys.exit(0)

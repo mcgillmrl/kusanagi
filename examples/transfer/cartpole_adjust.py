@@ -78,7 +78,7 @@ if __name__ == '__main__':
     draw_cp.start()
     atexit.register(draw_cp.stop)
 
-    for i in xrange(N):
+    for i in range(N):
         # sample target trajecotry
         tm.plant.reset_state()
         tm.apply_controller()

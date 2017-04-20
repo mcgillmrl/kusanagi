@@ -58,7 +58,7 @@ def default_params():
 def cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss, u=None):
     angle_dims = params['angle_dims']
     cw = params['width']
-    if type(cw) is not list:
+    if not isinstance(cw, list):
         cw = [cw]
     b = params['expl']
     ell = params['pendulum_length']

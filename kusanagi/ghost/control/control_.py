@@ -70,7 +70,7 @@ class RBFPolicy(RBFGP):
             m0 = m0.squeeze(); S0 = S0.squeeze();
         # init inputs
         L_noise = np.linalg.cholesky(S0)
-        inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in xrange(self.n_inducing)]);
+        inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in range(self.n_inducing)]);
 
         # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
         l0 = np.hstack([np.ones(self.m0.size-len(self.angle_dims)),0.7*np.ones(2*len(self.angle_dims)),1,0.01])
@@ -214,7 +214,7 @@ class LocalLinearPolicy(Loadable):
         return params
 
     def get_all_shared_vars(self):
-        return [attr for attr in self.__dict__.values() if isinstance(attr,tt.sharedvar.SharedVariable)]
+        return [attr for attr in list(self.__dict__.values()) if isinstance(attr,tt.sharedvar.SharedVariable)]
 
 class AdjustedPolicy:
     def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy', adjustment_model_class=SSGP_UI, use_control_input=True, **kwargs):
@@ -298,7 +298,7 @@ class NNPolicy(BNN):
             self.sat_func = partial(sat_func, e=maxU)
         else:
             self.sat_func = None
-        print type(self), isinstance(self,NNPolicy)
+        print(type(self), isinstance(self,NNPolicy))
         super(NNPolicy,self).__init__(self.D, self.E, name=name, filename=filename, **kwargs)
     
     def get_params(self, symbolic=True):
@@ -320,7 +320,7 @@ class NNPolicy(BNN):
             input_dims = self.D
         if output_dims is None:
             output_dims = self.E
-        if type(p) is not list:
+        if not isinstance(p, list):
             p = [p]*len(hidden_dims)
         network_spec = []
 
@@ -351,7 +351,7 @@ class NNPolicy(BNN):
         ret = super(NNPolicy,self).predict_symbolic(mx,Sx,**kwargs)
         
         if Sx is None:
-            if type(ret) is list:
+            if isinstance(ret, list):
                 ret=ret[0]
             M = ret
             if self.sat_func is not None:
