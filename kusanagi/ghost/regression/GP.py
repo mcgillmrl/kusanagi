@@ -82,7 +82,7 @@ class GP(BaseRegressor):
             self.load()
 
         # register theanno functions and shared variables for saving
-        self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
+        self.register_types([tt.sharedvar.SharedVariable])
         # register additional variables for saving
         self.register(['trained'])
 
