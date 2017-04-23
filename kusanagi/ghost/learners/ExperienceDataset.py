@@ -16,12 +16,13 @@ class ExperienceDataset(Loadable):
         self.curr_episode = -1
         self.state_changed = True
         if filename is not None:
-            self.filename=filename
+            self.filename = filename
         else:
-            self.filename = self.name+'_dataset' if filename_prefix is None else filename_prefix+'_dataset'
-            utils.print_with_stamp('Initialising new experience dataset',self.name)
-        
-        Loadable.__init__(self,name=name,filename=self.filename)
+            self.filename = self.name+'_dataset'\
+            if filename_prefix is None else filename_prefix+'_dataset'
+            utils.print_with_stamp('Initialising new experience dataset', self.name)
+
+        Loadable.__init__(self,name=name, filename=self.filename)
 
         # if a filename was passed, try loading it
         if filename is not None:
@@ -74,20 +75,27 @@ class ExperienceDataset(Loadable):
 
     def reset(self):
         ''' Empties the internal data structures'''
-        utils.print_with_stamp('Resetting experience dataset (WARNING: data from %s will be overwritten)'%(self.filename),self.name)
+        fmt = 'Resetting experience dataset (WARNING: data from %s will be overwritten)'
+        utils.print_with_stamp(fmt%(self.filename), self.name)
         self.time_stamps = []
         self.states = []
         self.actions = []
         self.immediate_cost = []
         self.policy_parameters = []
         self.curr_episode = -1
-        self.state_changed = False # Let's give people a last chance of recovering their data. Also, we don't want to save an empty experience dataset
+        # Let's give people a last chance of recovering their data. Also, we don't want to
+        # save an empty experience dataset
+        self.state_changed = False
 
     def truncate(self, episode):
         ''' Resets the experience to start from the given episode number'''
-        if episode <= self.currernt_episode and episode > 0:
-            utils.print_with_stamp('Resetting experience dataset to episode %d (WARNING: data from %s will be overwritten)'%(episode,self.filename),self.name)
-            self.current_episode  = episode
+        if episode <= self.current_episode and episode > 0:
+            # Let's give people a last chance of recovering their data. Also, we don't want
+            # to save an empty experience dataset
+            fmt = 'Resetting experience dataset to episode %d'
+            fmt += ' (WARNING: data from %s will be overwritten)'
+            utils.print_with_stamp(fmt%(episode, self.filename), self.name)
+            self.current_episode = episode
             self.time_stamps = self.time_stamps[:episode]
             self.states = self.states[:episode]
             self.actions = self.actions[:episode]
@@ -95,19 +103,66 @@ class ExperienceDataset(Loadable):
             self.policy_parameters = self.policy_parameters[:episode]
             self.state_changed = True
 
-    def get_dynmodel_dataset(self, deltas=True, filter_episodes=[], angle_dims=[]):
-        ''' Returns a dataset where the inputs are state_actions and the outputs are next steps'''
-        X,Y=[],[]
+    def get_dynmodel_dataset(self, deltas=True, filter_episodes=None,
+                             angle_dims=None, x_steps=1,
+                             u_steps=1, output_steps=1):
+        '''
+        Returns a dataset where the inputs are state_actions and the outputs are next steps.
+        Parameters:
+        -----------
+        deltas: wheter to return changes in state (x_t - x_{t-1}, x_{t-1} - x_{t-2}, ...)
+                or future states (x_t, x_{t-1}, x_{t-2}, ...) in the output
+        filter_episodes: list containing  episode indices to extract from which to extract data.
+                         if list empyt or undefined ( equal to None ), extracts data from all
+                         episodes
+        angle_dims: indices of input state dimensions to linearize, by converting to complex
+                    representation \theta => (sin(\theta), cos(\theta))
+        x_steps: how many steps in the past to concatenate as input
+        u_steps: how many steps in the past to concatenate as input
+        output_steps: how many steps in the future to concatenate as output
+        Returns:
+        --------
+        X: numpy array of shape [n, x_steps*D + u_steps*U], where
+           n is the number of data samples, D the input state dimensions
+        '''
+        filter_episodes = filter_episodes or []
+        angle_dims = angle_dims or []
+        inputs, targets = [], []
         if not isinstance(filter_episodes, list):
             filter_episodes = [filter_episodes]
         if len(filter_episodes) < 1:
             # use all data
             filter_episodes = list(range(self.n_episodes()))
-        for ep in filter_episodes:
-            states,actions = np.array(self.states[ep]),np.array(self.actions[ep])
+        for epi in filter_episodes:
+            # get state action pairs for current episode
+            states, actions = np.array(self.states[epi]), np.array(self.actions[epi])
+            # convert input angle dimensions to complex representation
             states_ = utils.gTrig_np(np.array(states), angle_dims)
-            x = np.concatenate([states_,actions],axis=1)
-            y = states[1:,:] - states[:-1,:] if deltas else x[1:,:]
-            X.append(x[:-1])
-            Y.append(y)
-        return np.concatenate(X),np.concatenate(Y)
+            # pad with initial state for the first x_steps timesteps
+            states_ = np.concatenate([states_[[0]*(x_steps-1)], states_])
+            # get input states up to x_steps in the past.
+            states_ = np.concatenate(
+                [states_[i:i-x_steps-(output_steps-1), :] for i in range(x_steps)],
+                axis=1)
+            # same for actions (u_steps in the past, pad with zeros for the first u_steps)
+            actions_ = np.concatenate([np.zeros((u_steps-1, actions.shape[1])), actions])
+            actions_ = np.concatenate(
+                [actions_[i:i-u_steps-(output_steps-1), :] for i in range(u_steps)],
+                axis=1)
+
+            # create input vector
+            inp = np.concatenate([states_, actions_], axis=1)
+
+            # get output states up to output_steps in the future
+            H = states.shape[0]
+            print([states[i:H-(output_steps-i-1), :].shape for i in range(output_steps)])
+            ostates = np.concatenate(
+                [states[i:H-(output_steps-i-1), :] for i in range(output_steps)],
+                axis=1)
+            #  create output vector
+            tgt = ostates[1:, :] - ostates[:-1, :]\
+            if deltas else ostates[1:, :]
+            
+            inputs.append(inp)
+            targets.append(tgt)
+        return np.concatenate(inputs), np.concatenate(targets)

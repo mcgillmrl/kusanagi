@@ -49,11 +49,11 @@ if __name__ == '__main__':
 
         learner = MC_PILCO(**learner_params)
     try:
-        learner.load(load_compiled_fns=True)
+        learner.load(load_compiled_fns=False)
         save_compiled_fns = False
     except Exception:
         utils.print_with_stamp('Unable to load compiled fns', 'main')
-        save_compiled_fns = True
+        save_compiled_fns = False
 
     atexit.register(learner.stop)
     #draw_cp = CartpoleDraw(learner.plant)
