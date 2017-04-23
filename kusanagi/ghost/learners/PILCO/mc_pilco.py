@@ -33,6 +33,8 @@ class MC_PILCO(PILCO):
         resample = kwargs.get('resample',self.resample)
         iid_per_eval = kwargs.get('iid_per_eval',False)
 
+        D = self.mx0.get_value().size
+
         # resample if requested
         if resample:
             n,D = x.shape
@@ -43,15 +45,14 @@ class MC_PILCO(PILCO):
             x = mx + z.dot(tt.slinalg.cholesky(Sx).T)
 
         # convert angles from input states to their complex representation
-        D_ = self.mx0.get_value().size
-        xa = utils.gTrig(x,self.angle_idims,D_)
+        xa = utils.gTrig(x,self.angle_idims,D)
 
         if u is None:
             # compute control signal (with noisy state measurement)
             sn = tt.exp(dynmodel.logsn)
             x_noisy = x + self.m_rng.normal(x.shape).dot(tt.diag(sn))
-            xa_noisy = utils.gTrig(x_noisy,self.angle_idims,D_)
-            u = policy.evaluate(xa, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
+            xa_noisy = utils.gTrig(x_noisy,self.angle_idims,D)
+            u = policy.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
         
         # build state-control vectors
         xu = tt.concatenate([xa,u],axis=1)

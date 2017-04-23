@@ -177,20 +177,18 @@ class PILCO(EpisodicLearner):
         if cost is None:
             cost = self.cost
 
-        D = mx.shape[0]
-        D_ = self.mx0.get_value().size
+        D = self.mx0.get_value().size
 
         # convert angles from input distribution to their complex representation
-        mxa, Sxa, Ca = utils.gTrig2(mx, Sx, self.angle_idims, D_)
+        mxa, Sxa, Ca = utils.gTrig2(mx, Sx, self.angle_idims, D)
 
         # compute distribution of control signal
         sn2 = tt.exp(2*dynmodel.logsn)
         Sx_ = Sx + tt.diag(0.5*sn2)# noisy state measurement
-        mxa_, Sxa_, Ca_ = utils.gTrig2(mx, Sx_, self.angle_idims, D_)
+        mxa_, Sxa_, Ca_ = utils.gTrig2(mx, Sx_, self.angle_idims, D)
         mu, Su, Cu = policy.evaluate(mxa_, Sxa_, symbolic=True)
 
         # compute state control joint distribution
-        n = Sxa.shape[0]; U = Su.shape[1]
         mxu = tt.concatenate([mxa, mu])
         q = Sxa.dot(Cu)
         Sxu_up = tt.concatenate([Sxa, q], axis=1)
@@ -212,8 +210,8 @@ class PILCO(EpisodicLearner):
             Sxu_deltax = Sxu.dot(C_deltax)
 
         if Ca is not None:
-            Da = Sxa.shape[1]; Dna = D-len(self.angle_idims)
-            non_angle_dims = list(set(range(D_)).difference(self.angle_idims))
+            Da = D+len(self.angle_idims); Dna = D-len(self.angle_idims)
+            non_angle_dims = list(set(range(D)).difference(self.angle_idims))
             # this contains the covariance between the previous state (with angles as [sin,cos]),
             # and the next state (with angles in radians)
             Sxa_deltax = Sxu_deltax[:Da]
@@ -256,7 +254,7 @@ class PILCO(EpisodicLearner):
             policy = self.policy
 
         # this defines the loop where the state is propaagated
-        def rollout_single_step(mx, Sx, gamma, *args):
+        def rollout_single_step(mv,Sv,mx, Sx, gamma, *args):
             prop_out, updates = self.propagate_state(mx, Sx, dynmodel, policy)
             [mv_next, Sv_next, mx_next, Sx_next] = prop_out
             gamma0 = args[0]
@@ -275,7 +273,7 @@ class PILCO(EpisodicLearner):
 
         # create the nodes that return the result from scan
         rollout_output, updts = theano.scan(fn=rollout_single_step,
-                                            outputs_info=[None, None, mx0, Sx0, gamma0],
+                                            outputs_info=[mv0, Sv0, mx0, Sx0, gamma0],
                                             non_sequences=shared_vars,
                                             n_steps=H,
                                             strict=True,
@@ -409,7 +407,7 @@ class PILCO(EpisodicLearner):
 
     def train_dynamics(self, dynmodel=None,
                        dynmodel_class=None, dynmodel_params=None,
-                       max_episodes=None):
+                       max_episodes=None, in_steps=1):
         ''' Trains a dynamics model using the current experience dataset '''
         utils.print_with_stamp('Training dynamics model', self.name)
         if dynmodel is None:
@@ -426,7 +424,8 @@ class PILCO(EpisodicLearner):
         else list(range(max(0, n_episodes-max_episodes), n_episodes))
         self.next_episode = n_episodes
         X, Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes,
-                                                    angle_dims=self.angle_idims)
+                                                    angle_dims=self.angle_idims,
+                                                    x_steps=in_steps, u_steps=in_steps)
 
         # wrap angles if requested (this might introduce error if the angular velocities are high)
         if self.wrap_angles:
