@@ -30,7 +30,7 @@ class ExperienceDataset(Loadable):
 
         self.register_types([list])
         self.register(['curr_episode'])
-    
+
     def load(self, output_folder=None,output_filename=None):
         ''' loads the state from file, and initializes additional variables'''
         # load state
@@ -155,14 +155,14 @@ class ExperienceDataset(Loadable):
 
             # get output states up to output_steps in the future
             H = states.shape[0]
-            print([states[i:H-(output_steps-i-1), :].shape for i in range(output_steps)])
+            
             ostates = np.concatenate(
                 [states[i:H-(output_steps-i-1), :] for i in range(output_steps)],
                 axis=1)
             #  create output vector
             tgt = ostates[1:, :] - ostates[:-1, :]\
             if deltas else ostates[1:, :]
-            
+
             inputs.append(inp)
             targets.append(tgt)
         return np.concatenate(inputs), np.concatenate(targets)
