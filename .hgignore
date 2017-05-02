@@ -10,3 +10,4 @@ syntax: glob
 *~
 .vscode*
 *.egg-info*
+*.ipynb_checkpoints*
