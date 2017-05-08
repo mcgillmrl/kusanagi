@@ -144,7 +144,7 @@ class SerialPlant(Plant):
         self.serial.flushInput()
         self.serial.flushOutput()
         cmd = self.cmds['APPLY_CONTROL']+','+u_string+";"
-        self.serial.write(cmd)
+        self.serial.write(cmd.encode())
 
     def step(self,dt=None):
         if not self.serial.isOpen():
@@ -158,10 +158,11 @@ class SerialPlant(Plant):
 
     def state_from_serial(self):
         self.serial.flushInput()
-        self.serial.write(self.cmds['GET_STATE']+";")
+        self.serial.write((self.cmds['GET_STATE']+";").encode())
         c = self.serial.read()
-        buf = c
-        while buf != self.cmds['STATE']+',': # TODO timeout this loop
+        buf = [c]
+        tmp = (self.cmds['STATE']+',').encode()
+        while buf != tmp: # TODO timeout this loop
             c = self.serial.read()
             buf = buf[-1]+c
         buf = []
@@ -170,20 +171,19 @@ class SerialPlant(Plant):
         while True: # TODO timeout this loop
             c = self.serial.read()
             if not escaped:
-                if c == '/':
+                if c == b'/':
                     escaped = True
                     continue
-                elif c == ',':
-                    res.append(''.join(buf))
+                elif c == b',':
+                    res.append(b''.join(buf))
                     buf = []
                     continue
-                elif c == ';':
-                    res.append(''.join(buf))
+                elif c == b';':
+                    res.append(b''.join(buf))
                     buf = []
                     break
             buf.append(c)
             escaped = False
-
         res = np.array([struct.unpack('<d',ri) for ri in res]).flatten()
         return res[self.state_indices],res[-1]
 
@@ -194,7 +194,7 @@ class SerialPlant(Plant):
             self.serial.open()
         self.serial.flushInput()
         self.serial.flushOutput()
-        self.serial.write(self.cmds['RESET_STATE']+";")
+        self.serial.write((self.cmds['RESET_STATE']+";").encode())
         sleep(self.dt)
         self.x,self.t= self.state_from_serial()
         self.t=-1
@@ -259,11 +259,12 @@ class PlantDraw(object):
 
                 for artist in updts:
                     self.ax.draw_artist(artist)
-                self.fig.canvas.blit(self.ax.bbox)
+                #self.fig.canvas.blit(self.ax.bbox)
+                self.fig.canvas.draw()
 
             # sleep to guarantee the desired frame rate
             exec_time = time() - exec_time
-            sleep(max(self.dt-exec_time,0))
+            plt.waitforbuttonpress(max(self.dt-exec_time,1e-9))
 
         # close the matplotlib windows, clean up
         plt.ioff()
@@ -328,7 +329,7 @@ class LivePlot(PlantDraw):
         self.update_period = refresh_period
 
     def init_artists(self):
-        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=color_generator.next()[0]) for i in range(self.data.shape[1]) ]
+        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=next(color_generator)[0]) for i in range(self.data.shape[1]) ]
         self.ax.set_aspect('auto','datalim')
         for line in self.lines:
             self.ax.add_line(line)

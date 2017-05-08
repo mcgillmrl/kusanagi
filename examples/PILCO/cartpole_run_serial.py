@@ -1,12 +1,16 @@
+'''
+Example of how to use the library for learning using the PILCO learner on the cartpole task
+'''
+# pylint: disable=C0103
 import atexit
-import signal,sys,os
+import sys
+import os
 import numpy as np
+import kusanagi.ghost.regression as kreg
+
 from kusanagi import utils
-from kusanagi.shell.plant import SerialPlant
-from kusanagi.shell.cartpole import default_params
-from kusanagi.ghost.learners.PILCO import PILCO
-from kusanagi.ghost.regression import GP
-from kusanagi.ghost.regression.NN import NN
+from kusanagi.shell.cartpole import default_params#, CartpoleDraw
+from kusanagi.ghost.learners.PILCO import PILCO, MC_PILCO
 from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
 #np.random.seed(31337)

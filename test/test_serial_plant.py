@@ -3,11 +3,11 @@ import signal,sys
 import numpy as np
 from time import time,sleep
 from functools import partial
-from ghost.learners.PILCO import PILCO
-from shell.plant import SerialPlant, LivePlot
-from shell.cartpole import  CartpoleDraw
-from ghost.control import RBFPolicy
-from utils import gTrig_np
+from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.shell.plant import SerialPlant, LivePlot
+from kusanagi.shell.cartpole import  CartpoleDraw
+from kusanagi.ghost.control import RBFPolicy
+from kusanagi.utils import gTrig_np
 
 if __name__ == '__main__':
     #np.random.seed(31337)
