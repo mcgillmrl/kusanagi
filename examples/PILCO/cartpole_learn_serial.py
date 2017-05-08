@@ -38,7 +38,7 @@ if __name__ == '__main__':
     #learner_params['params']['dynmodel']['hidden_dims'] = [100,100,100]
     learner = PILCO(**learner_params)
     try:
-        learner.load(load_compiled_fns=True)
+        learner.load(load_compiled_fns=False)
         save_compiled_fns = False
     except:
         utils.print_with_stamp('Unable to load compiled fns','main')
