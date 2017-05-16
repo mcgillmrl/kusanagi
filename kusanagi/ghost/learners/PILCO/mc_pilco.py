@@ -51,7 +51,7 @@ class MC_PILCO(PILCO):
             # compute control signal (with noisy state measurement)
             sn = tt.exp(dynmodel.logsn)
             x_noisy = x + self.m_rng.normal(x.shape).dot(tt.diag(sn))
-            xa_noisy = utils.gTrig(x_noisy,self.angle_idims,D)
+            xa_noisy = x_noisy #utils.gTrig(x_noisy,self.angle_idims,D)
             u = policy.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
         
         # build state-control vectors
@@ -86,8 +86,8 @@ class MC_PILCO(PILCO):
 
         # get cost
         sn = tt.exp(dynmodel.logsn)
-        x_next_noisy = x_next + self.m_rng.normal(x.shape).dot(tt.diag(sn))
-        c_next = cost(x_next_noisy,None)
+        x_next_noisy = x_next #+ self.m_rng.normal(x.shape).dot(tt.diag(sn))
+        c_next = cost(x_next_noisy, None)
 
         # jacobian for debugging
         #jac = theano.tensor.jacobian(x_next.flatten(),x).reshape((x.shape[0],x.shape[1],x.shape[0],x.shape[1])).diagonal(axis1=0,axis2=2)
@@ -223,5 +223,18 @@ class MC_PILCO(PILCO):
         # update dynamics model and policy if needed
         if hasattr(self.dynamics_model,'update'):
             self.dynamics_model.update()
-        if hasattr(self.policy,'update'):
+        if hasattr(self.policy,'update')
             self.policy.update()
+
+    def train_dynamics(self, dynmodel=None,
+                       dynmodel_class=None, dynmodel_params=None,
+                       max_episodes=None, steps=1):
+    ''' 
+        Trains a dynamics model using the current experience dataset. if steps
+        > 1, then trains the dynamics model using a multi step loss (computed via rollouts)
+    '''
+    if steps == 1:
+        super(MC_PILCO, self).train_dynamics(dynmodel, dynmodel_class, dynmodel_params, max_episodes)
+    else:
+        # build the multi step dataset
+        

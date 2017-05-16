@@ -218,6 +218,7 @@ class EpisodicLearner(Loadable):
         self.init_cost()
 
         if random_controls:
+            utils.print_with_stamp('Applying controls uniformly at random', self.name)
             policy = RandPolicy(self.policy.maxU, self.random_walk)
             p = []
         else:

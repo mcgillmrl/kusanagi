@@ -105,7 +105,7 @@ class ExperienceDataset(Loadable):
 
     def get_dynmodel_dataset(self, deltas=True, filter_episodes=None,
                              angle_dims=None, x_steps=1,
-                             u_steps=1, output_steps=1):
+                             u_steps=1, output_steps=1, stack=False):
         '''
         Returns a dataset where the inputs are state_actions and the outputs are next steps.
         Parameters:
@@ -120,14 +120,23 @@ class ExperienceDataset(Loadable):
         x_steps: how many steps in the past to concatenate as input
         u_steps: how many steps in the past to concatenate as input
         output_steps: how many steps in the future to concatenate as output
+        stack: whether to stack or concatenate the multi step data
         Returns:
         --------
-        X: numpy array of shape [n, x_steps*D + u_steps*U], where
-           n is the number of data samples, D the input state dimensions
+        X: if stack is False X is a numpy array of shape [n, x_steps*D + u_steps*U], where
+           n is the number of data samples, D the input state dimensions.abs
+           if stack is True, the shape of X is [n, x_steps, D + U]
         '''
         filter_episodes = filter_episodes or []
         angle_dims = angle_dims or []
         inputs, targets = [], []
+        join = np.stack if stack else np.concatenate
+        if stack:
+            # ignore the u_steps parameter
+            u_steps = x_steps
+            # output steps
+            output_steps = x_steps + output_steps - 1
+
         if not isinstance(filter_episodes, list):
             filter_episodes = [filter_episodes]
         if len(filter_episodes) < 1:
@@ -141,23 +150,24 @@ class ExperienceDataset(Loadable):
             # pad with initial state for the first x_steps timesteps
             states_ = np.concatenate([states_[[0]*(x_steps-1)], states_])
             # get input states up to x_steps in the past.
-            states_ = np.concatenate(
+            
+            states_ = join(
                 [states_[i:i-x_steps-(output_steps-1), :] for i in range(x_steps)],
                 axis=1)
             # same for actions (u_steps in the past, pad with zeros for the first u_steps)
             actions_ = np.concatenate([np.zeros((u_steps-1, actions.shape[1])), actions])
-            actions_ = np.concatenate(
+            actions_ = join(
                 [actions_[i:i-u_steps-(output_steps-1), :] for i in range(u_steps)],
                 axis=1)
 
             # create input vector
-            inp = np.concatenate([states_, actions_], axis=1)
+            inp = np.concatenate([states_, actions_], axis=-1)
 
             # get output states up to output_steps in the future
             H = states.shape[0]
-            
-            ostates = np.concatenate(
-                [states[i:H-(output_steps-i-1), :] for i in range(output_steps)],
+            ostates_ = np.concatenate([states[[0]*(x_steps-1)], states])
+            ostates = join(
+                [ostates_[i:H-(output_steps-i-1), :] for i in range(output_steps)],
                 axis=1)
             #  create output vector
             tgt = ostates[1:, :] - ostates[:-1, :]\
@@ -165,4 +175,6 @@ class ExperienceDataset(Loadable):
 
             inputs.append(inp)
             targets.append(tgt)
-        return np.concatenate(inputs), np.concatenate(targets)
+
+        ret = np.concatenate(inputs), np.concatenate(targets)
+        return ret

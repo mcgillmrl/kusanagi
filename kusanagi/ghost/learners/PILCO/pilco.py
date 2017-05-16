@@ -407,12 +407,18 @@ class PILCO(EpisodicLearner):
 
     def train_dynamics(self, dynmodel=None,
                        dynmodel_class=None, dynmodel_params=None,
-                       max_episodes=None, in_steps=1):
+                       max_episodes=None):
         ''' Trains a dynamics model using the current experience dataset '''
         utils.print_with_stamp('Training dynamics model', self.name)
+        #init dynmodel
         if dynmodel is None:
             if hasattr(self, 'dynamics_model'):
                 dynmodel = self.dynamics_model
+            if dynmodel_class is None: dynmodel_class = self.dynmodel_class
+            if dynmodel_params is None: dynmodel_params = self.dynmodel_params
+            # initialize dynamics model
+            dynamics_filename = self.filename+'_dynamics'
+            dynmodel = dynmodel_class(filename=dynamics_filename, **dynmodel_params)
 
         X = []
         Y = []
@@ -424,8 +430,7 @@ class PILCO(EpisodicLearner):
         else list(range(max(0, n_episodes-max_episodes), n_episodes))
         self.next_episode = n_episodes
         X, Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes,
-                                                    angle_dims=self.angle_idims,
-                                                    x_steps=in_steps, u_steps=in_steps)
+                                                    angle_dims=self.angle_idims)
 
         # wrap angles if requested (this might introduce error if the angular velocities are high)
         if self.wrap_angles:
@@ -434,27 +439,16 @@ class PILCO(EpisodicLearner):
 
         # get distribution of initial states
         x0 = np.array([x[0] for x in self.experience.states])
-        if self.use_empirical_x0:
-            if n_episodes > 3:
-                self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
-                cov0 = np.diag(np.diag(np.cov(x0.T, ddof=1).astype(theano.config.floatX)))
-                self.Sx0.set_value(cov0)
-        #print x0
-        #print self.Sx0.get_value()
+        if self.use_empirical_x0 and n_episodes > 3:
+            self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
+            cov0 = np.diag(np.diag(np.cov(x0.T, ddof=1).astype(theano.config.floatX)))
+            self.Sx0.set_value(cov0)
 
-        if dynmodel is None:
-            if dynmodel_class is None: dynmodel_class = self.dynmodel_class
-            if dynmodel_params is None: dynmodel_params = self.dynmodel_params
-            # initialize dynamics model
-            dynamics_filename = self.filename+'_dynamics'
-            dynmodel = dynmodel_class(filename=dynamics_filename, **dynmodel_params)
+        if max_episodes is not None and len(episodes) == max_episodes:
             dynmodel.set_dataset(X, Y)
         else:
-            if max_episodes is not None and len(episodes) == max_episodes:
-                dynmodel.set_dataset(X, Y)
-            else:
-                # append data to the dynamics model
-                dynmodel.append_dataset(X, Y)
+            # append data to the dynamics model
+            dynmodel.append_dataset(X, Y)
 
         #utils.print_with_stamp('%s, \n%s'%(self.mx0.get_value(), self.Sx0.get_value()),self.name)
         i_shp = dynmodel.X.get_value(borrow=True).shape

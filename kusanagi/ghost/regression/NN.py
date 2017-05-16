@@ -115,8 +115,8 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
-    def get_default_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
-        from lasagne.layers import InputLayer, DenseLayer
+    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
+        from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer, relu
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
         if name is None:
@@ -135,6 +135,8 @@ class BNN(BaseRegressor):
         if p_input > 0:
             network_spec.append( (DropoutLayer, dict(p=p_input, rescale=False, name=name+'_drop_input', dropout_samples=self.dropout_samples.get_value()) ) )
         # hidden layers
+        #network_spec.append( (ReshapeLayer, dict(shape=([0],1,[1]), name=name+'_rshp%d'%(0)) ) )
+        #network_spec.append( (GRULayer, dict(num_units=32, name=name+'_gru%d'%(0)) ) )
         for i in range(len(hidden_dims)):
             network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=sigmoid, name=name+'_fc%d'%(i)) ) )
             if p[i] > 0:
@@ -234,7 +236,7 @@ class BNN(BaseRegressor):
         loss = 0.5*nll.mean()
 
         # compute regularization term
-        loss += self.get_regularization_term(input_lengthscale,hidden_lengthscale)/N
+        loss += self.get_regularization_term(input_lengthscale, hidden_lengthscale)/N
 
         # build the updates dictionary ( sets the optimization algorithm for the network parameters)
         params = lasagne.layers.get_all_params(self.network, trainable=True)
@@ -254,7 +256,7 @@ class BNN(BaseRegressor):
         self.loss_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale],[loss,l2_error],allow_input_downcast=True)
         utils.print_with_stamp('Done compiling',self.name)
 
-    def get_regularization_term(self,input_lengthscale,hidden_lengthscale):
+    def get_regularization_term(self, input_lengthscale, hidden_lengthscale):
         reg = 0
         layers = lasagne.layers.get_all_layers(self.network)
         
@@ -290,7 +292,6 @@ class BNN(BaseRegressor):
                 mask_updates.append((l.mask,l.mask_updates))
 
         return mask_updates
-
 
     def predict_symbolic(self,mx,Sx=None, deterministic=False, iid_per_eval=False, return_samples=False, with_measurement_noise=True):
         ''' returns symbolic expressions for the evaluations of this objects neural network. If Sx is specified, the
