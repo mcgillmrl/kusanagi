@@ -411,14 +411,15 @@ class PILCO(EpisodicLearner):
         ''' Trains a dynamics model using the current experience dataset '''
         utils.print_with_stamp('Training dynamics model', self.name)
         #init dynmodel
-        if dynmodel is None:
-            if hasattr(self, 'dynamics_model'):
+        if not dynmodel:
+            if hasattr(self, 'dynamics_model') and self.dynamics_model:
                 dynmodel = self.dynamics_model
-            if dynmodel_class is None: dynmodel_class = self.dynmodel_class
-            if dynmodel_params is None: dynmodel_params = self.dynmodel_params
-            # initialize dynamics model
-            dynamics_filename = self.filename+'_dynamics'
-            dynmodel = dynmodel_class(filename=dynamics_filename, **dynmodel_params)
+            else:
+                if dynmodel_class is None: dynmodel_class = self.dynmodel_class
+                if dynmodel_params is None: dynmodel_params = self.dynmodel_params
+                # initialize dynamics model
+                dynamics_filename = self.filename+'_dynamics'
+                dynmodel = dynmodel_class(filename=dynamics_filename, **dynmodel_params)
 
         X = []
         Y = []
@@ -461,7 +462,9 @@ class PILCO(EpisodicLearner):
             self.should_recompile = True
 
         dynmodel.train()
+        print(dynmodel.logsn)
         utils.print_with_stamp('Done training dynamics model', self.name)
+        
         if self.dynamics_model is None:
             self.dynamics_model = dynmodel
         return dynmodel
