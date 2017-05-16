@@ -101,13 +101,13 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
         out_str = '[%s] %s'%(str(datetime.now()), message)
     else:
         out_str = '[%s] %s > %s'%(str(datetime.now()), name, message)
-
+    
     logfile = get_logfile()
     # this will only log to a file if 1) use_log is True and 2) $KUSANAGI_LOGFILE
     # is set ( can be set with utils.set_logfile(new_path) )
     if not use_log or not logfile:
         if same_line:
-            sys.stdout.write('\r'+out_str)
+            sys.stdout.write('\r'+'\x1b[2K'+out_str)
         else:
             sys.stdout.write(out_str)
             print('')
@@ -383,7 +383,7 @@ def integer_generator(i=0):
         yield i
         i += 1
 
-def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
+def iterate_minibatches(inputs, targets, batchsize, seqsize=1, shuffle=False):
     assert len(inputs) == len(targets)
     if shuffle:
         indices = np.arange(len(inputs))
@@ -482,9 +482,11 @@ def plot_results(learner, H=None):
     plt.plot(np.array(iters)+1, np.array(cost_sums))
 
     plt.show(False)
+    plt.draw()
     plt.waitforbuttonpress(0.05)
 
-def plot_and_save(learner, filename, H=None, target=None, output_folder=None):
+def plot_and_save(learner, filename, H=None,
+                  target=None, output_folder=None):
     output_file = None
     output_folder = get_output_dir() if output_folder is None else output_folder
     output_file = os.path.abspath(os.path.join(output_folder, filename))
@@ -719,7 +721,8 @@ def unzip_snapshot(zip_filepath, extract_path = ''):
 # if filename clash, will append _#
 #
 # Sample usage:
-#   save_snapshot_zip('test', ['PILCO_GP_UI_Cartpole_RBFGP_sat.zip', 'PILCO_GP_UI_Cartpole_RBFGP_sat_dataset.zip', 'RBFGP_sat_5_1_cpu_float64.zip'])
+#   save_snapshot_zip('test', ['PILCO_GP_UI_Cartpole_RBFGP_sat.zip',
+# 'PILCO_GP_UI_Cartpole_RBFGP_sat_dataset.zip', 'RBFGP_sat_5_1_cpu_float64.zip'])
 def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timestamp=False):
   # Construct filename
   snapshot_filename = snapshot_header
