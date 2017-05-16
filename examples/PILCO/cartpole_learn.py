@@ -48,6 +48,7 @@ if __name__ == '__main__':
         #learner_params['policy_class'] = NNPolicy
 
         learner = MC_PILCO(**learner_params)
+        learner.resample = True
     try:
         learner.load(load_compiled_fns=False)
         save_compiled_fns = False

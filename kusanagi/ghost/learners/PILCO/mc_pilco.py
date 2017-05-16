@@ -21,6 +21,11 @@ class MC_PILCO(PILCO):
         x0 = self.mx0.get_value() + z0.dot(Lx0.T)
         # create shared variables for initial state samples
         self.x0 = theano.shared(x0.astype(tt.config.floatX), name=self.name+'_x0')
+    
+    def set_n_samples(self, n_samples):
+        self.trajectory_samples.set_value(n_samples)
+        self.dynamics_model.update(n_samples=n_samples)
+        self.update()
 
     def propagate_state(self, x, u=None,*args, **kwargs):
         ''' Given a set of input states, this function returns predictions for the next states.
@@ -37,7 +42,7 @@ class MC_PILCO(PILCO):
 
         # resample if requested
         if resample:
-            n,D = x.shape
+            n = x.shape[0]
             n = n.astype(theano.config.floatX)
             mx = x.mean(0)
             Sx = x.T.dot(x)/n - tt.outer(mx,mx)
@@ -50,8 +55,8 @@ class MC_PILCO(PILCO):
         if u is None:
             # compute control signal (with noisy state measurement)
             sn = tt.exp(dynmodel.logsn)
-            x_noisy = x + self.m_rng.normal(x.shape).dot(tt.diag(sn))
-            xa_noisy = xa #utils.gTrig(x_noisy,self.angle_idims,D)
+            x_noisy = x + self.m_rng.normal(x.shape).dot(tt.diag(np.sqrt(0.5)*sn))
+            xa_noisy = utils.gTrig(x_noisy,self.angle_idims,D)
             u = policy.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
         
         # build state-control vectors
@@ -59,7 +64,7 @@ class MC_PILCO(PILCO):
 
         # predict the change in state given current state-control for each particle 
         delta_x = dynmodel.predict_symbolic(xu, iid_per_eval=iid_per_eval, return_samples=True)
-        
+        delta_x += self.m_rng.normal(x.shape).dot(tt.diag(sn))
         # compute the successor states
         x_next = x + delta_x
 

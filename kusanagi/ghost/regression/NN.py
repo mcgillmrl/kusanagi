@@ -93,7 +93,7 @@ class BNN(BaseRegressor):
             # default log of measurement noise variance is set to 1% of dataset variation
             self.logsn.set_value(np.log((0.05*Y_dataset.std(0)).astype(theano.config.floatX)))
 
-    def apppend_dataset(self,X_dataset,Y_dataset):
+    def append_dataset(self,X_dataset,Y_dataset):
         # set dataset
         super(BNN,self).append_dataset(X_dataset.astype(theano.config.floatX),Y_dataset.astype(theano.config.floatX))
 
@@ -115,7 +115,7 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
-    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
+    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[400,400], p=0.25, p_input=0.0, name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer, relu
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
@@ -342,8 +342,17 @@ class BNN(BaseRegressor):
         if n_samples is not None:
             if isinstance(n_samples, tt.sharedvar.SharedVariable):
                 self.dropout_samples = n_samples
+                update_fn = None
             else:
                 self.dropout_samples.set_value(n_samples)
+
+            # increase the size of the masks
+            updts = self.get_updates()
+            for mask,updt in updts:
+                mask_shape = mask.shape.eval()
+                if mask_shape[0] != n_samples:
+                    mask_shape[0] = n_samples
+                    mask.set_value(np.zeros(mask_shape))
 
         if not hasattr(self,'update_fn') or self.update_fn is None:
             # get prediction with non deterministic samples
@@ -353,9 +362,6 @@ class BNN(BaseRegressor):
             # create a function to update the masks manually. Here the dropout masks should be shared variables
             updts = self.get_updates()
             self.update_fn = theano.function([],[], updates = updts, allow_input_downcast=True)
-
-            # call it once to initialize the masks
-            self.update_fn
             
         # draw samples from the network
         self.update_fn()

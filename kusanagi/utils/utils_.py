@@ -447,8 +447,10 @@ def plot_results(learner, H=None):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
             for tr_d in predicted_trajectories:
-                plt.plot(T_range, tr_d[:, d], color='b', alpha=0.3)
-            plt.plot(T_range, states[:, d], color='g', linewidth=2)
+                plt.plot(T_range, tr_d[:, d], color='steelblue', alpha=0.3)
+            for ep in np.array(learner.experience.states):
+                plt.plot(T_range, ep[:, d], color='orange', alpha=0.5, linewidth=2)
+            plt.plot(T_range, states[:, d], color='orange', linewidth=2)
     else:
         # plot last run cost vs predicted cost
         plt.figure('Cost of last run and Predicted cost')
@@ -465,7 +467,10 @@ def plot_results(learner, H=None):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
             plt.errorbar(T_range, predicted_means[:, d], yerr=2*np.sqrt(predicted_vars[:, d, d]))
-            plt.plot(T_range, states[:, d])
+            
+            for ep in np.array(learner.experience.states):
+                plt.plot(T_range, ep[:, d], color='orange', alpha=0.5, linewidth=2)
+            plt.plot(T_range, states[:, d], color='orange', linewidth=3)
 
     plt.figure('Total cost per learning iteration')
     plt.gca().clear()
@@ -483,7 +488,7 @@ def plot_results(learner, H=None):
 
     plt.show(False)
     plt.draw()
-    plt.waitforbuttonpress(0.05)
+    #plt.waitforbuttonpress(0.05)
 
 def plot_and_save(learner, filename, H=None,
                   target=None, output_folder=None):

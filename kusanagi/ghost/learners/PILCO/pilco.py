@@ -425,44 +425,46 @@ class PILCO(EpisodicLearner):
         Y = []
         n_episodes = len(self.experience.states)
 
-        # get dataset for dynamics model
-        episodes = list(range(self.next_episode, n_episodes))\
-        if max_episodes is None or n_episodes < max_episodes\
-        else list(range(max(0, n_episodes-max_episodes), n_episodes))
-        self.next_episode = n_episodes
-        X, Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes,
-                                                    angle_dims=self.angle_idims)
+        if n_episodes > self.next_episode:
+            # get dataset for dynamics model
+            episodes = list(range(self.next_episode, n_episodes))\
+            if max_episodes is None or n_episodes < max_episodes\
+            else list(range(max(0, n_episodes-max_episodes), n_episodes))
 
-        # wrap angles if requested (this might introduce error if the angular velocities are high)
-        if self.wrap_angles:
-            # wrap angle differences to [-pi,pi]
-            Y[:, self.angle_idims] = (Y[:, self.angle_idims] + np.pi) % (2 * np.pi) - np.pi
+            self.next_episode = n_episodes
 
-        # get distribution of initial states
-        x0 = np.array([x[0] for x in self.experience.states])
-        if self.use_empirical_x0 and n_episodes > 3:
-            self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
-            cov0 = np.diag(np.diag(np.cov(x0.T, ddof=1).astype(theano.config.floatX)))
-            self.Sx0.set_value(cov0)
+            X, Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes,
+                                                        angle_dims=self.angle_idims)
+            
+            # wrap angles if requested (this might introduce error if the angular velocities are high)
+            if self.wrap_angles:
+                # wrap angle differences to [-pi,pi]
+                Y[:, self.angle_idims] = (Y[:, self.angle_idims] + np.pi) % (2 * np.pi) - np.pi
 
-        if max_episodes is not None and len(episodes) == max_episodes:
-            dynmodel.set_dataset(X, Y)
-        else:
-            # append data to the dynamics model
-            dynmodel.append_dataset(X, Y)
+            # get distribution of initial states
+            x0 = np.array([x[0] for x in self.experience.states])
+            if self.use_empirical_x0 and n_episodes > 3:
+                self.mx0.set_value(x0.mean(0).astype(theano.config.floatX))
+                cov0 = np.diag(np.diag(np.cov(x0.T, ddof=1).astype(theano.config.floatX)))
+                self.Sx0.set_value(cov0)
+
+            if max_episodes is not None and len(episodes) == max_episodes:
+                dynmodel.set_dataset(X, Y)
+            else:
+                # append data to the dynamics model
+                dynmodel.append_dataset(X, Y)
 
         #utils.print_with_stamp('%s, \n%s'%(self.mx0.get_value(), self.Sx0.get_value()),self.name)
         i_shp = dynmodel.X.get_value(borrow=True).shape
         o_shp = dynmodel.Y.get_value(borrow=True).shape
         utils.print_with_stamp('Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(i_shp, o_shp),
-                               self.name)
+                            self.name)
         if dynmodel.should_recompile:
             # reinitialize log likelihood
             dynmodel.init_loss()
             self.should_recompile = True
 
         dynmodel.train()
-        print(dynmodel.logsn)
         utils.print_with_stamp('Done training dynamics model', self.name)
         
         if self.dynamics_model is None:
