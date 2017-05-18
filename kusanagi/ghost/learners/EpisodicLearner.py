@@ -373,7 +373,7 @@ class EpisodicLearner(Loadable):
         elif min_method in list(STOCHASTIC_MIN_METHODS.keys()):
             utils.print_with_stamp("Using %s optimizer"%(min_method), self.name)
             # compile optimizer f not available
-            if not hasattr(self,'train_fn'):
+            if not (hasattr(self,'train_fn') and self.train_fn):
                 # get the value as a symbolic expression
                 v,updts = self.get_policy_value()
                 # get the updates using the desired minimization method
@@ -383,7 +383,7 @@ class EpisodicLearner(Loadable):
                 reg=0
                 if hasattr(self.policy, 'get_regularization_term'):
                     # get regularization term
-                    reg += p.self.policy.get_regularization_term(1e-2,1e-2)
+                    reg += self.policy.get_regularization_term(1e-2,1e-2)
                 dJdp = self.get_policy_gradients(v+reg,p,clip=self.grad_clip)
                 lr = theano.tensor.scalar('lr')
                 updates = min_method_updt(dJdp,p,learning_rate=lr)
@@ -395,14 +395,14 @@ class EpisodicLearner(Loadable):
             # training loop
             for i in range(self.max_evals):
                 # evaluate current policy and update parameters
-                if hasattr(self,'update'):
+                if hasattr(self,'update') and self.update:
                     # if there are any variable we want to update before evaluating the gradient
                     self.update()
                 p = self.policy.get_params(symbolic=False)
                 lr = self.learning_rate#*(1.0/(self.learning_iteration)**0.1)
                 ret = self.train_fn(lr)     # v corresponds to the parameters before the training update
                 v = ret[0]; dJdp=ret[1:4];# jac = ret[4:]
-                if True:#v < self.best_p[0]:
+                if v < self.best_p[0]:
                     self.best_p = [v,p,i]
                 self.n_evals+=1
                 gmag = [np.sqrt((p**2).sum()) for p in dJdp]

@@ -14,7 +14,7 @@ class MC_PILCO(PILCO):
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
         self.trajectory_samples = theano.shared(np.array(n_samples).astype('int32'),
                                                 name="%s>trajectory_samples"%(self.name))
-
+        self.dynmodel_params['dropout_samples'] = n_samples
         # draw initial set of particles
         z0 = np.random.randn(n_samples, self.mx0.get_value().size)
         Lx0 = np.linalg.cholesky(self.Sx0.get_value())
@@ -55,9 +55,10 @@ class MC_PILCO(PILCO):
         if u is None:
             # compute control signal (with noisy state measurement)
             sn = tt.exp(dynmodel.logsn)
-            x_noisy = x + self.m_rng.normal(x.shape).dot(tt.diag(np.sqrt(0.5)*sn))
+            x_noisy = x + self.m_rng.normal(x.shape).dot(tt.diag(np.sqrt(0.5).astype(theano.config.floatX)*sn))
             xa_noisy = utils.gTrig(x_noisy,self.angle_idims,D)
-            u = policy.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
+            #u = policy.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
+            u = policy.evaluate(xa, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
         
         # build state-control vectors
         xu = tt.concatenate([xa,u],axis=1)
@@ -91,8 +92,9 @@ class MC_PILCO(PILCO):
 
         # get cost
         sn = tt.exp(dynmodel.logsn)
-        x_next_noisy = x_next #+ self.m_rng.normal(x.shape).dot(tt.diag(sn))
-        c_next = cost(x_next_noisy, None)
+        x_next_noisy = x_next + self.m_rng.normal(x.shape).dot(tt.diag(sn))
+        # c_next = cost(x_next_noisy, None)
+        c_next = cost(x_next, None)
 
         # jacobian for debugging
         #jac = theano.tensor.jacobian(x_next.flatten(),x).reshape((x.shape[0],x.shape[1],x.shape[0],x.shape[1])).diagonal(axis1=0,axis2=2)
@@ -198,9 +200,10 @@ class MC_PILCO(PILCO):
         p = policy.get_params(symbolic=True)
         # the policy gradients will have the same shape as the policy parameters (i.e. this returns a list
         # of theano tensor variables with the same dtype and ndim as the parameters in p )
-        if gamma0.get_value() == 1.0:
-            H = self.H_steps if H is None else H
-            expected_accumulated_cost = expected_accumulated_cost/H
+        #gamma0 = self.gamma0 if gamma0 is None else gamma0
+        #if gamma0.get_value() == 1.0:
+        #    H = self.H_steps if H is None else H
+        #    expected_accumulated_cost = expected_accumulated_cost/H.astype(theano.config.floatX)
         dJdp = self.get_policy_gradients(expected_accumulated_cost,p)
         retvars = [expected_accumulated_cost]
         retvars.extend(dJdp)

@@ -90,8 +90,8 @@ class BNN(BaseRegressor):
         self.update_dataset_statistics(X_dataset,Y_dataset)
         
         if self.learn_noise:
-            # default log of measurement noise variance is set to 1% of dataset variation
-            self.logsn.set_value(np.log((0.05*Y_dataset.std(0)).astype(theano.config.floatX)))
+            # default log of measurement noise variance is set to 10% of dataset variation
+            self.logsn.set_value(np.log((0.1*Y_dataset.std(0)).astype(theano.config.floatX)))
 
     def append_dataset(self,X_dataset,Y_dataset):
         # set dataset
@@ -115,7 +115,7 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
-    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[400,400], p=0.25, p_input=0.0, name=None):
+    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.1, p_input=0.0, name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer, relu
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
@@ -138,7 +138,7 @@ class BNN(BaseRegressor):
         #network_spec.append( (ReshapeLayer, dict(shape=([0],1,[1]), name=name+'_rshp%d'%(0)) ) )
         #network_spec.append( (GRULayer, dict(num_units=32, name=name+'_gru%d'%(0)) ) )
         for i in range(len(hidden_dims)):
-            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=sigmoid, name=name+'_fc%d'%(i)) ) )
+            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=tanh, name=name+'_fc%d'%(i)) ) )
             if p[i] > 0:
                 network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
         # output layer
@@ -369,7 +369,7 @@ class BNN(BaseRegressor):
     def train(self, batchsize=100, maxiters=5000, input_ls=None, hidden_ls=None):
         if input_ls is None:
             # set to some proportion of the standard deviation (inputs are scaled and centered to N(0,1) )
-            input_ls = 0.05
+            input_ls = 1.0
         if hidden_ls is None:
             hidden_ls = input_ls
 

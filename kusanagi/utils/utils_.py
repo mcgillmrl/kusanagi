@@ -345,7 +345,7 @@ def unwrap_params(P, parameter_shapes):
         # get the number of elemebt for current parameter
         npi = reduce(lambda x, y: x*y, pshape) if len(pshape) > 0 else 1
         # select corresponding elements and reshape into appropriate shape
-        p.append(P[i:i+npi].reshape(pshape))
+        p.append(P[i:i+npi].reshape(pshape).astype(theano.config.floatX))
         # set index to the beginning  of next parameter
         i += npi
     if len(p) == 1:
@@ -414,7 +414,7 @@ def update_errorbar(errobj, x, y, y_error):
     new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
     barsy.set_segments(new_segments_y)
 
-def plot_results(learner, H=None):
+def plot_results(learner, H=None, plot_samples=True):
     '''
     Plots learning results. One plot for cost vs learning iteration,
     one for cost vs timestep for last episode, and plots for each state dimension vs
@@ -446,11 +446,15 @@ def plot_results(learner, H=None):
         for d in range(x0.size):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
-            for tr_d in predicted_trajectories:
-                plt.plot(T_range, tr_d[:, d], color='steelblue', alpha=0.3)
+            if plot_samples:
+                for tr_d in predicted_trajectories:
+                    plt.plot(T_range, tr_d[:, d], color='steelblue', alpha=0.3)
+            else:
+                plt.errorbar(T_range, predicted_trajectories.mean(0)[:, d], yerr=2*np.sqrt(predicted_trajectories.var(0)[:, d]))
+            
             for ep in np.array(learner.experience.states):
                 plt.plot(T_range, ep[:, d], color='orange', alpha=0.5, linewidth=2)
-            plt.plot(T_range, states[:, d], color='orange', linewidth=2)
+            plt.plot(T_range, states[:, d], color='red', linewidth=2)
     else:
         # plot last run cost vs predicted cost
         plt.figure('Cost of last run and Predicted cost')
@@ -470,7 +474,7 @@ def plot_results(learner, H=None):
             
             for ep in np.array(learner.experience.states):
                 plt.plot(T_range, ep[:, d], color='orange', alpha=0.5, linewidth=2)
-            plt.plot(T_range, states[:, d], color='orange', linewidth=3)
+            plt.plot(T_range, states[:, d], color='red', linewidth=3)
 
     plt.figure('Total cost per learning iteration')
     plt.gca().clear()
@@ -488,7 +492,10 @@ def plot_results(learner, H=None):
 
     plt.show(False)
     plt.draw()
-    #plt.waitforbuttonpress(0.05)
+    try:
+        plt.waitforbuttonpress(0.5)
+    except:
+        pass
 
 def plot_and_save(learner, filename, H=None,
                   target=None, output_folder=None):
@@ -756,3 +763,9 @@ def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timest
         print_with_stamp('Snapshot cannot find %s'%(archived_filepath), 'Utils')
     myzip.close()
     print_with_stamp('Saved snapshot to %s.zip'%(snapshot_filename), 'Utils')
+
+
+def start_bokeh_server(apps):
+    from bokeh.server.server import Server
+
+    s = Server(apps)
