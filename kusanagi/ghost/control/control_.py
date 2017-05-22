@@ -310,7 +310,7 @@ class NNPolicy(BNN):
     def set_params(self,params):
         lasagne.layers.set_all_param_values(self.network,params,trainable=True)
 
-    def get_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[400,400], p=0.1, p_input=0.0, name=None):
+    def get_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer, relu
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
