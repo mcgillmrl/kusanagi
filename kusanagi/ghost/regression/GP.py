@@ -8,9 +8,8 @@ from collections import OrderedDict
 from functools import partial
 from scipy.optimize import minimize, basinhopping
 from theano import function as F, shared as S
-from theano.tensor.nlinalg import matrix_dot
-from theano.sandbox.linalg import matrix_inverse, det, cholesky
-from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular, solve
+from theano.tensor.nlinalg import matrix_dot, matrix_inverse, det
+from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular, solve, Cholesky
 
 from . import cov
 from . import SNRpenalty
@@ -205,7 +204,7 @@ class GP(BaseRegressor):
             # add the contribution from the output uncertainty (acts as weight)
             if y_var:
                 K += tt.diag(y_var[i])
-            L = cholesky(K)
+            L = Cholesky(on_error='nan')(K)
             iK = solve_upper_triangular(L.T, solve_lower_triangular(L, EyeN))
             Yc = solve_lower_triangular(L, Y)
             beta = solve_upper_triangular(L.T, Yc)
@@ -366,11 +365,11 @@ class GP(BaseRegressor):
                                   )
                 break
             except ValueError:
-                print('')
+                utils.print_with_stamp('',self.name)
                 utils.print_with_stamp("Optimization with %s failed"%(m),self.name)
                 loghyp0 = self.besthyp[1]
 
-        print('')
+        utils.print_with_stamp('',self.name)
         loghyp = utils.unwrap_params(opt_res.x,parameter_shapes)
         self.state_changed = not np.allclose(utils.wrap_params(p0),opt_res.x,1e-6,1e-9)
         self.set_params({'loghyp': loghyp})

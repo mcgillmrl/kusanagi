@@ -93,8 +93,9 @@ class Loadable(object):
                 state = t_load(f)
                 self.set_state(state)
             self.state_changed = False
-        except IOError:
+        except IOError as err:
             utils.print_with_stamp('Unable to load state from %s'%(path),self.name)
+            print(err)
     
     def save(self, output_folder=None,output_filename=None):
         sys.setrecursionlimit(100000)
