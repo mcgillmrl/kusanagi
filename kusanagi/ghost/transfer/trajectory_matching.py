@@ -102,6 +102,7 @@ class TrajectoryMatching(PILCO):
         
         # from sourcce trajectories
         for i in range(max(0,total_trajectories-n_source_traj),total_trajectories):
+            self.inverse_dynamics_model.update()
             # for every state transition in the source experience, use the target inverse dynamics
             # to find an action that would produce the desired transition
             x = np.array(self.source_experience.states[i])
@@ -141,6 +142,7 @@ class TrajectoryMatching(PILCO):
         Y_var = np.vstack(Y_var)
         self.policy.adjustment_model.set_dataset(X,Y,Y_var=Y_var)
         self.policy.adjustment_model.train()
+        self.policy.adjustment_model.update()
     
     def trajectory_likelihood(self,src_dynmodel,target_exp, episodes=[]):
         ''' Computes the likelihood of target_exp given a trained dynmodel '''

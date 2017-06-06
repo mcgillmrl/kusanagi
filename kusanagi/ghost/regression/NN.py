@@ -16,6 +16,7 @@ class BNN(BaseRegressor):
         self.E = odims
         self.name=name
         self.should_recompile = False
+        self.trained = False
         
         self.logsn = theano.shared((np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX), name='%s_logsn'%(self.name))
         self.lengthscale = 1e-2
@@ -82,7 +83,7 @@ class BNN(BaseRegressor):
             v += lasagne.layers.get_all_params(self.network, unwrap_shared=True)
             return v
     
-    def set_dataset(self,X_dataset,Y_dataset):
+    def set_dataset(self,X_dataset,Y_dataset, **kwargs):
         # set dataset
         super(BNN,self).set_dataset(X_dataset.astype(theano.config.floatX),Y_dataset.astype(theano.config.floatX))
 
@@ -393,3 +394,4 @@ class BNN(BaseRegressor):
             if should_exit:
                 break
         print('')
+        self.trained = True

@@ -234,13 +234,14 @@ class AdjustedPolicy:
 
     def evaluate(self, m, S=None, t=None, symbolic=False):
         tt = theano.tensor if symbolic else np
+        S = S if S is not None else 1e-9*tt.eye(m.size)
         # get the output of the source policy
         mu,Su,Cu = self.source_policy.evaluate(m,S,t,symbolic)
 
         if self.adjustment_model.trained == True:
             # initialize the inputs to the policy adjustment function
             adj_input_m = m
-            adj_input_S = S if S is not None else tt.zeros((m.size,m.size))
+            adj_input_S = S
 
             if self.use_control_input:
                 adj_input_m = tt.concatenate([adj_input_m,mu])

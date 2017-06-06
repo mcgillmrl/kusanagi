@@ -1,6 +1,6 @@
 import atexit,os,sys
 import numpy as np
-from kusanagi.ghost.regression import GP,GP_UI,SSGP,SSGP_UI
+from kusanagi.ghost.regression import GP,GP_UI,SSGP,SSGP_UI,BNN
 from kusanagi.ghost.learners.PDDP import PDDP
 from kusanagi.ghost.cost import quadratic_loss
 from kusanagi.ghost.control import LocalLinearPolicy
@@ -17,7 +17,7 @@ if __name__ == '__main__':
     N = 100                                                                 # learning iterations
     learner_params = default_params()
     learner_params['policy_class'] = LocalLinearPolicy
-    learner_params['dynmodel_class'] = GP_UI
+    learner_params['dynmodel_class'] = SSGP_UI
     # initialize learner
     learner = PDDP(**learner_params)
     try:

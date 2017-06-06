@@ -43,7 +43,7 @@ class SSGP(GP):
         def log_marginal_likelihood(sf2M, sn2, phi_f, Y, EyeM):
             phi_f.ndim
             A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM
-            Lmm = cholesky(A)
+            Lmm = Cholesky(on_error='nan')(A)
             iA = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm,EyeM))
             Yc = solve_lower_triangular(Lmm,(phi_f.dot(Y)))
             beta_ss = sf2M*solve_upper_triangular(Lmm.T,Yc)
