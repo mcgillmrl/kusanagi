@@ -12,6 +12,10 @@ import theano
 import theano.tensor as tt
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 
+
+def unrolled_jacobian(f,wrt,D):
+    return [tt.stack(df) for df in zip(*map(lambda i: [tt.grad(f[i],x) for x in wrt], range(D)))]
+
 class PDDP(PILCO):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None, dynmodel_class=kreg.GP_UI, experience = None, async_plant=False, name='PDDP', filename_prefix=None):
         params['policy']['H'] = params['H']
@@ -28,55 +32,61 @@ class PDDP(PILCO):
             the next state. The immediate cost is returned as a distribution Normal(mcost,Scost),
             since the state is uncertain.
         '''
-        D = mx.shape[0]
-        D_ = self.mx0.get_value().size
+        dynmodel = self.dynamics_model
+        D = self.mx0.get_value().size
+        # convert angles from input distribution to their complex representation
+        mxa, Sxa, Ca = utils.gTrig2(mx, Sx, self.angle_idims, D)
 
-        # convert angles from input distribution to its complex representation
-        mxa,Sxa,Ca = utils.gTrig2(mx,Sx,self.angle_idims,D_)
-        
         if open_loop:
             mu = self.policy.u_nominal[t]
             Su = tt.zeros((mu.size,mu.size))
+            Cu = tt.zeros((D, mu.size))
         else:
             # compute control signal given uncertain state
-            sn2 = tt.exp(2*self.dynamics_model.logsn)
+            sn2 = tt.exp(2*dynmodel.logsn)
             Sx_ = Sx + tt.diag(0.5*sn2)# noisy state measurement
-            mxa_,Sxa_,Ca_ = utils.gTrig2(mx,Sx_,self.angle_idims,D_)
+            mxa_,Sxa_,Ca_ = utils.gTrig2(mx, Sx_, self.angle_idims, D)
             mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_, t, symbolic=True)
-        
-        # compute state control joint distribution ( controls are deterministic, so the u terms in Sxu are set to zero )
-        n = Sxa.shape[0]; Da = Sxa.shape[1]; U = Su.shape[1]
-        mxu = tt.concatenate([mxa,mu])
-        Sxu = tt.zeros((Da+U,Da+U))
-        Sxu = tt.set_subtensor(Sxu[:Da,:Da],Sxa)
 
+        # compute state control joint distribution
+        mxu = tt.concatenate([mxa, mu])
+        q = Sxa.dot(Cu)
+        Sxu_up = tt.concatenate([Sxa, q], axis=1)
+        Sxu_lo = tt.concatenate([q.T, Su], axis=1)
+        Sxu = tt.concatenate([Sxu_up, Sxu_lo], axis=0) # [D+U]x[D+U]
+        
         #  predict the change in state given current state-action
         # C_deltax = inv (Sxu) dot Sxu_deltax
-        m_deltax, S_deltax, C_deltax = self.dynamics_model.predict_symbolic(mxu,Sxu)
+        m_deltax, S_deltax, C_deltax = dynmodel.predict_symbolic(mxu,Sxu)
 
         # compute the successor state distribution
         mx_next = mx + m_deltax
 
         # SSGP returns C_delta as the input-output covariance. All the others do it as (input covariance)^-1 dot (input-output covariance)
-        if isinstance(self.dynamics_model,kreg.SSGP):
+        if isinstance(dynmodel, kreg.SSGP) or isinstance(dynmodel, kreg.BNN):
             Sxu_deltax = C_deltax
         else:
             Sxu_deltax = Sxu.dot(C_deltax)
 
         if Ca is not None:
-            Da = Sxa.shape[1]; Dna = D-len(self.angle_idims)
-            non_angle_dims = list(set(range(D_)).difference(self.angle_idims))
-            Sxa_deltax = Sxu_deltax[:Da]        # this contains the covariance between the previous state (with angles as [sin,cos]), and the next state (with angles in radians)
-            sxna_deltax = Sxa_deltax[:Dna]      # first come the non angle dimensions  [D-len(angi)] x [D] 
-            sxsc_deltax = Sxa_deltax[Dna:]      # then angles as [sin,cos]             [2*len(angi)] x [D]
+            Da = D+len(self.angle_idims); Dna = D-len(self.angle_idims)
+            non_angle_dims = list(set(range(D)).difference(self.angle_idims))
+            # this contains the covariance between the previous state (with angles as [sin,cos]),
+            # and the next state (with angles in radians)
+            Sxa_deltax = Sxu_deltax[:Da]
+            # first come the non angle dimensions  [D-len(angi)] x [D]
+            sxna_deltax = Sxa_deltax[:Dna]
+            # then angles as [sin,cos]             [2*len(angi)] x [D]
+            sxsc_deltax = Sxa_deltax[Dna:]
             #here we undo the [sin,cos] parametrization for the angle dimensions
-            Sx_sc = Sx.dot(Ca)[self.angle_idims]                                     # [len(angi)] x [2*len(angi)] 
-            Sa = Sxa[Dna:,Dna:]#+1e-12*tt.eye(2*len(self.angle_idims))    # [2*len(angi)] x [2*len(angi)]
-            sxa_deltax = Sx_sc.dot(solve(Sa,sxsc_deltax))  # [len(angi] x [D]
-            # now we create Sx_deltax and fill it with the appropriate values (i.e. in the correct order)
-            Sx_deltax = tt.zeros((D,D))
-            Sx_deltax = tt.set_subtensor(Sx_deltax[non_angle_dims,:], sxna_deltax)
-            Sx_deltax = tt.set_subtensor(Sx_deltax[self.angle_idims,:], sxa_deltax)
+            Sx_sc = Sx.dot(Ca)[self.angle_idims]
+            Sa = Sxa[Dna:, Dna:]#+1e-12*tt.eye(2*len(self.angle_idims))
+            sxa_deltax = Sx_sc.dot(solve(Sa, sxsc_deltax))
+            # now we create Sx_deltax and fill it with the appropriate values
+            # (i.e. in the correct order)
+            Sx_deltax = tt.zeros((D, D))
+            Sx_deltax = tt.set_subtensor(Sx_deltax[non_angle_dims, :], sxna_deltax)
+            Sx_deltax = tt.set_subtensor(Sx_deltax[self.angle_idims, :], sxa_deltax)
         else:
             Sx_deltax = Sxu_deltax[:D]
 
@@ -91,8 +101,8 @@ class PDDP(PILCO):
 
         # check if dynamics model has an updates dictionary
         updates = theano.updates.OrderedUpdates()
-        if hasattr(self.dynamics_model,'prediction_updates') and self.dynamics_model.prediction_updates is not None:
-            updates += self.dynamics_model.prediction_updates
+        if hasattr(dynmodel,'prediction_updates') and dynmodel.prediction_updates is not None:
+            updates += dynmodel.prediction_updates
 
         if hasattr(self.policy,'prediction_updates') and self.policy.prediction_updates is not None:
             updates += self.policy.prediction_updates
@@ -132,10 +142,19 @@ class PDDP(PILCO):
         # compute all the required derivatives
         #Fu,Fx = zip(*[tt.jacobian(z_next[i:i+D],[mu,z]) for i in xrange(0,D+len(triu_indices[0]),D)])
         #Fu,Fx = tt.concatenate(Fu,axis=0), tt.concatenate(Fx,axis=0)
-        Fu, Fx = tt.jacobian(z_next,[mu,z])
+        unrolled = True
+        if unrolled:
+            D_ = D+D*(D+1)/2
+            Fu, Fx = unrolled_jacobian(z_next,[mu,z], D_)
+            luu,lux = unrolled_jacobian(lu.flatten(),[mu,z])
+            lxx = unrolled_jacobian(lx.flatten(),z)
+        else:
+            Fu, Fx = tt.jacobian(z_next,[mu,z])
+            luu,lux = tt.jacobian(lu.flatten(),[mu,z], disconnected_inputs='ignore')
+            lxx = tt.jacobian(lx.flatten(),z)
+        
         lu,lx = tt.grad(mcost,[mu,z])
-        luu,lux = tt.jacobian(lu.flatten(),[mu,z], disconnected_inputs='ignore')
-        lxx = tt.jacobian(lx.flatten(),z)
+        
 
         return [Fx,Fu,lx,lu,lxx,lux,luu], updates
 
@@ -163,13 +182,13 @@ class PDDP(PILCO):
         utils.print_with_stamp('Done')
 
     def compile_derivs_func2(self):
-        utils.print_with_stamp('Computing symbolic Jacobians along trajectory')
+        utils.print_with_stamp('Computing symbolic Jacobians along trajectory (one step)')
         t = tt.iscalar('t')
         z_t = self.policy.z_nominal[t]
 
         (Fx,Fu,lx,lu,lxx,lux,luu), updts = self.compute_derivs(z_t,t)
 
-        utils.print_with_stamp('Compiling function Jacobians along trajectory')
+        utils.print_with_stamp('Compiling function Jacobians along trajectory (one step)')
         self.trajectory_jac_fn = theano.function([t],
                                                  [Fx,Fu,lx,lu,lxx,lux,luu],
                                                  allow_input_downcast=True,
@@ -182,15 +201,15 @@ class PDDP(PILCO):
         converged=False
         self.n_evals=0
         if not hasattr(self,'trajectory_jac_fn'):
-            self.compile_derivs_func()
+            self.compile_derivs_func2()
         utils.print_with_stamp('')
         
         grads = []
         times = []
         start = time()
-        #for t in xrange(40):
-        #    grads.append(self.trajectory_jac_fn(t))
-        grads = self.trajectory_jac_fn()
+        for t in xrange(40):
+            grads.append(self.trajectory_jac_fn(t))
+        #grads = self.trajectory_jac_fn()
         end = time()-start
         utils.print_with_stamp("Elapsed: %f"%(end))
         
