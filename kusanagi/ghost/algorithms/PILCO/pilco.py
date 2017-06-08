@@ -15,7 +15,7 @@ from theano.tensor.slinalg import solve
 from theano.misc.pkl_utils import dump as t_dump, load as t_load
 from theano.compile.nanguardmode import NanGuardMode
 from kusanagi import utils
-from kusanagi.ghost.learners.EpisodicLearner import *
+from kusanagi.ghost.algorithms.EpisodicLearner import *
 
 class PILCO(EpisodicLearner):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None,

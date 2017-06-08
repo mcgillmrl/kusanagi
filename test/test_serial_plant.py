@@ -3,7 +3,7 @@ import signal,sys
 import numpy as np
 from time import time,sleep
 from functools import partial
-from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.ghost.algorithms.PILCO import PILCO
 from kusanagi.shell.plant import SerialPlant, LivePlot
 from kusanagi.shell.cartpole import  CartpoleDraw
 from kusanagi.ghost.control import RBFPolicy

@@ -1,4 +1,4 @@
-from kusanagi.ghost.learners.PILCO import MC_PILCO
+from kusanagi.ghost.algorithms.PILCO import MC_PILCO
 import theano.tensor as tt
 import theano
 import numpy as np

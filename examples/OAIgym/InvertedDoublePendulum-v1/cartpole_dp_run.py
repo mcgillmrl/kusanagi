@@ -3,7 +3,7 @@ sys.path.append('/home/adaptation/achatr/Desktop/Summer2016/PILCO_clone/kusanagi
 import gym, time
 import numpy as np
 from functools import partial
-from ghost.learners.PILCO import PILCO
+from ghost.algorithms.PILCO import PILCO
 from shell.cartpole import Cartpole, CartpoleDraw, cartpole_loss
 from shell.plant import SerialPlant
 from ghost.control import RBFPolicy

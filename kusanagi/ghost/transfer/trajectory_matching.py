@@ -1,8 +1,8 @@
 import numpy as np 
 from kusanagi import utils
 from kusanagi.ghost import regression as kreg
-from kusanagi.ghost.learners.EpisodicLearner import EpisodicLearner
-from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.ghost.algorithms.EpisodicLearner import EpisodicLearner
+from kusanagi.ghost.algorithms.PILCO import PILCO
 import theano
 
 class TrajectoryMatching(PILCO):

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os,sys
 import numpy as np
-from ghost.learners.ExperienceDataset import ExperienceDataset
+from ghost.algorithms.ExperienceDataset import ExperienceDataset
 
 def print_exp(path):
   exp = ExperienceDataset(filename=path)

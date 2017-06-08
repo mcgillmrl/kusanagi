@@ -8,7 +8,7 @@ import time
 from functools import partial
 
 from kusanagi import utils
-from kusanagi.ghost.learners.ExperienceDataset import ExperienceDataset
+from kusanagi.ghost.algorithms.ExperienceDataset import ExperienceDataset
 from kusanagi.ghost.control import RandPolicy
 from kusanagi.base.Loadable import Loadable
 from kusanagi.utils import probls
@@ -27,6 +27,7 @@ STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
                           'NADAM': utils.updates.nadam,
                           'ADAMAX': lasagne.updates.adamax,
                          }
+                       
 # TODO remove any theano dependency from here
 class EpisodicLearner(Loadable):
     def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None,

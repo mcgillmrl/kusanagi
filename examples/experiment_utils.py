@@ -1,7 +1,7 @@
 import utils
 from shell.cartpole import default_params
 from shell.plant import SerialPlant
-from ghost.learners.ExperienceDataset import ExperienceDataset
+from ghost.algorithms.ExperienceDataset import ExperienceDataset
 from ghost.control import RBFPolicy,AdjustedPolicy
 from ghost.regression import GP
 import numpy as np

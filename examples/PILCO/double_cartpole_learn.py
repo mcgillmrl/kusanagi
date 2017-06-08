@@ -5,7 +5,7 @@ import kusanagi.ghost.regression as kreg
 
 from kusanagi import utils
 from kusanagi.shell.double_cartpole import default_params, DoubleCartpoleDraw
-from kusanagi.ghost.learners.PILCO import PILCO, MC_PILCO
+from kusanagi.ghost.algorithms.PILCO import PILCO, MC_PILCO
 from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
 

@@ -1,7 +1,7 @@
 import atexit,os,sys
 import numpy as np
 from kusanagi.ghost.regression import GP,GP_UI,SSGP,SSGP_UI,BNN
-from kusanagi.ghost.learners.PDDP import PDDP
+from kusanagi.ghost.algorithms.PDDP import PDDP
 from kusanagi.ghost.cost import quadratic_loss
 from kusanagi.ghost.control import LocalLinearPolicy
 from kusanagi.shell.cartpole import default_params,CartpoleDraw

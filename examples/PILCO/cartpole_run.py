@@ -4,7 +4,7 @@ import numpy as np
 
 from kusanagi import utils
 from kusanagi.ghost.regression import GP, SSGP_UI
-from kusanagi.ghost.learners.PILCO import PILCO
+from kusanagi.ghost.algorithms.PILCO import PILCO
 from kusanagi.shell.cartpole import CartpoleDraw, default_params
 from kusanagi.utils import plot_results
 from kusanagi.ghost.control import NNPolicy

@@ -11,7 +11,7 @@ import kusanagi.ghost.regression as kreg
 from kusanagi import utils
 from kusanagi.shell.cartpole import default_params#, CartpoleDraw
 from kusanagi.shell.plant import SerialPlant
-from kusanagi.ghost.learners.PILCO import PILCO, MC_PILCO
+from kusanagi.ghost.algorithms.PILCO import PILCO, MC_PILCO
 from kusanagi.ghost.control import NNPolicy
 from kusanagi.utils import plot_results
 #np.random.seed(31337)

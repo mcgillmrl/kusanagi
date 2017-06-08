@@ -1,9 +1,9 @@
 import numpy as np
 from kusanagi import utils
 from time import time
-from kusanagi.ghost.learners.EpisodicLearner import EpisodicLearner
-from kusanagi.ghost.learners.PILCO import PILCO
-from kusanagi.ghost.learners.ExperienceDataset import ExperienceDataset
+from kusanagi.ghost.algorithms.EpisodicLearner import EpisodicLearner
+from kusanagi.ghost.algorithms.PILCO import PILCO
+from kusanagi.ghost.algorithms.ExperienceDataset import ExperienceDataset
 import kusanagi.ghost.regression as kreg
 from kusanagi.ghost.control import LocalLinearPolicy
 from theano.tensor.nlinalg import matrix_inverse, pinv

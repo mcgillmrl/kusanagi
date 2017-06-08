@@ -1,4 +1,4 @@
-from kusanagi.ghost.learners.PILCO import *
+from kusanagi.ghost.algorithms.PILCO import *
 from functools import partial
 
 class MC_PILCO(PILCO):

@@ -7,7 +7,7 @@ from functools import partial
 from kusanagi import ghost
 from kusanagi.ghost import regression as kreg
 from kusanagi.ghost import control
-from kusanagi.ghost.learners.ExperienceDataset import ExperienceDataset
+from kusanagi.ghost.algorithms.ExperienceDataset import ExperienceDataset
 from kusanagi.ghost.transfer.trajectory_matching import TrajectoryMatching
 from kusanagi.ghost.control import RBFPolicy
 from kusanagi.ghost.control import AdjustedPolicy

@@ -287,7 +287,7 @@ class AdjustedPolicy:
 # NN controller
 class NNPolicy(BNN):
     def __init__(self, m0, maxU=[10], angle_dims=[], sat_func=None, name='NNPolicy', filename=None, **kwargs):
-        self.maxU = np.array(maxU)
+        self.maxU = np.array(maxU, dtype=theano.config.floatX)
         self.D = np.array(m0).size + len(angle_dims)
         self.E = len(maxU)
         def sat_func(u,e):
@@ -296,7 +296,7 @@ class NNPolicy(BNN):
 
         if sat_func:
             # set the model to be a RBF with saturated outputs
-            self.sat_func = partial(sat_func, e=maxU)
+            self.sat_func = partial(sat_func, e=self.maxU)
         else:
             self.sat_func = None
         print(type(self), isinstance(self,NNPolicy))
