@@ -12,6 +12,7 @@ from kusanagi import utils
 from kusanagi.shell.cartpole import default_params#, CartpoleDraw
 from kusanagi.ghost.algorithms.PILCO import PILCO, MC_PILCO
 from kusanagi.ghost.control import NNPolicy
+from kusanagi.ghost.control import RBFPolicy
 from kusanagi.utils import plot_results
 
 #np.random.seed(31337)
@@ -40,11 +41,11 @@ if __name__ == '__main__':
         learner = PILCO(**learner_params)
     else:
         # dropout network (BNN) based PILCO
-        learner_params['params']['min_method'] = 'ADAM'
-        learner_params['params']['learning_rate'] = 1e-4
+        learner_params['params']['min_method'] = 'NESTEROV'
+        learner_params['params']['learning_rate'] = 1e-3
         learner_params['params']['max_evals'] = 1000
-        learner_params['params']['clip'] = 1.0
-        learner_params['n_samples'] = 100
+        learner_params['params']['clip'] = 10.0
+        learner_params['n_samples'] = 500
         learner_params['dynmodel_class'] = kreg.BNN
         learner_params['policy_class'] = NNPolicy
 

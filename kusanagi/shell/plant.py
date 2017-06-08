@@ -30,6 +30,7 @@ class Plant(object):
         self.done = False
         self.plant_thread = None
         self.angle_dims = angle_dims
+        self.asynchronous = False
     
     def apply_control(self,u):
         self.u = np.array(u,dtype=np.float64)

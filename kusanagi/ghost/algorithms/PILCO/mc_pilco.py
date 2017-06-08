@@ -57,8 +57,8 @@ class MC_PILCO(PILCO):
             sn = tt.exp(dynmodel.logsn)
             x_noisy = x + self.m_rng.normal(x.shape).dot(tt.diag(np.sqrt(0.5).astype(theano.config.floatX)*sn))
             xa_noisy = utils.gTrig(x_noisy,self.angle_idims,D)
-            u = policy.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
-            #u = policy.evaluate(xa, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
+            #u = policy.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
+            u = policy.evaluate(xa, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
         
         # build state-control vectors
         xu = tt.concatenate([xa,u],axis=1)
@@ -93,8 +93,8 @@ class MC_PILCO(PILCO):
         # get cost
         sn = tt.exp(dynmodel.logsn)
         x_next_noisy = x_next + self.m_rng.normal(x.shape).dot(tt.diag(sn))
-        c_next = cost(x_next_noisy, None)
-        #c_next = cost(x_next, None)
+        #c_next = cost(x_next_noisy, None)
+        c_next = cost(x_next, None)
 
         # jacobian for debugging
         #jac = theano.tensor.jacobian(x_next.flatten(),x).reshape((x.shape[0],x.shape[1],x.shape[0],x.shape[1])).diagonal(axis1=0,axis2=2)
