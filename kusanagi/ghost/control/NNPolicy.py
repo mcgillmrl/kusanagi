@@ -35,7 +35,7 @@ class NNPolicy(BNN):
 
     def get_network_spec(self,batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
         from lasagne.layers import InputLayer, DenseLayer
-        from kusanagi.ghost.regression.layers import DropoutLayer, relu
+        from kusanagi.ghost.regression.layers import DropoutLayer, relu, selu
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
         if name is None:
             name = self.name
@@ -63,8 +63,8 @@ class NNPolicy(BNN):
         for i in range(len(hidden_dims)):
             network_spec.append((DenseLayer,
                                  dict(num_units=hidden_dims[i],
-                                      nonlinearity=elu,
-                                      W=lasagne.init.HeUniform(gain='relu'),
+                                      nonlinearity=selu,
+                                      W=lasagne.init.HeNormal(gain=1),
                                       name=name+'_fc%d'%(i)
                                      )
                                 )
