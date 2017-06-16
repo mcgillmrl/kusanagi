@@ -175,7 +175,7 @@ class PDDP(PILCO):
                                         non_sequences=shared_vars,
                                         strict=True)
         z_next, u = forw_out
-        self.trajectory_jac_fn = theano.function([],
+        self.trajectory_jac_fn1 = theano.function([],
                                                  [z_next, u],
                                                  allow_input_downcast=True,
                                                  updates=f_updts,
@@ -183,6 +183,7 @@ class PDDP(PILCO):
         return
         utils.print_with_stamp('Computing symbolic backward pass')
 
+        z_nom = tt.concatenate([z_nom[0]])
         back_out, b_updts = theano.scan(fn=self.backward_pass,
                                         sequences=[z_nom, tt.arange(H)],
                                         non_sequences=shared_vars,

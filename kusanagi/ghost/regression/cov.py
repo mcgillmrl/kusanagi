@@ -5,10 +5,10 @@ from kusanagi import utils
 def SEard(loghyp,X1,X2=None, all_pairs=True):
     ''' Squared exponential kernel with diagonal scaling matrix (one lengthscale per dimension)'''
     n = 1; idims = 1
-    if(X1.ndim == 2):
-        n,idims = X1.shape
-    elif(X2.ndim == 2):
-        n,idims = X2.shape
+    if X1.ndim == 2:
+        n, idims = X1.shape
+    elif X2.ndim == 2:
+        n, idims = X2.shape
     else:
         idims = X1.shape[0]
     if (not all_pairs) and (X1 is X2 or X2 is None):
