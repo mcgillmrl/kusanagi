@@ -1,20 +1,20 @@
-import atexit,os,sys
+import atexit, os, sys
 import numpy as np
-from kusanagi.ghost.regression import GP,GP_UI,SSGP,SSGP_UI,BNN
+from kusanagi.ghost.regression import GP, GP_UI, SSGP, SSGP_UI, BNN
 from kusanagi.ghost.algorithms.PDDP import PDDP
 from kusanagi.ghost.cost import quadratic_loss
 from kusanagi.ghost.control import LocalLinearPolicy
-from kusanagi.shell.cartpole import default_params,CartpoleDraw
+from kusanagi.shell.cartpole import default_params ,CartpoleDraw
 from kusanagi import utils
 #np.random.seed(31347)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     # setup output directory
-    utils.set_output_dir(os.path.join(utils.get_output_dir(),'pddp_cartpole'))
+    utils.set_output_dir(os.path.join(utils.get_output_dir(), 'pddp_cartpole'))
 
-    J = 1                                                                   # number of random initial trials
-    N = 100                                                                 # learning iterations
+    J = 1                                              # number of random initial trials
+    N = 100                                            # learning iterations
     learner_params = default_params()
     learner_params['policy_class'] = LocalLinearPolicy
     learner_params['dynmodel_class'] = SSGP_UI
@@ -24,14 +24,14 @@ if __name__ == '__main__':
         learner.load(load_compiled_fns=True)
         save_compiled_fns = False
     except:
-        utils.print_with_stamp('Unable to load compiled fns','main')
+        utils.print_with_stamp('Unable to load compiled fns', 'main')
         save_compiled_fns = True
 
     atexit.register(learner.stop)
-    draw_cp = CartpoleDraw(learner.plant)
-    draw_cp.start()
-    atexit.register(draw_cp.stop)
-    
+    #draw_cp = CartpoleDraw(learner.plant)
+    #draw_cp.start()
+    #atexit.register(draw_cp.stop)
+
     # apply random controls to obtain initial experience
     for i in range(J):
         learner.policy.t = 0
@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
         # train policy
         learner.train_policy()
-        
+
         # execute it on the robot
         # once to obtain a new nominal trajectory
         learner.policy.t = 0
@@ -61,5 +61,5 @@ if __name__ == '__main__':
 
         # save latest state of the learner
         #learner.save()
-    
+
     sys.exit(0)
