@@ -106,12 +106,29 @@ class PDDP(PILCO):
 
         if hasattr(self.policy,'prediction_updates') and self.policy.prediction_updates is not None:
             updates += self.policy.prediction_updates
-        
-        return [mcost,Scost,mx_next,Sx_next,mu,Su], updates
 
-    def backward_pass(self,Fx,Fu,lx,lu,lxx,lux,luu,V,Vx,Vxx):
-        Qx = lx + Vx.dot(Fx)
-        Qu = lu + Vu.dot(Fu)
+        return [mcost, Scost, mx_next, Sx_next, mu, Su], updates
+
+    def backward_pass(self, z_prev, t, V, Vx, Vxx, *args):
+        # propragate state forward
+        z_next, u = forward_pass(z_prev, t-1, open_loop=True)
+
+        # compute variables that depend on jacobian
+        VxdotFx = theano.tensor.Lop(z_next, z, Vx)
+        VxdotFu = theano.tensor.Lop(z_next, u, Vx)
+        VxxdotFx = theano.tensor.Lop(z_next, z, Vxx)
+        VxxdotFu = theano.tensor.Lop(z_next, u, Vxx)
+        return VxdotFx
+
+        # compute gradients and jacobians of cost
+        lu, lx = tt.grad(mcost, [mu, z])
+        luu, lux = tt.jacobian(lu.flatten(), [mu, z], disconnected_inputs='ignore')
+        lxx = tt.jacobian(lx.flatten(), z)
+
+        '''
+        # quadratic local model of Q function
+        Qx = lx + VxdotFx
+        Qu = lu + VudotFu
         Qxx = lxx + Fx.T.dot(Vxx).dot(Fx)
         Qux = lux + Fu.T.dot(Vxx).dot(Fx)
         Quu = luu + Fu.T.dot(Vxx).dot(Fu)
@@ -121,9 +138,62 @@ class PDDP(PILCO):
         V = V + Qu.dot(I)
         Vx = Vx + Qu.dot(L)
         Vxx = Vxx + Qux.T.dot(L)
-        return I,L,V,Vx,Vxx
+        '''
+        return I, L, V, Vx, Vxx
 
-    def compute_derivs(self,z,t,*args):
+    def forward_pass(self, t, z, *args):
+        # split z into the mean and covariance of the state
+        #D = ((tt.sqrt(8*z.shape[0]+9) - 3)/2).astype('int64')
+        D = self.mx0.get_value().size
+        triu_indices = np.triu_indices(D)
+
+        mx, Sx_triu = z[:D], z[D:]
+        Sx = tt.zeros((D, D))
+        Sx = tt.set_subtensor(Sx[triu_indices], Sx_triu)
+        Sx = Sx + Sx.T - tt.diag(tt.diag(Sx))
+
+        # compute the next state using the dynamics model
+        outs, updates = self.propagate_state(mx, Sx, t, open_loop=True)
+        mcost, Scost, mx_next, Sx_next, mu, Su = outs
+
+        z_next = tt.concatenate([mx_next.flatten(), Sx_next[triu_indices]])
+        return [z_next, mu], updates
+
+    def forward_backwards(self):
+        utils.print_with_stamp('Computing symbolic forward pass')
+        u_nom = self.policy.u_nominal
+        z_nom = self.policy.z_nominal
+        H = z_nom.shape[0]
+
+        shared_vars = []
+        shared_vars.extend(self.dynamics_model.get_all_shared_vars())
+        shared_vars.extend(self.policy.get_all_shared_vars())
+
+        forw_out, f_updts = theano.scan(fn=self.forward_pass,
+                                        outputs_info=[z_nom[0], u_nom[0]],
+                                        sequences=[tt.arange(H)],
+                                        non_sequences=shared_vars,
+                                        strict=True)
+        z_next, u = forw_out
+        self.trajectory_jac_fn = theano.function([],
+                                                 [z_next, u],
+                                                 allow_input_downcast=True,
+                                                 updates=f_updts,
+                                                 name='%s>trajectory_jac_fn'%(self.name))
+        return
+        utils.print_with_stamp('Computing symbolic backward pass')
+
+        back_out, b_updts = theano.scan(fn=self.backward_pass,
+                                        sequences=[z_nom, tt.arange(H)],
+                                        non_sequences=shared_vars,
+                                        go_backwards=True,
+                                        strict=True)
+
+
+
+
+
+    def compute_derivs(self, z, t, *args):
         # split z into the mean and covariance of the state
         #D = ((tt.sqrt(8*z.shape[0]+9) - 3)/2).astype('int64')
         D = self.mx0.get_value().size
@@ -142,6 +212,8 @@ class PDDP(PILCO):
         # compute all the required derivatives
         #Fu,Fx = zip(*[tt.jacobian(z_next[i:i+D],[mu,z]) for i in xrange(0,D+len(triu_indices[0]),D)])
         #Fu,Fx = tt.concatenate(Fu,axis=0), tt.concatenate(Fx,axis=0)
+        Fu = theano.tensor.Lop(r,s,theano.tensor.eye(s.shape[0]))
+        '''
         unrolled = True
         if unrolled:
             D_ = D+D*(D+1)/2
@@ -152,7 +224,7 @@ class PDDP(PILCO):
             Fu, Fx = tt.jacobian(z_next,[mu,z])
             luu,lux = tt.jacobian(lu.flatten(),[mu,z], disconnected_inputs='ignore')
             lxx = tt.jacobian(lx.flatten(),z)
-        
+        '''
         lu,lx = tt.grad(mcost,[mu,z])
         
 
@@ -201,15 +273,16 @@ class PDDP(PILCO):
         converged=False
         self.n_evals=0
         if not hasattr(self,'trajectory_jac_fn'):
-            self.compile_derivs_func2()
+            self.forward_backwards()
         utils.print_with_stamp('')
         
         grads = []
         times = []
         start = time()
-        for t in xrange(40):
-            grads.append(self.trajectory_jac_fn(t))
-        #grads = self.trajectory_jac_fn()
+        #for t in xrange(40):
+        #    grads.append(self.trajectory_jac_fn(t))
+        grads = self.trajectory_jac_fn()
+        print(grads)
         end = time()-start
         utils.print_with_stamp("Elapsed: %f"%(end))
         
