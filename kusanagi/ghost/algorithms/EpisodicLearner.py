@@ -246,10 +246,6 @@ class EpisodicLearner(Loadable):
 
         exec_time = time.time()
         x_t, t = self.plant.get_plant_state()
-        L_noise = np.linalg.cholesky(self.plant.noise)
-        if self.plant.noise is not None:
-            # randomize state
-            x_t = x_t + np.random.randn(x_t.shape[0]).dot(L_noise)
 
         H_steps = int(np.ceil(H/self.plant.dt))
         # do rollout
@@ -265,10 +261,10 @@ class EpisodicLearner(Loadable):
                 #  get cost:
                 c_t = self.evaluate_cost(x_t)
                 # append to experience dataset
-                self.experience.add_sample(t,x_t,u_t,c_t)
+                self.experience.add_sample(t, x_t, u_t, c_t)
             else:
                 # append to experience dataset
-                self.experience.add_sample(t,x_t,u_t,0)
+                self.experience.add_sample(t, x_t, u_t, 0)
 
             # step the plant if necessary
             if not self.async_plant:
@@ -280,16 +276,13 @@ class EpisodicLearner(Loadable):
                 if exec_time < self.plant.dt:
                     time.sleep(self.plant.dt-exec_time)
 
-            #  get robot state (this should ensure synchronization by checking the time reported by plant.get_state):
+            # get robot state (this should ensure synchronization by
+            # checking the time reported by plant.get_state):
             exec_time = time.time()
             t0 = t
             while t < t0+self.plant.dt:
                 x_t, t = self.plant.get_plant_state()
 
-            if self.plant.noise is not None:
-                # randomize state
-                x_t = x_t + np.random.randn(x_t.shape[0]).dot(L_noise);
-            
             if self.plant.done:
                 break
         # add last state to experience

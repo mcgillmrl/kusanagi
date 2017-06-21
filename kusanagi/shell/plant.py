@@ -1,3 +1,4 @@
+import gym
 import numpy as np
 import sys
 import serial
@@ -10,113 +11,103 @@ from matplotlib.colors import cnames
 from scipy.integrate import ode
 from time import time, sleep
 from threading import Thread, Lock
-from multiprocessing import Process,Pipe,Event
+from multiprocessing import Process, Pipe, Event
 from kusanagi.utils import print_with_stamp, gTrig_np
 
 color_generator = iter(cnames.items())
 
-class Plant(object):
-    def __init__(self, params=None, x0=None, S0=None, dt=0.01, noise=None, name='Plant', angle_dims = []):
+class Plant(gym.Env):
+    def __init__(self, dt = 0.1, noise_cov=None,
+                 angle_dims=[], name='Plant',
+                 *args, **kwargs):
         self.name = name
-        self.params = params
-        self.x0 = x0
-        self.S0= S0
-        self.x = np.array(x0,dtype=np.float64).flatten()
-        self.u = None
-        self.t = 0
         self.dt = dt
-        self.noise = noise
-        self.running = Event()
-        self.done = False
-        self.plant_thread = None
+        if noise_cov:
+            assert noise_cov.shape[0] == noise_cov.shape[1] and\
+                   noise_cov.shape[0] == self.observation_space.shape[0]
+        self.noise_cov = noise_cov
         self.angle_dims = angle_dims
-        self.asynchronous = False
-    
-    def apply_control(self,u):
-        self.u = np.array(u,dtype=np.float64)
+        self.state = None
+        self.action = None
+        self.t = 0
+        self.done = False
+
+    @property
+    def noise_cov(self):
+        return self.__noise_cov
+
+    @noise_cov.setter
+    def noise_cov(self, noise_cov):
+        self.__noise_cov = noise_cov
+        self.noise_chol = np.linalg.cholesky(noise_cov)
+
+    def apply_control(self, u):
+        self.u = np.array(u, dtype=np.float64)
         if len(self.u.shape) < 2:
-            self.u = self.u[:,None]
+            self.u = self.u[:, None]
 
-    def get_plant_state(self):
-        if self.angle_dims is None:
-            return self.x.flatten(),self.t
-        else:
-            return gTrig_np(self.x, self.angle_dims).flatten(), self.t
-    
-    def run(self):
-        start_time = time()
-        print_with_stamp('Starting plant loop',self.name)
-        while self.running.is_set():
-            exec_time = time()
-            self.step(self.dt)
-            #print_with_stamp('%f, %s'%(self.t,self.x),self.name)
-            exec_time = time() - exec_time
-            sleep(max(self.dt-exec_time,0))
+    def get_state(self):
+        state = self.state
+        assert state is not None, 'Plant has not been reset'
+        if self.noise:
+            # noisy state measurement
+            state += np.random.randn(state.size).dot(self.noise_chol)
+        if self.angle_dims:
+            # convert angle dimensions to complex representation
+            state = gTrig_np(state, self.angle_dims).flatten()
+        return state.flatten(), self.t
 
-    def start(self):
-        if self.plant_thread is not None and self.plant_thread.is_alive():
-            print_with_stamp('Waiting until robot stops',self.name)
-            while self.plant_thread.is_alive():
-                sleep(1.0)
-        
-        self.plant_thread = Thread(target=self.run)
-        self.plant_thread.daemon = True
-        self.running.set()
-        self.plant_thread.start()
-    
     def stop(self):
-        self.running.clear()
-        if self.plant_thread is not None and self.plant_thread.is_alive():
-            # wait until thread stops
-            self.plant_thread.join(10)
-            # create new thread object, since python threads can only be started once
-            self.plant_thread = Thread(target=self.run)
-            self.plant_thread.daemon = True
-        print_with_stamp('Stopped plant loop',self.name)
+        print_with_stamp('Stopping robot', self.name)
+        self._close()
 
-    def step(self):
-        raise NotImplementedError("You need to implement the step method in your Plant subclass.")
+    def _step(self):
+        msg = "You need to implement self._step in your Plant subclass."
+        raise NotImplementedError(msg)
 
-    def reset_state(self):
-        raise NotImplementedError("You need to implement the reset_state method in your Plant subclass.")
+    def _reset(self):
+        msg = "You need to implement self._reset in your Plant subclass."
+        raise NotImplementedError(msg)
 
 class ODEPlant(Plant):
-    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='ODEPlant', integrator='dopri5', atol=1e-12, rtol=1e-12, angle_dims = []):
-        super(ODEPlant,self).__init__(params, x0, S0, dt, noise, name, angle_dims)
-        self.solver = ode(self.dynamics).set_integrator(integrator,atol=atol,rtol=rtol)
-        self.set_state(self.x0)
+    def __init__(self, name='ODEPlant', integrator='dopri5',
+                 atol=1e-12, rtol=1e-12,
+                 *args, **kwargs):
+        super(ODEPlant, self).__init__(name=name, *args, **kwargs)
+        integrator = kwargs.get('integrator', 'dopri5')
+        atol = kwargs.get('atol', 1e-12)
+        rtol = kwargs.get('rtol', 1e-12)
 
-    def set_state(self, x):
-        if (self.x is None or np.linalg.norm(x-self.x) > 1e-12):
-            self.x = np.array(x,dtype=np.float64).flatten()
-        self.solver = self.solver.set_initial_value(self.x)
+        # initialize ode solver
+        self.solver = ode(self.dynamics).set_integrator(integrator,
+                                                        atol=atol,
+                                                        rtol=rtol)
+
+    def set_state(self, state):
+        if self.state is None or\
+           np.linalg.norm(np.array(state)-np.array(self.state)) > 1e-12:
+            # float64 required for the ode integrator
+            self.state = np.array(state, dtype=np.float64).flatten()
+        # set solver internal state
+        self.solver = self.solver.set_initial_value(self.state)
+        # get time from solver
         self.t = self.solver.t
-    
-    def reset_state(self):
-        print_with_stamp('Reset to inital state',self.name)
-        if self.S0 is None:
-            self.set_state(self.x0)
-        else:
-            #self.set_state(np.random.multivariate_normal(self.x0,self.S0))
-            L_noise = np.linalg.cholesky(self.S0)
-            start = self.x0 + np.random.randn(self.S0.shape[1]).dot(L_noise)
-            self.set_state( start );
 
-    def step(self,dt=None):
-        if dt is None:
-            dt = self.dt
+    def _step(self):
+        dt = self.dt
         t1 = self.solver.t + dt
         while self.solver.successful and self.solver.t < t1:
-            self.solver.integrate(self.solver.t+ dt)
+            self.solver.integrate(self.solver.t + dt)
         self.x = np.array(self.solver.y)
         self.t = self.solver.t
         return self.x
 
-    def dynamics(self):
-        raise NotImplementedError("You need to implement the dynamics method in your ODEPlant subclass.")
+    def dynamics(self, *args, **kwargs):
+        msg = "You need to implement self.dynamics in the ODEPlant subclass."
+        raise NotImplementedError(msg)
 
 class SerialPlant(Plant):
-    cmds = ['RESET_STATE','GET_STATE','APPLY_CONTROL','CMD_OK','STATE']
+    cmds = ['RESET_STATE', 'GET_STATE', 'APPLY_CONTROL', 'CMD_OK', 'STATE']
     cmds = dict(list(zip(cmds,[str(i) for i in range(len(cmds))])))
 
     def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None, angle_dims = []):
@@ -141,13 +132,13 @@ class SerialPlant(Plant):
 
         u_array = self.u.flatten().tolist()
         u_array.append(self.t+self.dt)
-        u_string = ','.join([ str(ui) for ui in u_array ] ) #TODO pack as binary
+        u_string = ','.join([ str(ui) for ui in u_array ]) #TODO pack as binary
         self.serial.flushInput()
         self.serial.flushOutput()
         cmd = self.cmds['APPLY_CONTROL']+','+u_string+";"
         self.serial.write(cmd.encode())
 
-    def step(self,dt=None):
+    def _step(self,dt=None):
         if not self.serial.isOpen():
             self.serial.open()
         if dt is None:
@@ -188,7 +179,7 @@ class SerialPlant(Plant):
         res = np.array([struct.unpack('<d',ri) for ri in res]).flatten()
         return res[self.state_indices],res[-1]
 
-    def reset_state(self):
+    def _reset(self):
         print_with_stamp('Please reset your plant to its initial state and hit Enter',self.name)
         input()
         if not self.serial.isOpen():
@@ -206,53 +197,52 @@ class SerialPlant(Plant):
 
 class PlantDraw(object):
     def __init__(self, plant, refresh_period=(1.0/24), name='PlantDraw'):
-        super(PlantDraw,self).__init__()
+        super(PlantDraw, self).__init__()
         self.name = name
         self.plant = plant
-        self.drawing_thread=None
-        self.polling_thread=None
+        self.drawing_thread = None
+        self.polling_thread = None
 
         self.dt = refresh_period
-        self.scale =  150 # pixels per meter
+        self.scale = 150 # pixels per meter
 
         self.center_x = 0
         self.center_y = 0
         self.running = Event()
 
-        self.polling_pipe,self.drawing_pipe = Pipe()
+        self.polling_pipe, self.drawing_pipe = Pipe()
 
     def init_ui(self):
         self.fig = plt.figure(self.name)#,figsize=(16,10))
-        plt.xlim([-1.5,1.5])
-        plt.ylim([-1.5,1.5])
+        plt.xlim([-1.5, 1.5])
+        plt.ylim([-1.5, 1.5])
         self.ax = plt.gca()
-        self.ax.set_aspect('equal','datalim')
+        self.ax.set_aspect('equal', 'datalim')
         self.ax.grid(True)
         self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
         self.init_artists()
         self.fig.canvas.draw()
-        self.cursor = Cursor(self.ax, useblit=True, color='red', linewidth=2 )
+        self.cursor = Cursor(self.ax, useblit=True, color='red', linewidth=2)
         plt.ion()
         plt.show()
 
-    def drawing_loop(self,drawing_pipe):
+    def drawing_loop(self, drawing_pipe):
         # start the matplotlib plotting
         self.init_ui()
 
         while self.running.is_set():
             exec_time = time()
-            
             # get any data from the polling loop
             updts = None
             while drawing_pipe.poll():
-                data_from_plant= drawing_pipe.recv()
+                data_from_plant = drawing_pipe.recv()
                 if data_from_plant is None:
                     self.running.clear()
                     break
-                
+
                 # get the visuzlization updates from the latest state
-                state,t = data_from_plant
-                updts = self.update(state,t)
+                state, t = data_from_plant
+                updts = self.update(state, t)
 
             if updts is not None:
                 # update the drawing from the plant state
@@ -265,35 +255,35 @@ class PlantDraw(object):
 
             # sleep to guarantee the desired frame rate
             exec_time = time() - exec_time
-            plt.waitforbuttonpress(max(self.dt-exec_time,1e-9))
+            plt.waitforbuttonpress(max(self.dt-exec_time, 1e-9))
 
         # close the matplotlib windows, clean up
         plt.ioff()
         plt.close(self.fig)
 
-    def polling_loop(self,polling_pipe):
+    def polling_loop(self, polling_pipe):
         current_t = -1
         while self.running.is_set():
             exec_time = time()
-            state, t = self.plant.get_plant_state()
+            state, t = self.plant.get_state()
             if t != current_t:
-                polling_pipe.send((state,t))
+                polling_pipe.send((state, t))
 
             # sleep to guarantee the desired frame rate
             exec_time = time() - exec_time
-            sleep(max(self.dt-exec_time,0))
+            sleep(max(self.dt-exec_time, 0))
 
     def start(self):
-        print_with_stamp('Starting drawing loop',self.name)
-        self.drawing_thread = Process(target=self.drawing_loop,args=(self.drawing_pipe,))
+        print_with_stamp('Starting drawing loop', self.name)
+        self.drawing_thread = Process(target=self.drawing_loop, args=(self.drawing_pipe,))
         self.drawing_thread.daemon = True
-        self.polling_thread = Thread(target=self.polling_loop,args=(self.polling_pipe,))
+        self.polling_thread = Thread(target=self.polling_loop, args=(self.polling_pipe,))
         self.polling_thread.daemon = True
         #self.drawing_thread = Process(target=self.run)
         self.running.set()
         self.polling_thread.start()
         self.drawing_thread.start()
-    
+
     def stop(self):
         self.running.clear()
 
@@ -305,12 +295,12 @@ class PlantDraw(object):
             # wait until thread stops
             self.polling_thread.join(10)
 
-        print_with_stamp('Stopped drawing loop',self.name)
-    
-    def update(self):
+        print_with_stamp('Stopped drawing loop', self.name)
+
+    def update(self, *args, **kwargs):
         raise NotImplementedError("You need to implement the self.update() method in your PlantDraw class.")
-    
-    def init_artists(self):
+
+    def init_artists(self, *args, **kwargs):
         raise NotImplementedError("You need to implement the self.init_artists() method in your PlantDraw class.")
 
 # an example that plots lines
@@ -320,7 +310,7 @@ class LivePlot(PlantDraw):
         self.H = H
         self.angi = angi
         # get first measurement
-        state, t = plant.get_plant_state()
+        state, t = plant.get_state()
         self.data = np.array([state])
         self.t_labels = np.array([t])
         
