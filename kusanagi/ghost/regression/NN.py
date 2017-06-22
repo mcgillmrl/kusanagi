@@ -116,10 +116,11 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
-    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[1000,1000,1000], p=0.1, p_input=0.0, name=None):
+    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None,
+                                 hidden_dims=[1000,1000,1000], p=0.1, p_input=0.0,
+                                 nonlinearities=[], name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
-        from kusanagi.ghost.regression.layers import DropoutLayer, relu, selu
-        from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
+        from kusanagi.ghost.regression.layers import DropoutLayer
         if name is None:
             name = self.name
         if input_dims is None:
@@ -128,6 +129,8 @@ class BNN(BaseRegressor):
             output_dims = self.E
         if not isinstance(p, list):
             p = [p]*len(hidden_dims)
+        if not isinstance(nonlinearities, list):
+            nonlinearities = [nonlinearities]*len(hidden_dims)        
         network_spec = []
 
         # input layer
@@ -139,7 +142,7 @@ class BNN(BaseRegressor):
         #network_spec.append( (ReshapeLayer, dict(shape=([0],1,[1]), name=name+'_rshp%d'%(0)) ) )
         #network_spec.append( (GRULayer, dict(num_units=32, name=name+'_gru%d'%(0)) ) )
         for i in range(len(hidden_dims)):
-            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=elu, name=name+'_fc%d'%(i)) ) )
+            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=nonlinearities[i], name=name+'_fc%d'%(i)) ) )
             if p[i] > 0:
                 network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
         # output layer
