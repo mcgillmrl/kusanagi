@@ -165,9 +165,8 @@ class ExperienceDataset(Loadable):
 
             # get output states up to output_steps in the future
             H = states.shape[0]
-            ostates_ = np.concatenate([states[[0]*(x_steps-1)], states])
             ostates = join(
-                [ostates_[i:H-(output_steps-i-1), :] for i in range(output_steps)],
+                [states[i:H-(output_steps-i-1), :] for i in range(output_steps)],
                 axis=1)
             #  create output vector
             tgt = ostates[1:, :] - ostates[:-1, :]\

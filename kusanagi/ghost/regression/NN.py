@@ -116,7 +116,7 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
-    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[1000,1000,1000], p=0.0, p_input=0.0, name=None):
+    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[1000,1000,1000], p=0.1, p_input=0.0, name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer, relu, selu
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
@@ -224,7 +224,7 @@ class BNN(BaseRegressor):
             train_predictions = lasagne.layers.get_output(self.network, train_inputs_std, deterministic=False)
             logsn = self.logsn
 
-        # scale logsn since ouotput network output is standardized
+        # scale logsn since output network output is standardized
         logsn_std = logsn - tt.log(self.Ys)
 
         # build the dropout loss function ( See Gal and Ghahramani 2015)
