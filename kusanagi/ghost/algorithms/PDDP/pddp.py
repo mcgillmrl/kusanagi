@@ -1,3 +1,4 @@
+# pylint: disable=C0103
 import numpy as np
 from kusanagi import utils
 from time import time
@@ -21,6 +22,18 @@ def alternative_Rop(f, x, u):
 def unrolled_jacobian(f, wrt, D):
     return [tt.stack(df) for df in zip(*map(lambda i: [tt.grad(f[i], x) for x in wrt], range(D)))]
 
+def wrap_belief(mx, Sx, triu_indices):
+    z_next = tt.concatenate([mx.flatten(), Sx[triu_indices]])
+    return z_next
+
+def unwrap_belief(z, D):
+    mx, Sx_triu = z[:D], z[D:]
+    Sx = tt.zeros((D, D))
+    triu_indices = np.triu_indices(D)
+    Sx = tt.set_subtensor(Sx[triu_indices], Sx_triu)
+    Sx = Sx + Sx.T - tt.diag(tt.diag(Sx))
+    return mx, Sx, triu_indices
+
 class PDDP(PILCO):
     def __init__(self, params, plant_class, policy_class, cost_func=None,
                  viz_class=None, dynmodel_class=kreg.GP_UI, experience=None,
@@ -28,7 +41,7 @@ class PDDP(PILCO):
         params['policy']['H'] = params['H']
         params['policy']['dt'] = params['plant']['dt']
         params['angle_dims'] = []
-        self.lop=False
+        self.lop = False
         super(PDDP, self).__init__(params, plant_class, policy_class, cost_func,
                                    viz_class, dynmodel_class, experience, async_plant,
                                    name, filename_prefix)
@@ -103,15 +116,6 @@ class PDDP(PILCO):
 
         Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
-        #  get cost at previous time step
-        mcost, Scost = self.cost(mx, Sx)
-        cost_params = self.cost.keywords['params']
-        # add a term for the action
-        R = T.constant(cost_params['R'], dtype=mx.dtype)\
-            if 'R' in cost_params\
-            else tt.zeros((mu.size, mu.size))
-        mcost += mu.dot(R).dot(mu)
-
         # check if dynamics model has an updates dictionary
         updates = theano.updates.OrderedUpdates()
         if hasattr(dynmodel, 'prediction_updates')\
@@ -122,36 +126,57 @@ class PDDP(PILCO):
            and self.policy.prediction_updates is not None:
             updates += self.policy.prediction_updates
 
-        return [mcost, Scost, mx_next, Sx_next, mu, Su], updates
+        return [mx_next, Sx_next, mu, Su], updates
 
-    def backward_pass(self, t, z_prev, V, Vx, Vxx, *args):
+    def get_cost(self, mx, Sx, u):
+        # evaluate state cost function 
+        mcost, Scost = self.cost(mx, Sx)
+
+        # add a term for the action cost (assuming deterministic actions)
+        cost_params = self.cost.keywords['params']
+        R = tt.constant(cost_params['R'], dtype=mx.dtype)\
+            if 'R' in cost_params\
+            else tt.zeros((u.size, u.size))
+        mcost += u.dot(R).dot(u)
+
+        return mcost, Scost
+
+    def backward_pass(self, t, z, V, Vx, Vxx, *args):
         # propragate state forward
-        (z_next, u, m_cost), updates = self.forward_pass(t-1, z_prev, *args)
-
-        Fu, Fx = tt.jacobian(z_next, [u, z_prev])
+        (z_next, u), updates = self.forward_pass(t-1, z, *args)
 
         # compute variables that depend on jacobian
         if self.lop:
-            VxdotFx = theano.tensor.Lop(z_next, z_prev, Vx)
-            VxdotFu = theano.tensor.Lop(z_next, u, Vx)
-            cholVxx = tt.slinalg.cholesky(Vxx)
-            VxxFx = theano.map(theano.tensor.Lop, non_sequences=[z_next, z_prev], cholVxx))
-            VxxFu = theano.tensor.Lop(z_next, u, cholVxx)
-            FxVxxFx = VxxFx.T.dot(VxxFx)
-            FuVxxFx = VxxFu.T.dot(VxxFx)
-            FuVxxFu = VxxFu.T.dot(VxxFu)
+            [VxdotFx, VxdotFu] = theano.tensor.Lop(z_next, [z, u], Vx)
+            #cholVxx = tt.slinalg.cholesky(Vxx)
+            qVxx, rVxx = tt.nlinalg.qr(Vxx)
+            [qVxxTFx, qVxxTFu] = theano.map(lambda v, zn, z, u: theano.tensor.Lop(zn, [z, u], v),
+                                            sequences=qVxx.T,
+                                            non_sequences=[z_next, z, u])[0]
+            rqVxx = rVxx.dot(qVxx)
+            qVxxTVxxFx = rqVxx.dot(qVxxTFx)
+            FxVxxFx = qVxxTFx.T.dot(qVxxTVxxFx)
+            FuVxxFx = qVxxTFu.T.dot(qVxxTVxxFx)
+            FuVxxFu = qVxxTFu.T.dot(rqVxx.dot(qVxxTFu))
         else:
+            Fu, Fx = tt.jacobian(z_next, [u, z])
             VxdotFx = Vx.dot(Fx)
             VxdotFu = Vx.dot(Fu)
             FxVxxFx = Fx.T.dot(Vxx).dot(Fx)
             FuVxxFx = Fu.T.dot(Vxx).dot(Fx)
             FuVxxFu = Fu.T.dot(Vxx).dot(Fu)
 
-        # compute gradients and jacobians of cost
-        lu, lx = tt.grad(m_cost, [u, z_prev])
-        luu, lux = tt.jacobian(lu.flatten(), [u, z_prev], disconnected_inputs='ignore')
-        lxx = tt.jacobian(lx.flatten(), z_prev)
+        # get cost at current state
+        D = self.mx0.get_value().size
+        mx, Sx = unwrap_belief(z, D)[:2]
+        l = self.get_cost(mx, Sx, u)[0]
 
+        # compute gradients and jacobians of cost
+        lu, lx = tt.grad(l, [u, z])
+        luu, lux = tt.jacobian(lu.flatten(), [u, z], disconnected_inputs='ignore')
+        lxx = tt.jacobian(lx.flatten(), z)
+
+        # compute value function
         Qx = lx + VxdotFx
         Qu = lu + VxdotFu
         Qxx = lxx + FxVxxFx
@@ -162,27 +187,24 @@ class PDDP(PILCO):
         V = V + Qu.dot(I)
         Vx = Qx + Qu.dot(L)
         Vxx = Qxx + Qux.T.dot(L)
-        return [V, Vx, Vxx, VxdotFx, VxdotFu], updates
+        return [V, Vx, Vxx, I, L] , updates
 
     def forward_pass(self, t, z, *args):
         # split z into the mean and covariance of the state
         #D = ((tt.sqrt(8*z.shape[0]+9) - 3)/2).astype('int64')
         D = self.mx0.get_value().size
-        triu_indices = np.triu_indices(D)
-
-        mx, Sx_triu = z[:D], z[D:]
-        Sx = tt.zeros((D, D))
-        Sx = tt.set_subtensor(Sx[triu_indices], Sx_triu)
-        Sx = Sx + Sx.T - tt.diag(tt.diag(Sx))
+        mx, Sx, triu_indices = unwrap_belief(z, D)
 
         # compute the next state using the dynamics model
         outs, updates = self.propagate_state(mx, Sx, t, open_loop=True)
-        m_cost, S_cost, mx_next, Sx_next, mu, Su = outs
+        mx_next, Sx_next, mu, Su = outs
 
-        z_next = tt.concatenate([mx_next.flatten(), Sx_next[triu_indices]])
-        return [z_next, mu, m_cost], updates
+        # build belief vector
+        z_next = wrap_belief(mx_next, Sx_next, triu_indices)
 
-    def forward_backwards(self):
+        return [z_next, mu], updates
+
+    def compile_forward_pass(self):
         utils.print_with_stamp('Computing symbolic forward pass')
         u_nom = self.policy.u_nominal
         z_nom = self.policy.z_nominal
@@ -193,52 +215,67 @@ class PDDP(PILCO):
         shared_vars.extend(self.policy.get_all_shared_vars())
 
         forw_out, f_updts = theano.scan(fn=self.forward_pass,
-                                        outputs_info=[z_nom[0], u_nom[0], None],
+                                        outputs_info=[z_nom[0], u_nom[0]],
                                         sequences=[tt.arange(H)],
                                         non_sequences=shared_vars,
                                         strict=True)
-        z_next, u, m_cost = forw_out
+        z_next, u = forw_out
+        utils.print_with_stamp('Compiling forward pass')
         self.trajectory_jac_fn = theano.function([],
                                                  [z_next, u],
                                                  allow_input_downcast=True,
                                                  updates=f_updts,
                                                  name='%s>trajectory_jac_fn'%(self.name))
 
-        utils.print_with_stamp('Computing symbolic backward pass')
+    def compile_backward_pass(self):
+        utils.print_with_stamp('Computing symbolic backward pass Lop')
+        u_nom = self.policy.u_nominal
+        z_nom = self.policy.z_nominal
 
-        z_nom = tt.concatenate([z_nom[0][None, :], z_next])
+        # get terminal cost (cost of the las time step in this case)
+        D = self.mx0.get_value().size
+        H = z_nom.shape[0]
+        z_H = self.forward_pass(H-1, z_nom[-1])[0][0]
+        mx_H, Sx_H = unwrap_belief(z_H, D)[:2]
+        l_H = self.get_cost(mx_H, Sx_H, u_nom[-1])[0]
 
-        self.lop=True
+        # compute gradients and jacobians of terminal cost
+        lx_H = tt.grad(l_H, z_H)
+        lxx_H = tt.jacobian(lx_H.flatten(), z_H)
+
+        # get shared vars
+        shared_vars = []
+        shared_vars.extend(self.dynamics_model.get_all_shared_vars())
+        shared_vars.extend(self.policy.get_all_shared_vars())
+
+        self.lop = True
         back_out, b_updts = theano.scan(fn=self.backward_pass,
-                                        outputs_info=[m_cost[-1][None],
-                                                      tt.zeros((z_nom.shape[1],)),
-                                                      tt.zeros((z_nom.shape[1], z_nom.shape[1])),
-                                                      None, None],
+                                        outputs_info=[l_H, lx_H, lxx_H, None, None],
                                         sequences=[tt.arange(H), z_nom[:H]],
                                         non_sequences=shared_vars,
                                         go_backwards=True,
                                         strict=True)
-        self.lop=False
+        self.lop = False
+        utils.print_with_stamp('Computing symbolic backward pass')
         back_out2, b_updts = theano.scan(fn=self.backward_pass,
-                                         outputs_info=[m_cost[-1][None],
-                                                       tt.zeros((z_nom.shape[1],)),
-                                                       tt.zeros((z_nom.shape[1], z_nom.shape[1])),
-                                                       None, None],
+                                         outputs_info=[l_H, lx_H, lxx_H, None, None],
                                          sequences=[tt.arange(H), z_nom[:H]],
                                          non_sequences=shared_vars,
                                          go_backwards=True,
                                          strict=True)
 
+        utils.print_with_stamp('Compiliing backward pass Lop')
         self.trajectory_jac_fn2 = theano.function([],
                                                   back_out,
                                                   allow_input_downcast=True,
-                                                  updates=f_updts+b_updts,
+                                                  updates=b_updts,
                                                   name='%s>trajectory_jac_fn2'%(self.name))
+        utils.print_with_stamp('Compiliing backward pass Lop')
         self.trajectory_jac_fn3 = theano.function([],
                                                   back_out2,
                                                   allow_input_downcast=True,
-                                                  updates=f_updts+b_updts,
-                                                  name='%s>trajectory_jac_fn2'%(self.name))                                                  
+                                                  updates=b_updts,
+                                                  name='%s>trajectory_jac_fn2'%(self.name))
         return
 
     def train_policy(self):
@@ -246,24 +283,26 @@ class PDDP(PILCO):
         converged = False
         self.n_evals = 0
         if not hasattr(self, 'trajectory_jac_fn'):
-            self.forward_backwards()
+            self.compile_forward_pass()
+            self.compile_backward_pass()
         utils.print_with_stamp('')
 
         grads = []
         times = []
-        start = time()
         #for t in xrange(40):
         #    grads.append(self.trajectory_jac_fn(t))
         #grads = self.trajectory_jac_fn()
-        V, Vx, Vxx, VxdotFx, VxdotFu = self.trajectory_jac_fn2()
-        V_, Vx_, Vxx_, VxdotFx_, VxdotFu_ = self.trajectory_jac_fn3()
-        #print(grads)
-        print(VxdotFx[0], VxdotFx_[0])
-        print(VxdotFx[1], VxdotFx_[1])
-        print(VxdotFu[0], VxdotFu_[0])
-        print(VxdotFu[1], VxdotFu_[1])
+        start = time()
+        V, Vx, Vxx, I, L = self.trajectory_jac_fn2()
         end = time()-start
         utils.print_with_stamp("Elapsed: %f"%(end))
+        start = time()
+        V_, Vx_, Vxx_, I_, L_ = self.trajectory_jac_fn3()
+        end = time()-start
+        utils.print_with_stamp("Elapsed: %f"%(end))
+        #print(grads)
+        print(I, I_)
+        print(L, L_)
 
         while not converged and self.n_evals < self.max_evals:
             # initialize V, Vx and Vxx

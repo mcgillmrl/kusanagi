@@ -118,9 +118,10 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None,
                                  hidden_dims=[1000,1000,1000], p=0.1, p_input=0.0,
-                                 nonlinearities=[], name=None):
+                                 nonlinearities=lasagne.nonlinearities.sigmoid, name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
+        from lasagne.nonlinearities import linear
         if name is None:
             name = self.name
         if input_dims is None:

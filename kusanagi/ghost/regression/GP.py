@@ -252,52 +252,65 @@ class GP(BaseRegressor):
 
         # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
-            penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': tt.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
+            penalty_params = {'log_snr': np.log(1000),
+                              'log_ls': np.log(100),
+                              'log_std': tt.log(self.X.std(0)*(N/(N-1.0))),
+                              'p': 30}
             loss += self.snr_penalty(self.loghyp)
 
         # Compute the gradients for the sum of loss for all output dimensions
-        dloss = tt.grad(loss.sum(),self.loghyp)
+        dloss = tt.grad(loss.sum(), self.loghyp)
 
         # Compile the theano functions
         if compile_funcs:
-            utils.print_with_stamp('Compiling full GP training loss function',self.name)
-            self.loss_fn = F((),loss,name='%s>loss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-            utils.print_with_stamp('Compiling gradient of full GP training loss function',self.name)
-            self.dloss_fn = F((),(loss,dloss),name='%s>dloss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
+            utils.print_with_stamp('Compiling full GP training loss function',
+                                   self.name)
+            self.loss_fn = F((), loss, name='%s>loss'%(self.name),
+                             profile=self.profile, mode=self.compile_mode,
+                             allow_input_downcast=True, updates=updts)
+            utils.print_with_stamp('Compiling gradient of full GP training loss function',
+                                   self.name)
+            self.dloss_fn = F((), (loss,dloss), name='%s>dloss'%(self.name),
+                              profile=self.profile, mode=self.compile_mode,
+                              allow_input_downcast=True, updates=updts)
         self.state_changed = True # for saving
 
-    def predict_symbolic(self,mx,Sx):
+    def predict_symbolic(self, mx, Sx):
         idims = self.D
         odims = self.E
 
         # compute the mean and variance for each output dimension
-        def predict_odim(L,beta,loghyp,X,mx):
-            loghyps = (loghyp[:idims+1],loghyp[idims+1])
+        def predict_odim(L, beta, loghyp, X, mx):
+            loghyps = (loghyp[:idims+1], loghyp[idims+1])
             kernel_func = partial(cov.Sum, loghyps, self.covs)
 
-            k = kernel_func(mx[None,:],X)
+            k = kernel_func(mx[None, :], X)
             mean = k.dot(beta)
-            kc = solve_lower_triangular(L,k.flatten())
-            variance = kernel_func(mx[None,:],all_pairs=False) - kc.dot(kc)
+            kc = solve_lower_triangular(L, k.flatten())
+            variance = kernel_func(mx[None, :], all_pairs=False) - kc.dot(kc)
 
             return mean, variance
-        
-        (M,S), updts = theano.scan(fn=predict_odim, sequences=[self.L,self.beta,self.loghyp], non_sequences=[self.X,mx], allow_gc = False,name='%s>predict_scan'%(self.name))
+
+        (M, S), updts = theano.scan(fn=predict_odim,
+                                    sequences=[self.L, self.beta, self.loghyp],
+                                    non_sequences=[self.X, mx],
+                                    allow_gc=False,
+                                    name='%s>predict_scan'%(self.name))
 
         # reshape output variables
         M = M.flatten()
         S = tt.diag(S.flatten())
-        V = tt.zeros((self.D,self.E))
+        V = tt.zeros((self.D, self.E))
 
-        return M,S,V
-    
-    def loss(self,params,parameter_shapes):
-        loghyp = utils.unwrap_params(params,parameter_shapes)
+        return M, S, V
+
+    def loss(self, params, parameter_shapes):
+        loghyp = utils.unwrap_params(params, parameter_shapes)
         self.set_params({'loghyp': loghyp})
         if self.nigp:
             # update the nigp parameter using the derivative of the mean function
             dM2 = self.dM2_fn()
-            nigp = ((dM2[:,:,:,None]*self.X_cov[None]).sum(2)*dM2).sum(-1)
+            nigp = ((dM2[:, :, :, None]*self.X_cov[None]).sum(2)*dM2).sum(-1)
             self.nigp.set_value(nigp)
 
         loss,dloss = self.dloss_fn()
@@ -397,20 +410,20 @@ class GP_UI(GP):
         iL = eyeE/lscales.dimshuffle(0,1,'x')
 
         # predictive mean
-        inp = iL.dot(zeta.T).transpose(0,2,1) 
+        inp = iL.dot(zeta.T).transpose(0,2,1)
         iLdotSx = iL.dot(Sx) # force the matrix inverse to be done with double precision
         #TODO vectorize this
-        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in range(odims)]) + tt.eye(idims)
+        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in range(odims)]) + tt.eye(idims) 
         t = tt.stack([solve(B[i].T, inp[i].T).T for i in range(odims)])      # E x N x D
-        c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))
+        c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))         # E
         l = tt.exp(-0.5*tt.sum(inp*t,2))
         lb = l*self.beta # beta should have been precomputed in init_loss # E x N dot E x N
         M = tt.sum(lb,1)*c
         
         # input output covariance
-        tiL = tt.stack([t[i].dot(iL[i]) for i in range(odims)])
-        #V = Sx.dot(tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
-        V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
+        #tiL = tt.stack([t[i].dot(iL[i]) for i in range(odims)])
+        tiL = (t[:,:,None,:]*iL[:,None,:,:]).sum(-1)
+        V = Sx.dot(tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*tt.sum(inp*inp,2)
@@ -447,7 +460,7 @@ class GP_UI(GP):
         M2 = M2_[-1]
         S = M2 - tt.outer(M,M)
 
-        return M,S,V
+        return M,S,V  
 
 class RBFGP(GP_UI):
     ''' RBF network (GP with uncertain inputs/deterministic outputs)'''

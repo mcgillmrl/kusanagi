@@ -22,15 +22,15 @@ class Plant(gym.Env):
                  *args, **kwargs):
         self.name = name
         self.dt = dt
-        if noise_cov:
-            assert noise_cov.shape[0] == noise_cov.shape[1] and\
-                   noise_cov.shape[0] == self.observation_space.shape[0]
         self.noise_cov = noise_cov
         self.angle_dims = angle_dims
         self.state = None
         self.action = None
         self.t = 0
         self.done = False
+
+        # initialize loss_func
+        self.loss_func = None
 
     @property
     def noise_cov(self):
@@ -39,7 +39,10 @@ class Plant(gym.Env):
     @noise_cov.setter
     def noise_cov(self, noise_cov):
         self.__noise_cov = noise_cov
-        self.noise_chol = np.linalg.cholesky(noise_cov)
+        if noise_cov is not None:
+            assert noise_cov.shape[0] == noise_cov.shape[1] and\
+                   noise_cov.shape[0] == self.observation_space.shape[0]
+            self.noise_chol = np.linalg.cholesky(noise_cov)
 
     def apply_control(self, u):
         self.u = np.array(u, dtype=np.float64)
@@ -49,13 +52,16 @@ class Plant(gym.Env):
     def get_state(self):
         state = self.state
         assert state is not None, 'Plant has not been reset'
-        if self.noise:
+        if self.noise_cov is not None:
             # noisy state measurement
             state += np.random.randn(state.size).dot(self.noise_chol)
         if self.angle_dims:
             # convert angle dimensions to complex representation
             state = gTrig_np(state, self.angle_dims).flatten()
         return state.flatten(), self.t
+
+    def set_state(self, state):
+        self.state = state
 
     def stop(self):
         print_with_stamp('Stopping robot', self.name)
@@ -93,14 +99,19 @@ class ODEPlant(Plant):
         # get time from solver
         self.t = self.solver.t
 
-    def _step(self):
+    def _step(self, action):
+        self.apply_control(action)
         dt = self.dt
         t1 = self.solver.t + dt
         while self.solver.successful and self.solver.t < t1:
             self.solver.integrate(self.solver.t + dt)
-        self.x = np.array(self.solver.y)
+        self.state = np.array(self.solver.y)
         self.t = self.solver.t
-        return self.x
+        cost = None
+        
+        if self.loss_func is not None:
+            cost = self.loss_func(self.state)
+        return self.state, cost
 
     def dynamics(self, *args, **kwargs):
         msg = "You need to implement self.dynamics in the ODEPlant subclass."
@@ -110,7 +121,9 @@ class SerialPlant(Plant):
     cmds = ['RESET_STATE', 'GET_STATE', 'APPLY_CONTROL', 'CMD_OK', 'STATE']
     cmds = dict(list(zip(cmds,[str(i) for i in range(len(cmds))])))
 
-    def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None, name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0', state_indices=None, maxU=None, angle_dims = []):
+    def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None,
+                 name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0',
+                 state_indices=None, maxU=None, angle_dims = []):
         super(SerialPlant,self).__init__(params, x0, S0, dt, noise, name, angle_dims)
         self.port = port
         self.baud_rate = baud_rate
@@ -118,7 +131,7 @@ class SerialPlant(Plant):
         self.state_indices = state_indices if state_indices is not None else list(range(len(x0)))
         self.U_scaling = 1.0/np.array(maxU);
         self.t=-1
-    
+
     def apply_control(self,u):
         if not self.serial.isOpen():
             self.serial.open()
@@ -128,7 +141,7 @@ class SerialPlant(Plant):
         if self.U_scaling is not None:
             self.u *= self.U_scaling;
         if self.t < 0:
-            self.x,self.t= self.state_from_serial()
+            self.state,self.t= self.state_from_serial()
 
         u_array = self.u.flatten().tolist()
         u_array.append(self.t+self.dt)
@@ -145,8 +158,8 @@ class SerialPlant(Plant):
             dt = self.dt
         t1 = self.t + dt
         while self.t < t1:
-            self.x,self.t= self.state_from_serial()
-        return self.x
+            self.state,self.t= self.state_from_serial()
+        return self.state
 
     def state_from_serial(self):
         self.serial.flushInput()
@@ -188,7 +201,7 @@ class SerialPlant(Plant):
         self.serial.flushOutput()
         self.serial.write((self.cmds['RESET_STATE']+";").encode())
         sleep(self.dt)
-        self.x,self.t= self.state_from_serial()
+        self.state,self.t= self.state_from_serial()
         self.t=-1
 
     def stop(self):
@@ -243,23 +256,39 @@ class PlantDraw(object):
                 # get the visuzlization updates from the latest state
                 state, t = data_from_plant
                 updts = self.update(state, t)
-
-            if updts is not None:
-                # update the drawing from the plant state
-                self.fig.canvas.restore_region(self.bg)
-
-                for artist in updts:
-                    self.ax.draw_artist(artist)
-                #self.fig.canvas.blit(self.ax.bbox)
-                self.fig.canvas.draw()
+                self.update_canvas(updts)
 
             # sleep to guarantee the desired frame rate
             exec_time = time() - exec_time
             plt.waitforbuttonpress(max(self.dt-exec_time, 1e-9))
+        self.close()
 
+    def close(self):
         # close the matplotlib windows, clean up
         plt.ioff()
         plt.close(self.fig)
+
+    def update(self, *args, **kwargs):
+        updts = self._update(*args, **kwargs)
+        self.update_canvas(updts)
+
+    def _update(self, *args, **kwargs):
+        msg = "You need to implement the self._update() method in your PlantDraw class."
+        raise NotImplementedError(msg)
+
+    def init_artists(self, *args, **kwargs):
+        msg = "You need to implement the self.init_artists() method in your PlantDraw class."
+        raise NotImplementedError(msg)
+
+    def update_canvas(self, updts):
+        if updts is not None:
+            # update the drawing from the plant state
+            self.fig.canvas.restore_region(self.bg)
+
+            for artist in updts:
+                self.ax.draw_artist(artist)
+            #self.fig.canvas.blit(self.ax.bbox)
+            self.fig.canvas.draw()
 
     def polling_loop(self, polling_pipe):
         current_t = -1
@@ -297,63 +326,58 @@ class PlantDraw(object):
 
         print_with_stamp('Stopped drawing loop', self.name)
 
-    def update(self, *args, **kwargs):
-        raise NotImplementedError("You need to implement the self.update() method in your PlantDraw class.")
-
-    def init_artists(self, *args, **kwargs):
-        raise NotImplementedError("You need to implement the self.init_artists() method in your PlantDraw class.")
-
 # an example that plots lines
 class LivePlot(PlantDraw):
-    def __init__(self, plant, refresh_period=1.0, name='Serial Data',H=5.0, angi=[]):
-        super(LivePlot, self).__init__(plant, refresh_period,name)
+    def __init__(self, plant, refresh_period=1.0, name='Serial Data', H=5.0, angi=[]):
+        super(LivePlot, self).__init__(plant, refresh_period, name)
         self.H = H
         self.angi = angi
         # get first measurement
         state, t = plant.get_state()
         self.data = np.array([state])
         self.t_labels = np.array([t])
-        
+
         # keep track of latest time stamp and state
         self.current_t = t
         self.previous_update_time = time()
         self.update_period = refresh_period
 
     def init_artists(self):
-        self.lines =[ plt.Line2D(self.t_labels,self.data[:,i], c=next(color_generator)[0]) for i in range(self.data.shape[1]) ]
-        self.ax.set_aspect('auto','datalim')
+        self.lines = [plt.Line2D(self.t_labels, self.data[:, i], c=next(color_generator)[0])\
+                      for i in range(self.data.shape[1])]
+        self.ax.set_aspect('auto', 'datalim')
         for line in self.lines:
             self.ax.add_line(line)
         self.previous_update_time = time()
 
     def update(self, state, t):
-        if t!=self.current_t:
-            if len(self.data)<=1:
+        if t != self.current_t:
+            if len(self.data) <= 1:
                 self.data = np.array([state]*2)
                 self.t_labels = np.array([t]*2)
 
-            if len(self.angi)>0:
-                state[self.angi] = (state[self.angi] + np.pi) % (2 * np.pi ) - np.pi
+            if len(self.angi) > 0:
+                state[self.angi] = (state[self.angi]+np.pi)%(2*np.pi) - np.pi
 
             self.current_t = t
             # only keep enough data points to fill the window to avoid using up too much memory
             curr_time = time()
-            self.update_period = 0.95*self.update_period + 0.05*(curr_time-self.previous_update_time)
+            self.update_period = 0.95*self.update_period+0.05*(curr_time-self.previous_update_time)
             self.previous_update_time = curr_time
             history_size = int(1.5*self.H/self.update_period)
-            self.data = np.vstack((self.data,state))[-history_size:,:]
-            self.t_labels = np.append(self.t_labels,t)[-history_size:]
+            self.data = np.vstack((self.data, state))[-history_size:, :]
+            self.t_labels = np.append(self.t_labels, t)[-history_size:]
 
             # update the lines
             for i in range(len(self.lines)):
-                self.lines[i].set_data(self.t_labels,self.data[:,i])
+                self.lines[i].set_data(self.t_labels, self.data[:, i])
 
             # update the plot limits
-            plt.xlim([self.t_labels.min(),self.t_labels.max()])
-            plt.xlim([t-self.H,t])
+            plt.xlim([self.t_labels.min(), self.t_labels.max()])
+            plt.xlim([t-self.H, t])
             mm = self.data.mean()
-            ll = 1.05*np.abs(self.data[:,:]).max()
-            plt.ylim([mm-ll,mm+ll])
-            self.ax.autoscale_view(tight=True,scalex=True,scaley=True)
+            ll = 1.05*np.abs(self.data[:, :]).max()
+            plt.ylim([mm-ll, mm+ll])
+            self.ax.autoscale_view(tight=True, scalex=True, scaley=True)
 
         return self.lines

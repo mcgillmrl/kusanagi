@@ -6,13 +6,15 @@ import numpy as np
 import theano
 import theano.tensor as tt
 
+from gym import spaces
+from matplotlib import pyplot as plt
+
 from kusanagi.shell.plant import ODEPlant, PlantDraw
-from kusanagi.ghost.cost import quadratic_saturating_loss
-from kusanagi.utils import print_with_stamp, gTrig_np, gTrig2
+from kusanagi.ghost.cost import generic_loss, build_loss_func
+from kusanagi.utils import gTrig2
 from kusanagi.ghost.control import RBFPolicy
 from kusanagi.ghost.regression import GP_UI
 from kusanagi import utils
-from matplotlib import pyplot as plt
 
 def default_params():
     # setup learner parameters
@@ -46,9 +48,9 @@ def default_params():
     # cost function
     cost_params = {}
     cost_params['target'] = [0, 0, 0, np.pi]
-    cost_params['width'] = 0.25
+    cost_params['cw'] = 0.25
     cost_params['expl'] = 0.0
-    cost_params['pendulum_length'] = plant_params['pole_length']
+    cost_params['pole_length'] = plant_params['pole_length']
 
     learner_params['max_evals'] = 150
     learner_params['conv_thr'] = 1e-12
@@ -66,31 +68,17 @@ def default_params():
             'cost_func': cartpole_loss,
             'dynmodel_class': GP_UI}
 
-# TODO this can be converted into a generic loss function
-def cartpole_loss(mx, Sx, params,
-                  loss_func=quadratic_saturating_loss,
-                  u=None):
-    angle_dims = params['angle_dims']
-    cw = params['width']
-    if not isinstance(cw, list):
-        cw = [cw]
-    b = params['expl']
-    ell = params['pendulum_length']
-    target = np.array(params['target'])
+def cartpole_loss(mx, Sx,
+                  angle_dims=[3],
+                  pole_length=0.5,
+                  target=np.array([0, 0, 0, np.pi]),
+                  *args, **kwargs):
+    target = np.array(target)
     D = target.size
 
     #convert angle dimensions
     targeta = utils.gTrig_np(target, angle_dims).flatten()
     Da = targeta.size
-
-    # build cost scaling function
-    Q = np.zeros((Da, Da))
-    Q[0, 0] = 1
-    Q[0, -2] = ell
-    Q[-2, 0] = ell
-    Q[-2, -2] = ell**2
-    Q[-1, -1] = ell**2
-
     if Sx is None:
         flatten = False
         if mx.ndim == 1:
@@ -98,59 +86,60 @@ def cartpole_loss(mx, Sx, params,
             mx = mx[None, :]
         mxa = utils.gTrig(mx, angle_dims, D)
         if flatten:
-            mxa = mxa.flatten() # since we are dealing with one input vector at a time
+            # since we are dealing with one input vector at a time
+            mxa = mxa.flatten()
         Sxa = None
-
-        cost = []
-        # total cost is the sum of costs with different widths
-        for c in cw:
-            loss_params = {}
-            loss_params['target'] = targeta
-            loss_params['Q'] = Q/c**2
-            cost_c = loss_func(mxa, None, loss_params)
-            cost.append(cost_c)
-
-        return sum(cost)/len(cw)
     else:
         # angle dimensions are removed, and their complex representation is appended
-        mxa, Sxa, Ca = gTrig2(mx, Sx, angle_dims, D)
+        mxa, Sxa = gTrig2(mx, Sx, angle_dims, D)[:2]
 
-        M_cost = []
-        S_cost = []
-        # total cost is the sum of costs with different widths
-        for c in cw:
-            loss_params = {}
-            loss_params['target'] = targeta
-            loss_params['Q'] = Q/c**2
-            m_cost, s_cost = loss_func(mxa, Sxa, loss_params)
-            if b is not None and b != 0.0:
-                m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
-            M_cost.append(m_cost)
-            S_cost.append(s_cost)
-        return sum(M_cost)/len(cw), sum(S_cost)/(len(cw)**2)
+    # build cost scaling function
+    Q = np.zeros((Da, Da))
+    Q[0, 0] = 1
+    Q[0, -2] = pole_length
+    Q[-2, 0] = pole_length
+    Q[-2, -2] = pole_length**2
+    Q[-1, -1] = pole_length**2
+
+    return generic_loss(mxa, Sxa, targeta, Q, *args, **kwargs)
 
 class Cartpole(ODEPlant):
+    metadata = {
+        'render.modes': ['human']
+    }
     def __init__(self, pole_length=0.5, pole_mass=0.5,
                  cart_mass=0.5, friction=0.1, gravity=9.82,
+                 state0=np.array([0.0, 0.0, 0.0, np.pi]), cov0=None,
+                 loss_func=build_loss_func(cartpole_loss, False, 'cartpole_loss'),
                  *args, **kwargs):
         super(Cartpole, self).__init__(*args, **kwargs)
+        # cartpole system parameters
         self.l = pole_length
         self.m = pole_mass
         self.M = cart_mass
         self.b = friction
         self.g = gravity
+        # initial state
+        self.state0 = state0
+        self.cov0 = cov0
+        # pointer to the class that will draw the state of the carpotle system
         self.renderer = None
 
+        # 4 state dims (x ,x_dot, theta_dot, theta)
+        o_lims = np.array([np.finfo(np.float).max for i in range(4)])
+        self.observation_space = spaces.Box(-o_lims, o_lims)
+        # 1 action dim (x_force)
+        a_lims = np.array([np.finfo(np.float).max for i in range(1)])
+        self.action_space = spaces.Box(-a_lims, a_lims)
+
+        # reward/loss function
+        self.loss_func = loss_func
+
     def dynamics(self, t, z):
-        l = self.l
-        m = self.m
-        M = self.M
-        b = self.b
-        g = self.g
+        l, m, M, b, g = self.l, self.m, self.M, self.b, self.g
         f = self.u if self.u is not None else np.array([0])
 
-        sz = np.sin(z[3])
-        cz = np.cos(z[3])
+        sz, cz = np.sin(z[3]), np.cos(z[3])
         cz2 = cz*cz
         a0 = m*l*z[2]*z[2]*sz
         a1 = g*sz
@@ -165,30 +154,37 @@ class Cartpole(ODEPlant):
 
         return dz
 
-    def _render(self):
+    def _reset(self):
+        state0 = self.state0
+        if self.cov0 is not None:
+            L0 = np.linalg.cholesky(self.cov0)
+            state0 += np.random.randn(state0.size).dot(L0)
+        self.set_state(state0)
+
+    def _render(self, mode='human', close=False):
         if self.renderer is None:
-            self.renderer = CartpoleDraw(self)        
+            self.renderer = CartpoleDraw(self)
+            self.renderer.init_ui()
+        updts = self.renderer.update(*self.get_state())
+
+    def _close(self):
+        self.renderer.close()
 
 class CartpoleDraw(PlantDraw):
     def __init__(self, cartpole_plant, refresh_period=(1.0/24), name='CartpoleDraw'):
         super(CartpoleDraw, self).__init__(cartpole_plant, refresh_period, name)
-        if self.plant.params is not None:
-            l = self.plant.l
-            m = self.plant.m
-            M = self.plant.M
-        else:
-            l = 0.5
-            m = 0.5
-            M = 0.5
+        l = self.plant.l
+        m = self.plant.m
+        M = self.plant.M
 
-        self.mass_r = 0.05*np.sqrt( m ) # distance to corner of bounding box
-        self.cart_h = 0.5*np.sqrt( M )
+        self.mass_r = 0.05*np.sqrt(m) # distance to corner of bounding box
+        self.cart_h = 0.5*np.sqrt(M)
 
         self.center_x = 0
         self.center_y = 0
 
         # initialize the patches to draw the cartpole
-        cart_xy =  (self.center_x-0.5*self.cart_h, self.center_y-0.125*self.cart_h)
+        cart_xy = (self.center_x-0.5*self.cart_h, self.center_y-0.125*self.cart_h)
         self.cart_rect = plt.Rectangle(cart_xy, self.cart_h, 0.25*self.cart_h, facecolor='black')
         self.pole_line = plt.Line2D((self.center_x, 0), (self.center_y, l), lw=2, c='r')
         self.mass_circle = plt.Circle((0, l), self.mass_r, fc='y')
@@ -198,8 +194,8 @@ class CartpoleDraw(PlantDraw):
         self.ax.add_patch(self.mass_circle)
         self.ax.add_line(self.pole_line)
 
-    def update(self, state, t):
-        l = self.plant.params['l']
+    def _update(self, state, t, *args, **kwargs):
+        l = self.plant.l
 
         cart_x = self.center_x + state[0]
         cart_y = self.center_y
