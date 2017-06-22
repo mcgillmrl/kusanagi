@@ -150,7 +150,7 @@ class ExperienceDataset(Loadable):
             # pad with initial state for the first x_steps timesteps
             states_ = np.concatenate([states_[[0]*(x_steps-1)], states_])
             # get input states up to x_steps in the past.
-            
+
             states_ = join(
                 [states_[i:i-x_steps-(output_steps-1), :] for i in range(x_steps)],
                 axis=1)

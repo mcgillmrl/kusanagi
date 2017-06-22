@@ -97,7 +97,7 @@ class BaseRegressor(Loadable):
     def get_dataset(self):
         return self.X.get_value(), self.Y.get_value()
     
-    def init_predict(self, input_covariance=False, **kwargs):
+    def init_predict(self, input_covariance=False, batch_predict=False, *args, **kwargs):
         ''' Compiles a prediction function for the operation specified in self.predict_symbolic'''
         # input variables
         mx = tt.vector('mx')
@@ -108,7 +108,7 @@ class BaseRegressor(Loadable):
 
         # get prediction
         utils.print_with_stamp('Initialising expression graph for prediction',self.name)
-        output_vars = self.predict_symbolic(mx,Sx,**kwargs)
+        output_vars = self.predict_symbolic(mx, Sx, *args, **kwargs)
         
         # outputs
         if not any([isinstance(output_vars, cl) for cl in [tuple, list]]):
@@ -133,16 +133,16 @@ class BaseRegressor(Loadable):
     def get_updates(self):
         return theano.updates.OrderedUpdates()
 
-    def predict(self,mx,Sx=None):
+    def predict(self,mx,Sx=None, *args, **kwargs):
         # check if we need to compile the prediction functions
         if Sx is None:
             if not hasattr(self,'predict_fn') or self.predict_fn is None:
-                self.predict_fn = self.init_predict(input_covariance=False)
+                self.predict_fn = self.init_predict(input_covariance=False, *args, **kwargs)
                 self.state_changed = True # for saving
             predict = self.predict_fn
         else:
             if not hasattr(self,'predict_ic_fn') or self.predict_ic_fn is None:
-                self.predict_ic_fn = self.init_predict(input_covariance=True)
+                self.predict_ic_fn = self.init_predict(input_covariance=True, *args, **kwargs)
                 self.state_changed = True # for saving
             predict = self.predict_ic_fn
         

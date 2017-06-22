@@ -17,7 +17,7 @@ class BNN(BaseRegressor):
         self.name=name
         self.should_recompile = False
         self.trained = False
-        
+
         self.logsn = theano.shared((np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX), name='%s_logsn'%(self.name))
         self.lengthscale = 1e-2
 
@@ -41,29 +41,29 @@ class BNN(BaseRegressor):
 
         self.learn_noise = learn_noise
         self.heteroscedastic = heteroscedastic
-        
+
         # filename for saving
         self.filename = '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX) if filename is None else filename
         BaseRegressor.__init__(self,name=name,filename=self.filename)
         if filename is not None:
             self.load()
-        
+
         # register theanno functions and shared variables for saving
         #self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
         self.register_types([tt.sharedvar.SharedVariable])
         self.register(['logsn','network_params','network_spec'])
-    
+
     def load(self, output_folder=None,output_filename=None):
         dropout_samples = self.dropout_samples.get_value()
         super(BNN,self).load(output_folder,output_filename)
         self.dropout_samples.set_value(dropout_samples)
-        
+
         if self.network_params is None:
             self.network_params = {}
-        
+
         if self.network_spec is not None:
             self.network = self.build_network( self.network_spec, params=self.network_params, name=self.name)
-        
+
     def save(self, output_folder=None,output_filename=None):
         # store references to the network shared variables, so we can save and load them correctly
         self.network_params = []
@@ -72,7 +72,7 @@ class BNN(BaseRegressor):
             self.network_params.append((layer.name,layer_params))
         self.network_params = dict(self.network_params)
         super(BNN,self).save(output_folder,output_filename)
-    
+
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
             v = [(attr_name,self.__dict__[attr_name]) for attr_name in list(self.__dict__.keys()) if isinstance(self.__dict__[attr_name],tt.sharedvar.SharedVariable)]
@@ -116,7 +116,7 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
-    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[200,200], p=0.05, p_input=0.0, name=None):
+    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None, hidden_dims=[1000,1000,1000], p=0.0, p_input=0.0, name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer, relu, selu
         from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
@@ -139,7 +139,7 @@ class BNN(BaseRegressor):
         #network_spec.append( (ReshapeLayer, dict(shape=([0],1,[1]), name=name+'_rshp%d'%(0)) ) )
         #network_spec.append( (GRULayer, dict(num_units=32, name=name+'_gru%d'%(0)) ) )
         for i in range(len(hidden_dims)):
-            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=selu, name=name+'_fc%d'%(i)) ) )
+            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=elu, name=name+'_fc%d'%(i)) ) )
             if p[i] > 0:
                 network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
         # output layer
@@ -244,7 +244,7 @@ class BNN(BaseRegressor):
 
         # SGD trainer
         min_method = lasagne.updates.adam
-        lr = 1e-3
+        lr = tt.scalar('lr')
         updates = min_method(loss,params,learning_rate=lr)
         # if we are learning the noise
         if self.learn_noise and not self.heteroscedastic:
@@ -253,7 +253,7 @@ class BNN(BaseRegressor):
         # compile the training function
         l2_error = tt.square(delta_y).sum(1).mean()
         utils.print_with_stamp('Compiling training and  loss functions',self.name)
-        self.train_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale],[loss,l2_error],updates=updates,allow_input_downcast=True)
+        self.train_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale,lr],[loss,l2_error],updates=updates,allow_input_downcast=True)
         self.loss_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale],[loss,l2_error],allow_input_downcast=True)
         utils.print_with_stamp('Done compiling',self.name)
 
@@ -367,7 +367,7 @@ class BNN(BaseRegressor):
         # draw samples from the network
         self.update_fn()
 
-    def train(self, batchsize=100, maxiters=5000, input_ls=None, hidden_ls=None):
+    def train(self, batchsize=100, maxiters=5000, input_ls=None, hidden_ls=None, lr=1e-4):
         if input_ls is None:
             # set to some proportion of the standard deviation (inputs are scaled and centered to N(0,1) )
             input_ls = 1.0
@@ -384,13 +384,14 @@ class BNN(BaseRegressor):
             start_time = time.time()
             should_exit=False
             for x,y in utils.iterate_minibatches(self.X.get_value(borrow=True), self.Y.get_value(borrow=True), batch_size, shuffle=True):
-                ret = self.train_fn(x,y,input_ls,hidden_ls)
+                ret = self.train_fn(x,y,input_ls,hidden_ls,lr)
                 iters+=1
                 if iters > maxiters:
                     should_exit=True
                     break
             elapsed_time = time.time() - start_time
-            utils.print_with_stamp('iter: %d, loss: %E, error: %E, elapsed: %E, sn2: %s'%(iters,ret[0],ret[1],elapsed_time, np.exp(2*self.logsn.get_value())),self.name,True)
+            #utils.print_with_stamp('iter: %d, loss: %E, error: %E, elapsed: %E, sn2: %s'%(iters,ret[0],ret[1],elapsed_time, np.exp(2*self.logsn.get_value())),self.name,True)
+            utils.print_with_stamp('iter: %d, loss: %E, error: %E, elapsed: %E'%(iters,ret[0],ret[1],elapsed_time),self.name,True)
             if should_exit:
                 break
         print('')
