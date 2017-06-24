@@ -117,4 +117,4 @@ def build_loss_func(loss_func, uncertain_inputs=False, name='loss_func', *args, 
     Sx = tt.matrix('Sx') if uncertain_inputs else None
     inputs = [mx, Sx] if uncertain_inputs else [mx]
     outputs = loss_func(mx, Sx, *args, **kwargs)
-    return theano.function(inputs, outputs, name=name)
+    return theano.function(inputs, outputs, name=name, allow_input_downcast=True)

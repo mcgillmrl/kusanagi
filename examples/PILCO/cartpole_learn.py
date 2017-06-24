@@ -31,8 +31,8 @@ if __name__ == '__main__':
     learner_params['params']['realtime'] = False
     learner_params['params']['H'] = 2.5
     learner_params['params']['plant']['dt'] = 0.1
-    learner_params['params']['plant']['params']['l'] = .6
-    learner_params['params']['cost']['pendulum_length'] = .6
+    learner_params['params']['plant']['pole_length'] = .6
+    learner_params['params']['cost']['pole_length'] = .6
 
     if not use_bnn:
         # gp based PILCO
@@ -59,15 +59,9 @@ if __name__ == '__main__':
         utils.print_with_stamp('Unable to load compiled fns', 'main')
         save_compiled_fns = False
 
-    atexit.register(learner.stop)
-    #draw_cp = CartpoleDraw(learner.plant)
-    #draw_cp.start()
-    #atexit.register(draw_cp.stop)
-
     if learner.experience.n_samples() == 0: #if we have no prior data
         # gather data with random trials
         for i in range(J):
-            learner.plant.reset_state()
             learner.apply_controller(random_controls=True)
     else:
         last_pp = learner.experience.policy_parameters[-1]
@@ -77,7 +71,6 @@ if __name__ == '__main__':
             should_run = should_run and not np.allclose(lastp, curp)
 
         if should_run:
-            learner.plant.reset_state()
             learner.apply_controller()
 
         # plot results
@@ -93,13 +86,12 @@ if __name__ == '__main__':
             learner.train_dynamics()
 
         # plot results with new dynamics
-        #plot_results(learner)
+        plot_results(learner)
 
         # train policy
         learner.train_policy()
 
         # execute it on the robot
-        learner.plant.reset_state()
         learner.apply_controller()
 
         # plot results with new policy

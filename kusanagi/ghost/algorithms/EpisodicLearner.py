@@ -27,10 +27,10 @@ STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
                           'NADAM': utils.updates.nadam,
                           'ADAMAX': lasagne.updates.adamax,
                          }
-                       
+
 # TODO remove any theano dependency from here
 class EpisodicLearner(Loadable):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None,
+    def __init__(self, params, plant_class, policy_class, cost_func=None,
                  experience=None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
         self.name = name
         # initialize plant
@@ -48,8 +48,6 @@ class EpisodicLearner(Loadable):
         params['cost']['angle_dims'] = params['angle_dims']
         self.cost = partial(cost_func, params=params['cost']) if cost_func is not None else None
         self.evaluate_cost = None
-        # initialize vizualization
-        self.viz = viz_class(self.plant) if viz_class is not None else None
         # initialize experience dataset
         if experience:
             self.experience = experience
@@ -92,7 +90,7 @@ class EpisodicLearner(Loadable):
 
     def load(self, output_folder=None, output_filename=None):
         # load learner state
-        super(EpisodicLearner,self).load(output_folder, output_filename)
+        super(EpisodicLearner, self).load(output_folder, output_filename)
         self.plant.dt = self.dt
         utils.print_with_stamp('Cost parameters: %s'%(self.cost.keywords['params']), self.name)
 
@@ -158,12 +156,6 @@ class EpisodicLearner(Loadable):
         content_paths = self.get_snapshot_content_paths(output_folder)
         utils.save_snapshot_zip(snapshot_header, content_paths, with_timestamp)
 
-    def stop(self):
-        ''' Stops the plant, the visualization (if available) and saves the state of the learner'''
-        self.plant.stop()
-        if self.viz is not None:
-            self.viz.stop()
-
     def init_cost(self):
         if not self.evaluate_cost:
             if self.cost:
@@ -203,7 +195,7 @@ class EpisodicLearner(Loadable):
                 self.experience.truncate(episode)
                 self.policy.set_params(self.experience_dataset.policy_parameters[episode])
 
-    def apply_controller(self,H=None,random_controls=False):
+    def apply_controller(self, H=None, random_controls=False, callback=None):
         '''
         Starts the plant and applies the current policy to the plant for a duration specified by H
         (in seconds). If  H is not set, it will run for self.H seconds. If the random_controls
@@ -229,7 +221,6 @@ class EpisodicLearner(Loadable):
             if len(p) == 0:
                 self.policy.init_params()
 
-
         # mark the start of the episode
         self.experience.new_episode(policy_params=p)
 
@@ -239,75 +230,46 @@ class EpisodicLearner(Loadable):
             H = self.H
         utils.print_with_stamp('Running for %f seconds'%(H), self.name)
 
-        if self.async_plant:
-            self.plant.start()
-        if self.viz is not None:
-            self.viz.start()
-
         exec_time = time.time()
-        x_t, t = self.plant.get_plant_state()
+        x_t = self.plant.reset()
 
         H_steps = int(np.ceil(H/self.plant.dt))
+
         # do rollout
-        for i in range(H_steps):
+        for t in range(H_steps):
             # convert input angle dimensions to complex representation
             x_t_ = utils.gTrig_np(x_t[None, :], self.angle_idims).flatten()
             #  get command from policy
             # (this should be fast, or at least account for delays in processing):
-            u_t = policy.evaluate(x_t_, t=i)[0].flatten()
-            #  send command to robot:
-            self.plant.apply_control(u_t)
-            if self.evaluate_cost is not None:
-                #  get cost:
-                c_t = self.evaluate_cost(x_t)
-                # append to experience dataset
-                self.experience.add_sample(t, x_t, u_t, c_t)
-            else:
-                # append to experience dataset
-                self.experience.add_sample(t, x_t, u_t, 0)
+            u_t = policy.evaluate(x_t_, t)[0].flatten()
 
-            # step the plant if necessary
-            if not self.async_plant:
-                self.plant.step()
+            # apply control and step the plant
+            x_t, c_t, done, info = self.plant.step(u_t)
+            info['done'] = done
 
-            # sleep to match the desired sample rate
-            if self.realtime:
-                exec_time = time.time() - exec_time
-                if exec_time < self.plant.dt:
-                    time.sleep(self.plant.dt-exec_time)
+            # append to experience dataset
+            self.experience.add_sample(t, x_t, u_t, c_t, info)
 
-            # get robot state (this should ensure synchronization by
-            # checking the time reported by plant.get_state):
-            exec_time = time.time()
-            t0 = t
-            while t < t0+self.plant.dt:
-                x_t, t = self.plant.get_plant_state()
+            if callable(callback):
+                callback(x_t, c_t, done, info, self)
 
             if self.plant.done:
                 break
-        # add last state to experience
-        x_t_ = utils.gTrig_np(x_t[None,:], self.angle_idims).flatten()
-        u_t = np.zeros_like(u_t)
-        if self.evaluate_cost is not None:
-            c_t = self.evaluate_cost(x_t)
-            self.experience.add_sample(t,x_t,u_t,c_t)
-        else:
-            self.experience.add_sample(t,x_t,u_t,0)
 
         # stop robot
-        run_value = np.array(self.experience.immediate_cost[-1][:-1])
-        utils.print_with_stamp('Done. Stopping robot. Value of run [%f]'%(run_value.sum()), self.name)
+        run_value = np.array(self.experience.costs[-1][:-1])
+        utils.print_with_stamp('Done. Stopping robot. Value of run [%f]'%(run_value.sum()),
+                               self.name)
+        if hasattr(self.plant, 'stop'):
+            self.plant.stop()
 
-        self.plant.stop()
-        if self.viz is not None:
-            self.viz.stop()
         self.n_episodes = len(self.experience.states)
         return self.experience
 
     def train_policy(self, H=None):
         if H is not None:
             self.H = H
-        
+
         # optimize value wrt to the policy parameters
         self.learning_iteration+=1
         self.iter_time = 0

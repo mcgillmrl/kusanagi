@@ -18,7 +18,7 @@ from kusanagi import utils
 from kusanagi.ghost.algorithms.EpisodicLearner import *
 
 class PILCO(EpisodicLearner):
-    def __init__(self, params, plant_class, policy_class, cost_func=None, viz_class=None,
+    def __init__(self, params, plant_class, policy_class, cost_func=None,
                  dynmodel_class=kreg.GP_UI, experience=None, async_plant=False, name='PILCO',
                  filename_prefix=None):
         self.dynamics_model = None
@@ -40,7 +40,7 @@ class PILCO(EpisodicLearner):
 
         filename_prefix = '%s_%s_%d_%d'%(name, dynmodel_class.__name__, dyn_idims, dyn_odims)\
         if filename_prefix is None else filename_prefix
-        super(PILCO, self).__init__(params, plant_class, policy_class, cost_func, viz_class,
+        super(PILCO, self).__init__(params, plant_class, policy_class, cost_func,
                                     experience, async_plant, name, filename_prefix)
 
         # create shared variables for rollout input parameters

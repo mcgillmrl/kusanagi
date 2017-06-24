@@ -11,7 +11,8 @@ class ExperienceDataset(Loadable):
         self.time_stamps = []
         self.states = []
         self.actions = []
-        self.immediate_cost = []
+        self.costs = []
+        self.info = []
         self.policy_parameters = []
         self.curr_episode = -1
         self.state_changed = True
@@ -22,7 +23,7 @@ class ExperienceDataset(Loadable):
             if filename_prefix is None else filename_prefix+'_dataset'
             utils.print_with_stamp('Initialising new experience dataset', self.name)
 
-        Loadable.__init__(self,name=name, filename=self.filename)
+        Loadable.__init__(self, name=name, filename=self.filename)
 
         # if a filename was passed, try loading it
         if filename is not None:
@@ -31,10 +32,10 @@ class ExperienceDataset(Loadable):
         self.register_types([list])
         self.register(['curr_episode'])
 
-    def load(self, output_folder=None,output_filename=None):
-        ''' loads the state from file, and initializes additional variables'''
+    def load(self, output_folder=None, output_filename=None):
+        ''' Loads the state from file, and initializes additional variables'''
         # load state
-        super(ExperienceDataset,self).load(output_folder,output_filename)
+        super(ExperienceDataset, self).load(output_folder, output_filename)
 
         # if the policy parameters were saved as shared variables
         for i in range(len(self.policy_parameters)):
@@ -44,19 +45,27 @@ class ExperienceDataset(Loadable):
                 if isinstance(pij, theano.tensor.sharedvar.SharedVariable):
                     self.policy_parameters[i][j] = pij.get_value()
 
-    def add_sample(self,t,x_t=None,u_t=None,c_t=None, policy_parameters=None):
+    def add_sample(self, t, x_t=None, u_t=None, c_t=None, info=None):
+        '''
+            Adds new set of observations to the current episode
+        '''
         curr_episode = self.curr_episode
         self.time_stamps[curr_episode].append(t)
         self.states[curr_episode].append(x_t)
         self.actions[curr_episode].append(u_t)
-        self.immediate_cost[curr_episode].append(c_t)
+        self.costs[curr_episode].append(c_t)
+        self.info[curr_episode].append(info)
         self.state_changed = True
 
     def new_episode(self, policy_params=None):
+        '''
+            Adds new episode to the experience dataset
+        '''
         self.time_stamps.append([])
         self.states.append([])
         self.actions.append([])
-        self.immediate_cost.append([])
+        self.costs.append([])
+        self.info.append([])
         if policy_params:
             self.policy_parameters.append(policy_params)
         else:
@@ -80,7 +89,8 @@ class ExperienceDataset(Loadable):
         self.time_stamps = []
         self.states = []
         self.actions = []
-        self.immediate_cost = []
+        self.costs = []
+        self.info = []
         self.policy_parameters = []
         self.curr_episode = -1
         # Let's give people a last chance of recovering their data. Also, we don't want to
@@ -89,17 +99,18 @@ class ExperienceDataset(Loadable):
 
     def truncate(self, episode):
         ''' Resets the experience to start from the given episode number'''
-        if episode <= self.current_episode and episode > 0:
+        if episode <= self.curr_episode and episode > 0:
             # Let's give people a last chance of recovering their data. Also, we don't want
             # to save an empty experience dataset
             fmt = 'Resetting experience dataset to episode %d'
             fmt += ' (WARNING: data from %s will be overwritten)'
             utils.print_with_stamp(fmt%(episode, self.filename), self.name)
-            self.current_episode = episode
+            self.curr_episode = episode
             self.time_stamps = self.time_stamps[:episode]
             self.states = self.states[:episode]
             self.actions = self.actions[:episode]
-            self.immediate_cost = self.immediate_cost[:episode]
+            self.costs = self.costs[:episode]
+            self.info = self.info[:episode]
             self.policy_parameters = self.policy_parameters[:episode]
             self.state_changed = True
 

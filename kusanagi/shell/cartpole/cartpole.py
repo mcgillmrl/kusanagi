@@ -9,6 +9,7 @@ import theano.tensor as tt
 from gym import spaces
 from matplotlib import pyplot as plt
 
+import kusanagi
 from kusanagi.shell.plant import ODEPlant, PlantDraw
 from kusanagi.ghost.cost import generic_loss, build_loss_func
 from kusanagi.utils import gTrig2
@@ -20,11 +21,14 @@ def default_params():
     # setup learner parameters
     # general parameters
     learner_params = {}
-    learner_params['x0'] = [0, 0, 0, 0]       # initial state mean
-    learner_params['S0'] = np.eye(4)*(0.1**2) # initial state covariance
-    learner_params['angle_dims'] = [3]        # angle dimensions
-    learner_params['H'] = 4.0                 # control horizon
-    learner_params['discount'] = 1.0          # discount factor
+    g = utils.distributions.Gaussian
+    x0 = [0, 0, 0, 0]
+    S0 = np.eye(4)*(0.1**2)
+    p0 = g(x0, S0)
+    learner_params['inital_state'] = p0           # initial state distribution
+    learner_params['angle_dims'] = [3]            # angle dimensions
+    learner_params['H'] = 4.0                     # control horizon
+    learner_params['discount'] = 1.0              # discount factor
     # plant
     plant_params = {}
     plant_params['dt'] = 0.1
@@ -34,7 +38,7 @@ def default_params():
     plant_params['friction'] = 0.1
     plant_params['gravity'] = 9.82
     # model measurement noise (randomizes the output of the plant)
-    plant_params['noise'] = np.diag(np.ones(len(learner_params['x0']))*0.01**2)
+    plant_params['noise'] = g(np.zeros((p0.dim,)), np.eye(p0.dim)*0.01**2)
 
     # policy
     policy_params = {}
@@ -47,6 +51,7 @@ def default_params():
     dynmodel_params['n_inducing'] = 100
     # cost function
     cost_params = {}
+    cost_params['loss_func'] = kusanagi.ghost.cost.quadratic_saturating_loss
     cost_params['target'] = [0, 0, 0, np.pi]
     cost_params['cw'] = 0.25
     cost_params['expl'] = 0.0
@@ -54,7 +59,7 @@ def default_params():
 
     learner_params['max_evals'] = 150
     learner_params['conv_thr'] = 1e-12
-    learner_params['min_method'] = 'BFGS'#utils.fmin_lbfgs
+    learner_params['min_method'] = 'BFGS'
     learner_params['realtime'] = True
 
     learner_params['plant'] = plant_params
@@ -109,8 +114,8 @@ class Cartpole(ODEPlant):
     }
     def __init__(self, pole_length=0.5, pole_mass=0.5,
                  cart_mass=0.5, friction=0.1, gravity=9.82,
-                 state0=np.array([0.0, 0.0, 0.0, np.pi]), cov0=None,
-                 loss_func=build_loss_func(cartpole_loss, False, 'cartpole_loss'),
+                 initial_state=None,
+                 loss_func=None,
                  *args, **kwargs):
         super(Cartpole, self).__init__(*args, **kwargs)
         # cartpole system parameters
@@ -160,6 +165,7 @@ class Cartpole(ODEPlant):
             L0 = np.linalg.cholesky(self.cov0)
             state0 += np.random.randn(state0.size).dot(L0)
         self.set_state(state0)
+        return self.state
 
     def _render(self, mode='human', close=False):
         if self.renderer is None:
@@ -168,7 +174,8 @@ class Cartpole(ODEPlant):
         updts = self.renderer.update(*self.get_state())
 
     def _close(self):
-        self.renderer.close()
+        if self.renderer is not None:
+            self.renderer.close()
 
 class CartpoleDraw(PlantDraw):
     def __init__(self, cartpole_plant, refresh_period=(1.0/24), name='CartpoleDraw'):

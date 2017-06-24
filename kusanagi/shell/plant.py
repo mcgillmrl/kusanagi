@@ -17,7 +17,7 @@ from kusanagi.utils import print_with_stamp, gTrig_np
 color_generator = iter(cnames.items())
 
 class Plant(gym.Env):
-    def __init__(self, dt = 0.1, noise_cov=None,
+    def __init__(self, dt = 0.1, noise=None,
                  angle_dims=[], name='Plant',
                  *args, **kwargs):
         self.name = name
@@ -32,17 +32,7 @@ class Plant(gym.Env):
         # initialize loss_func
         self.loss_func = None
 
-    @property
-    def noise_cov(self):
-        return self.__noise_cov
-
-    @noise_cov.setter
-    def noise_cov(self, noise_cov):
-        self.__noise_cov = noise_cov
-        if noise_cov is not None:
-            assert noise_cov.shape[0] == noise_cov.shape[1] and\
-                   noise_cov.shape[0] == self.observation_space.shape[0]
-            self.noise_chol = np.linalg.cholesky(noise_cov)
+        self.noise = noise
 
     def apply_control(self, u):
         self.u = np.array(u, dtype=np.float64)
@@ -52,9 +42,9 @@ class Plant(gym.Env):
     def get_state(self):
         state = self.state
         assert state is not None, 'Plant has not been reset'
-        if self.noise_cov is not None:
+        if self.noise is not None:
             # noisy state measurement
-            state += np.random.randn(state.size).dot(self.noise_chol)
+            state += self.noise.sample(1).flatten()
         if self.angle_dims:
             # convert angle dimensions to complex representation
             state = gTrig_np(state, self.angle_dims).flatten()
@@ -108,10 +98,9 @@ class ODEPlant(Plant):
         self.state = np.array(self.solver.y)
         self.t = self.solver.t
         cost = None
-        
         if self.loss_func is not None:
             cost = self.loss_func(self.state)
-        return self.state, cost
+        return self.state, cost, False, {}
 
     def dynamics(self, *args, **kwargs):
         msg = "You need to implement self.dynamics in the ODEPlant subclass."
@@ -151,14 +140,13 @@ class SerialPlant(Plant):
         cmd = self.cmds['APPLY_CONTROL']+','+u_string+";"
         self.serial.write(cmd.encode())
 
-    def _step(self,dt=None):
+    def _step(self):
         if not self.serial.isOpen():
             self.serial.open()
-        if dt is None:
-            dt = self.dt
+        dt = self.dt
         t1 = self.t + dt
         while self.t < t1:
-            self.state,self.t= self.state_from_serial()
+            self.state, self.t= self.state_from_serial()
         return self.state
 
     def state_from_serial(self):
@@ -193,7 +181,7 @@ class SerialPlant(Plant):
         return res[self.state_indices],res[-1]
 
     def _reset(self):
-        print_with_stamp('Please reset your plant to its initial state and hit Enter',self.name)
+        print_with_stamp('Please reset your plant to its initial state and hit Enter', self.name)
         input()
         if not self.serial.isOpen():
             self.serial.open()
@@ -201,8 +189,9 @@ class SerialPlant(Plant):
         self.serial.flushOutput()
         self.serial.write((self.cmds['RESET_STATE']+";").encode())
         sleep(self.dt)
-        self.state,self.t= self.state_from_serial()
-        self.t=-1
+        self.state,self.t = self.state_from_serial()
+        self.t = -1
+        return self.state
 
     def stop(self):
         super(SerialPlant,self).stop()
