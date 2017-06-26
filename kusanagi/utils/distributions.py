@@ -6,7 +6,7 @@ class Distribution(object):
     def fit(data):
         raise NotImplementedError
 
-    def sample():
+    def sample(self, n_samples=1):
         raise NotImplementedError
 
     @property
@@ -15,14 +15,19 @@ class Distribution(object):
 
     @dim.setter
     def dim(self, dim):
-        self__dim = dim
+        self.__dim = dim
 
+class Delta(Distribution):
+    def __init__(self, a):
+        self.a = a
+    def sample(self, n_samples=1):
+        return np.tile(self.a, (n_samples, 1))
 
 class Gaussian(Distribution):
     def __init__(self, mean, cov):
         self.mean = np.array(mean)
         self.cov = np.array(cov)
-        self.dim = mean.size
+        self.dim = self.mean.size
 
     @property
     def cov(self):
@@ -36,4 +41,4 @@ class Gaussian(Distribution):
             self.cov_chol = np.linalg.cholesky(cov)
 
     def sample(self, n_samples=1):
-        return np.random.randn((n_samples,self.mean.size)).dot(self.cov).flatten()
+        return np.random.randn(n_samples, self.mean.size).dot(self.cov_chol)

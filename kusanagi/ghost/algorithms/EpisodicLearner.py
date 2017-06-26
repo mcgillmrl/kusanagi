@@ -34,26 +34,29 @@ class EpisodicLearner(Loadable):
                  experience=None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
         self.name = name
         # initialize plant
-        if 'x0' not in params['plant']:
-            params['plant']['x0'] = params['x0']
-            params['plant']['S0'] = params['S0']
         self.plant = plant_class(**params['plant'])
+
         # initialize policy
         params['policy']['angle_dims'] = params['angle_dims']
         self.policy = policy_class(**params['policy'])
-        # set filename
-        self.filename = self.name if filename_prefix is None else filename_prefix
-        self.filename += '_'+self.plant.name+'_'+self.policy.name
+
         # initialize cost
         params['cost']['angle_dims'] = params['angle_dims']
         self.cost = partial(cost_func, params=params['cost']) if cost_func is not None else None
         self.evaluate_cost = None
+
+        # set filename
+        self.filename = self.name if filename_prefix is None else filename_prefix
+        self.filename += '_'+self.plant.name+'_'+self.policy.name
+
         # initialize experience dataset
         if experience:
             self.experience = experience
         else:
             self.experience = ExperienceDataset(filename_prefix=self.filename)
+        
         # initialize learner state variables
+        # TODO separate optimizer from this class
         self.n_episodes = 0
         self.angle_idims = params['angle_dims'] if 'angle_dims' in params else []
         self.H = params['H'] if 'H' in params else 10.0
@@ -234,9 +237,9 @@ class EpisodicLearner(Loadable):
         x_t = self.plant.reset()
 
         H_steps = int(np.ceil(H/self.plant.dt))
-
+        print(H_steps)
         # do rollout
-        for t in range(H_steps):
+        for t in range(H_steps+1):
             # convert input angle dimensions to complex representation
             x_t_ = utils.gTrig_np(x_t[None, :], self.angle_idims).flatten()
             #  get command from policy

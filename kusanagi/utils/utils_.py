@@ -421,13 +421,13 @@ def plot_results(learner, H=None, plot_samples=True):
     time step for the last episode.
     '''
     dt = learner.plant.dt
-    x0 = np.array(learner.plant.x0)
-    S0 = np.array(learner.plant.S0)
+    x0 = learner.plant.state0_dist.mean
+    S0 = learner.plant.state0_dist.cov
     if H is None:
         H = learner.H
-    H_steps = int(np.ceil(H/dt))
-    T_range = np.arange(0, H+dt, dt)
-    cost = np.array(learner.experience.immediate_cost[-1])
+    T_range = np.arange(0, H, dt)
+    H_steps = len(T_range)
+    cost = np.array(learner.experience.costs[-1])
     rollout_ = learner.rollout(x0, S0, H_steps, 1)
     states = np.array(learner.experience.states[-1])
 
@@ -486,8 +486,8 @@ def plot_results(learner, H=None, plot_samples=True):
             iters.append(0)
             n_random += 1
         else:
-            iters.append(i-n_random)
-        cost_sums.append(np.array(learner.experience.immediate_cost[i]).sum())
+            iters.append(i-nndom)
+        cost_sums.append(np.array(learner.experience.costs[i]).sum())
     plt.plot(np.array(iters)+1, np.array(cost_sums))
 
     plt.show(False)
@@ -511,12 +511,12 @@ def plot_and_save(learner, filename, H=None,
             S0 = np.array(learner.plant.S0)
             if H is None:
                 H = learner.H
-            H_steps = int(np.ceil(H/dt))
+            T_range = np.arange(0, H, dt)
+            H_steps = len(T_range)
             # plot last run cost vs predicted cost
             plt.figure('Cost of last run and Predicted cost')
             plt.gca().clear()
-            T_range = np.arange(0, H+dt, dt)
-            cost = np.array(learner.experience.immediate_cost[-1])
+            cost = np.array(learner.experience.costs[-1])
             rollout_ =  learner.rollout(x0, S0, H_steps, 1)
             plt.errorbar(T_range, rollout_[0], yerr=2*np.sqrt(rollout_[1]))
             plt.plot(T_range, cost)
@@ -563,8 +563,8 @@ def plot_and_save(learner, filename, H=None,
             for i in range(learner.experience.n_episodes()):
                 if learner.experience.policy_parameters[i]:
                     ep_nums.append(i-n_random)
-                    total_c = 0.0
-                    for c in learner.experience.immediate_cost[i]:
+                    total= 0.0
+                    for c in learner.experience.costs[i]:
                         total_c += c[0]
                     ep_sums.append(total_c)
                 else:
@@ -597,8 +597,8 @@ def plot_learning_results(plant, H=None):
     if H is None:
         H = learner.H
     H_steps = int(np.ceil(H/dt))
-    T_range = np.arange(0, H+dt, dt)
-    cost = np.array(learner.experience.immediate_cost[-1])
+    T_range = np.arange(0, H, dt)
+    cost = np.array(learner.experience.costs[-1])
     rollout_ = learner.rollout(x0, S0, H_steps, 1)
     states = np.array(learner.experience.states[-1])
 
@@ -648,8 +648,8 @@ def plot_learning_results(plant, H=None):
             iters.append(0)
             n_random += 1
         else:
-            iters.append(i-n_random)
-        cost_sums.append(np.array(learner.experience.immediate_cost[i]).sum())
+            iters.append(i-nndom)
+        cost_sums.append(np.array(learner.experience.costs[i]).sum())
     plt.plot(np.array(iters)+1, np.array(cost_sums))
 
     plt.show(False)

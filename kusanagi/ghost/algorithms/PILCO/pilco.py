@@ -29,23 +29,19 @@ class PILCO(EpisodicLearner):
         self.policy_gradient_fn = None
         self.angle_idims = params['angle_dims']
         self.maxU = params['policy']['maxU']
-        x0 = np.array(params['x0'], dtype=theano.config.floatX).squeeze()
-        S0 = np.array(params['S0'], dtype=theano.config.floatX).squeeze()
         self.next_episode = 0
         self.dynmodel_class = dynmodel_class
-        dyn_idims, dyn_odims = len(x0) + len(self.angle_idims) + len(self.maxU), len(x0)
-        self.dynmodel_params = params['dynmodel'] if 'dynmodel' in params else {}
-        self.dynmodel_params['idims'] = dyn_idims
-        self.dynmodel_params['odims'] = dyn_odims
+        self.dynmodel_params = params['dynmodel']
 
-        filename_prefix = '%s_%s_%d_%d'%(name, dynmodel_class.__name__, dyn_idims, dyn_odims)\
+        filename_prefix = '%s_%s_%s'%(name, dynmodel_class.__name__, params['angle_dims'])\
         if filename_prefix is None else filename_prefix
         super(PILCO, self).__init__(params, plant_class, policy_class, cost_func,
                                     experience, async_plant, name, filename_prefix)
 
         # create shared variables for rollout input parameters
-        self.mx0 = theano.shared(x0.astype(theano.config.floatX))
-        self.Sx0 = theano.shared(S0.astype(theano.config.floatX))
+        p0 = params['state0_dist']
+        self.mx0 = theano.shared(p0.mean.astype(theano.config.floatX))
+        self.Sx0 = theano.shared(p0.cov.astype(theano.config.floatX))
         H_steps = int(np.ceil(self.H/self.plant.dt))
         self.H_steps = theano.shared(int(H_steps))
         self.gamma0 = theano.shared(np.array(self.discount, dtype=theano.config.floatX))
@@ -435,7 +431,7 @@ class PILCO(EpisodicLearner):
 
             X, Y = self.experience.get_dynmodel_dataset(filter_episodes=episodes,
                                                         angle_dims=self.angle_idims)
-            
+
             # wrap angles if requested (this might introduce error if the angular velocities are high)
             if self.wrap_angles:
                 # wrap angle differences to [-pi,pi]

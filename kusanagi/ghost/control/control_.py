@@ -7,7 +7,7 @@ from kusanagi import utils
 from kusanagi.ghost.regression import RBFGP, SSGP_UI, GP, BNN
 from kusanagi.ghost.regression import cov
 from kusanagi.ghost.control.saturation import gSat
-from kusanagi.utils import gTrig2, gTrig2_np
+
 from kusanagi.base.Loadable import Loadable
 from functools import partial
 from scipy.optimize import minimize
@@ -16,13 +16,17 @@ from scipy.cluster.vq import kmeans2,vq
 
 # GP based controller
 class RBFPolicy(RBFGP):
-    def __init__(self, idims=None, odims=None, sat_func=gSat,  m0=None, S0=None, maxU=[10],
+    def __init__(self, idims=None, odims=None, sat_func=gSat,  state0_dist=None, maxU=[10],
                  n_inducing=10, angle_dims=[], name='RBFPolicy', filename=None, max_evals=750,
                  *kwargs):
         self.maxU = np.array(maxU)
         self.n_inducing = n_inducing
         self.angle_dims = angle_dims
         self.name = name
+        if state0_dist is None:
+            self.state0_dist = utils.distributions.Gaussian(np.zeros((idims, )), 0.01*np.eye(idims))
+        else:
+            self.state0_dist = state0_dist
 
         if sat_func:
             # set the model to be a RBF with saturated outputs
@@ -35,13 +39,8 @@ class RBFPolicy(RBFGP):
                                             filename=filename)
             #self.load()
         else:
-            self.m0 = np.array(m0, dtype=theano.config.floatX)
-            self.S0 = np.array(S0, dtype=theano.config.floatX)
-
-            if not idims:
-                idims = len(self.m0) + len(self.angle_dims)
-            if not odims:
-                odims = len(self.maxU)
+            idims = state0_dist.mean.size
+            odims = len(self.maxU)
             super(RBFPolicy, self).__init__(idims=idims, odims=odims, sat_func=sat_func,
                                             max_evals=max_evals, name=self.name)
             self.init_params()
@@ -52,32 +51,34 @@ class RBFPolicy(RBFGP):
     def load(self, output_folder=None,output_filename=None):
         ''' loads the state from file, and initializes additional variables'''
         # load state
-        super(RBFGP,self).load(output_folder,output_filename)
+        super(RBFGP, self).load(output_folder, output_filename)
         
         # initialize mising variables
-        self.loghyp = tt.concatenate([self.loghyp_full[:,:-2], theano.gradient.disconnected_grad(self.loghyp_full[:,-2:])], axis=np.array(1,dtype='int64'))
+        self.loghyp = tt.concatenate([self.loghyp_full[:, :-2],
+                                      theano.gradient.disconnected_grad(self.loghyp_full[:, -2:])
+                                     ],
+                                     axis=np.array(1, dtype='int64'))
 
         # loghyp is no longer the trainable paramter
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
-        self.predict_fn=None
+        self.predict_fn = None
 
-    def init_params(self,compile_funcs=False):
+    def init_params(self, compile_funcs=False):
         utils.print_with_stamp('Initializing parameters',self.name)
-        # initialize the mean and covariance of the inputs
-        m0,S0 = self.m0,self.S0
-        if len(self.angle_dims)>0:
-            m0, S0 = utils.gTrig2_np(np.array(m0)[None,:], np.array(S0)[None,:,:], self.angle_dims, len(m0))
-            m0 = m0.squeeze(); S0 = S0.squeeze();
+
         # init inputs
-        L_noise = np.linalg.cholesky(S0)
-        inputs = np.array([m0 + np.random.randn(S0.shape[1]).dot(L_noise) for i in range(self.n_inducing)]);
+        inputs = self.state0_dist.sample(self.n_inducing)
 
         # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
-        l0 = np.hstack([np.ones(self.m0.size-len(self.angle_dims)),0.7*np.ones(2*len(self.angle_dims)),1,0.01])
-        l0 = np.log(np.tile(l0,(self.maxU.size,1)))
+        l0 = np.hstack([np.ones(inputs.shape[1]-len(self.angle_dims)), 0.7*np.ones(2*len(self.angle_dims)), 1, 0.01])
+        l0 = np.log(np.tile(l0,(self.maxU.size, 1)))
 
         # init policy targets close to zero
-        targets = 0.1*np.random.randn(self.n_inducing,self.maxU.size)
+        mu = np.zeros((self.maxU.size, ))
+        Su = 0.1*np.eye(self.maxU.size)
+        targets = utils.distributions.Gaussian(mu, Su).sample(self.n_inducing)
+        targets = targets.reshape((self.n_inducing, self.maxU.size))
+        
         
         self.trained = False
 
@@ -97,6 +98,7 @@ class RBFPolicy(RBFGP):
         
         # call init loss to initialize the intermediate shared variables
         super(RBFGP,self).init_loss(cache_vars=False,compile_funcs=compile_funcs)
+
         # init the prediction function 
         self.evaluate(np.zeros((self.D,)))
 

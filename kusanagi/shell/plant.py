@@ -17,12 +17,12 @@ from kusanagi.utils import print_with_stamp, gTrig_np
 color_generator = iter(cnames.items())
 
 class Plant(gym.Env):
-    def __init__(self, dt = 0.1, noise=None,
+    def __init__(self, dt = 0.1, noise_dist=None,
                  angle_dims=[], name='Plant',
                  *args, **kwargs):
         self.name = name
         self.dt = dt
-        self.noise_cov = noise_cov
+        self.noise_dist = noise_dist
         self.angle_dims = angle_dims
         self.state = None
         self.action = None
@@ -32,8 +32,6 @@ class Plant(gym.Env):
         # initialize loss_func
         self.loss_func = None
 
-        self.noise = noise
-
     def apply_control(self, u):
         self.u = np.array(u, dtype=np.float64)
         if len(self.u.shape) < 2:
@@ -42,9 +40,9 @@ class Plant(gym.Env):
     def get_state(self):
         state = self.state
         assert state is not None, 'Plant has not been reset'
-        if self.noise is not None:
+        if self.noise_dist is not None:
             # noisy state measurement
-            state += self.noise.sample(1).flatten()
+            state += self.noise_dist.sample(1).flatten()
         if self.angle_dims:
             # convert angle dimensions to complex representation
             state = gTrig_np(state, self.angle_dims).flatten()
@@ -272,12 +270,13 @@ class PlantDraw(object):
     def update_canvas(self, updts):
         if updts is not None:
             # update the drawing from the plant state
-            self.fig.canvas.restore_region(self.bg)
+            #self.fig.canvas.restore_region(self.bg)
 
             for artist in updts:
                 self.ax.draw_artist(artist)
             #self.fig.canvas.blit(self.ax.bbox)
             self.fig.canvas.draw()
+            plt.waitforbuttonpress(1e-4)
 
     def polling_loop(self, polling_pipe):
         current_t = -1

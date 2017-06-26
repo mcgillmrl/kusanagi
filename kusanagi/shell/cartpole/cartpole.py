@@ -19,17 +19,14 @@ from kusanagi import utils
 
 def default_params():
     # setup learner parameters
-    # general parameters
-    learner_params = {}
-    g = utils.distributions.Gaussian
-    x0 = [0, 0, 0, 0]
-    S0 = np.eye(4)*(0.1**2)
-    p0 = g(x0, S0)
-    learner_params['inital_state'] = p0           # initial state distribution
-    learner_params['angle_dims'] = [3]            # angle dimensions
-    learner_params['H'] = 4.0                     # control horizon
-    learner_params['discount'] = 1.0              # discount factor
-    # plant
+    angi = [3]
+    x0 = np.array([0, 0, 0, 0])
+    S0 = np.eye(len(x0))*(0.1**2)
+    p0 = utils.distributions.Gaussian(x0, S0)
+    x0a, S0a = utils.gTrig2_np(x0[None, :], np.array(S0)[None, :, :], angi, len(x0))
+    p0a = utils.distributions.Gaussian(x0a[0], S0a[0]) 
+    
+    # plant parameters
     plant_params = {}
     plant_params['dt'] = 0.1
     plant_params['pole_length'] = 0.5
@@ -37,19 +34,24 @@ def default_params():
     plant_params['cart_mass'] = 0.5
     plant_params['friction'] = 0.1
     plant_params['gravity'] = 9.82
-    # model measurement noise (randomizes the output of the plant)
-    plant_params['noise'] = g(np.zeros((p0.dim,)), np.eye(p0.dim)*0.01**2)
+    plant_params['noise_dist'] = utils.distributions.Gaussian(np.zeros((p0.dim,)),
+                                                              np.eye(p0.dim)*0.01**2)
 
-    # policy
+    # policy parameters
     policy_params = {}
-    policy_params['m0'] = learner_params['x0']
-    policy_params['S0'] = learner_params['S0']
+    policy_params
+    policy_params['state0_dist'] = p0a
     policy_params['n_inducing'] = 30
     policy_params['maxU'] = [10]
-    # dynamics model
+
+    # dynamics model parameters
+    # TODO init classes here
     dynmodel_params = {}
+    dynmodel_params['idims'] = x0a.size + len(policy_params['maxU'])
+    dynmodel_params['odims'] = x0.size
     dynmodel_params['n_inducing'] = 100
-    # cost function
+
+    # cost function parameters
     cost_params = {}
     cost_params['loss_func'] = kusanagi.ghost.cost.quadratic_saturating_loss
     cost_params['target'] = [0, 0, 0, np.pi]
@@ -57,11 +59,16 @@ def default_params():
     cost_params['expl'] = 0.0
     cost_params['pole_length'] = plant_params['pole_length']
 
+    # general parameters
+    learner_params = {}
+    learner_params['state0_dist'] = p0
+    learner_params['angle_dims'] = angi           # angle dimensions
+    learner_params['H'] = 4.0                     # control horizon
+    learner_params['discount'] = 1.0              # discount factor
     learner_params['max_evals'] = 150
     learner_params['conv_thr'] = 1e-12
     learner_params['min_method'] = 'BFGS'
     learner_params['realtime'] = True
-
     learner_params['plant'] = plant_params
     learner_params['policy'] = policy_params
     learner_params['dynmodel'] = dynmodel_params
@@ -114,7 +121,7 @@ class Cartpole(ODEPlant):
     }
     def __init__(self, pole_length=0.5, pole_mass=0.5,
                  cart_mass=0.5, friction=0.1, gravity=9.82,
-                 initial_state=None,
+                 state0_dist=None,
                  loss_func=None,
                  *args, **kwargs):
         super(Cartpole, self).__init__(*args, **kwargs)
@@ -124,9 +131,19 @@ class Cartpole(ODEPlant):
         self.M = cart_mass
         self.b = friction
         self.g = gravity
+        
         # initial state
-        self.state0 = state0
-        self.cov0 = cov0
+        if state0_dist is None:
+            self.state0_dist = utils.distributions.Gaussian([0, 0, 0, 0], 0.1*np.eye(4))
+        else:
+            self.state0_dist = state0_dist
+
+        # reward/loss function
+        if loss_func is None:
+            self.loss_func = build_loss_func(cartpole_loss, False, 'cartpole_loss')
+        else:
+            self.loss_func = loss_func
+
         # pointer to the class that will draw the state of the carpotle system
         self.renderer = None
 
@@ -136,9 +153,6 @@ class Cartpole(ODEPlant):
         # 1 action dim (x_force)
         a_lims = np.array([np.finfo(np.float).max for i in range(1)])
         self.action_space = spaces.Box(-a_lims, a_lims)
-
-        # reward/loss function
-        self.loss_func = loss_func
 
     def dynamics(self, t, z):
         l, m, M, b, g = self.l, self.m, self.M, self.b, self.g
@@ -160,10 +174,7 @@ class Cartpole(ODEPlant):
         return dz
 
     def _reset(self):
-        state0 = self.state0
-        if self.cov0 is not None:
-            L0 = np.linalg.cholesky(self.cov0)
-            state0 += np.random.randn(state0.size).dot(L0)
+        state0 = self.state0_dist.sample()
         self.set_state(state0)
         return self.state
 
