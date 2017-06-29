@@ -423,7 +423,7 @@ class GP_UI(GP):
         # input output covariance
         #tiL = tt.stack([t[i].dot(iL[i]) for i in range(odims)])
         tiL = (t[:,:,None,:]*iL[:,None,:,:]).sum(-1)
-        V = Sx.dot(tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
+        V = tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c
 
         # predictive covariance
         logk = 2*self.loghyp[:,None,idims] - 0.5*tt.sum(inp*inp,2)
@@ -521,7 +521,6 @@ class RBFGP(GP_UI):
         
         # input output covariance
         tiL = tt.stack([t[i].dot(iL[i]) for i in range(odims)])
-        #V = Sx.dot(tt.stack([tiL[i].T.dot(lb[i]) for i in xrange(odims)]).T*c)
         V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
 
         # predictive covariance
