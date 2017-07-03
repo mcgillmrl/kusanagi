@@ -1,3 +1,4 @@
+# pylint: disable=C0103
 import gym
 import numpy as np
 import sys
@@ -17,7 +18,7 @@ from kusanagi.utils import print_with_stamp, gTrig_np
 color_generator = iter(cnames.items())
 
 class Plant(gym.Env):
-    def __init__(self, dt = 0.1, noise_dist=None,
+    def __init__(self, dt=0.1, noise_dist=None,
                  angle_dims=[], name='Plant',
                  *args, **kwargs):
         self.name = name
@@ -25,9 +26,10 @@ class Plant(gym.Env):
         self.noise_dist = noise_dist
         self.angle_dims = angle_dims
         self.state = None
-        self.action = None
+        self.u = None
         self.t = 0
         self.done = False
+        self.renderer = None
 
         # initialize loss_func
         self.loss_func = None
@@ -55,7 +57,7 @@ class Plant(gym.Env):
         print_with_stamp('Stopping robot', self.name)
         self._close()
 
-    def _step(self):
+    def _step(self, action):
         msg = "You need to implement self._step in your Plant subclass."
         raise NotImplementedError(msg)
 
@@ -122,11 +124,11 @@ class SerialPlant(Plant):
     def apply_control(self,u):
         if not self.serial.isOpen():
             self.serial.open()
-        self.u = np.array(u,dtype=np.float64)
+        self.u = np.array(u, dtype=np.float64)
         if len(self.u.shape) < 2:
-            self.u = self.u[:,None]
+            self.u = self.u[:, None]
         if self.U_scaling is not None:
-            self.u *= self.U_scaling;
+            self.u *= self.U_scaling
         if self.t < 0:
             self.state,self.t= self.state_from_serial()
 

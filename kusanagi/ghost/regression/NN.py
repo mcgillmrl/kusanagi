@@ -10,15 +10,19 @@ from kusanagi import utils
 from kusanagi.ghost.regression import BaseRegressor
 
 class BNN(BaseRegressor):
-    ''' Inefficient implementation of the dropout idea by Gal and Gharammani, with Gaussian distributed inputs'''
-    def __init__(self,idims, odims,  dropout_samples=10, learn_noise=True,  heteroscedastic = False, name='BNN', profile=False, filename=None, **kwargs):
+    ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
+     with Gaussian distributed inputs'''
+    def __init__(self, idims, odims, dropout_samples=10, learn_noise=True,
+                 heteroscedastic=False, name='BNN', profile=False,
+                 filename=None, **kwargs):
         self.D = idims
         self.E = odims
-        self.name=name
+        self.name = name
         self.should_recompile = False
         self.trained = False
 
-        self.logsn = theano.shared((np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX), name='%s_logsn'%(self.name))
+        self.logsn = theano.shared((np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX),
+                                   name='%s_logsn'%(self.name))
         self.lengthscale = 1e-2
 
         self.network = None
@@ -29,8 +33,10 @@ class BNN(BaseRegressor):
         self.train_fn = None
         self.predict_fn = None
         self.prediction_updates = None
-        self.dropout_samples = theano.shared(np.array(dropout_samples).astype('int32'), name="%s>dropout_samples"%(self.name) ) 
-        self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(lasagne.random.get_rng().randint(1,2147462579))
+        self.dropout_samples = theano.shared(np.array(dropout_samples).astype('int32'),
+                                             name="%s>dropout_samples"%(self.name))
+        seed = lasagne.random.get_rng().randint(1, 2147462579)
+        self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(seed)
 
         self.X = None; self.Y = None
         self.Xm = None; self.Xs = None
@@ -43,15 +49,18 @@ class BNN(BaseRegressor):
         self.heteroscedastic = heteroscedastic
 
         # filename for saving
-        self.filename = '%s_%d_%d_%s_%s'%(self.name,self.D,self.E,theano.config.device,theano.config.floatX) if filename is None else filename
-        BaseRegressor.__init__(self,name=name,filename=self.filename)
+        fname = '%s_%d_%d_%s_%s'%(self.name, self.D, self.E,
+                                  theano.config.device,
+                                  theano.config.floatX)
+        self.filename = fname if filename is None else filename
+        BaseRegressor.__init__(self, name=name, filename=self.filename)
         if filename is not None:
             self.load()
 
         # register theanno functions and shared variables for saving
         #self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
         self.register_types([tt.sharedvar.SharedVariable])
-        self.register(['logsn','network_params','network_spec'])
+        self.register(['logsn', 'network_params', 'network_spec'])
 
     def load(self, output_folder=None,output_filename=None):
         dropout_samples = self.dropout_samples.get_value()

@@ -8,6 +8,7 @@ import theano.tensor as tt
 
 from gym import spaces
 from matplotlib import pyplot as plt
+from functools import partial
 
 import kusanagi
 from kusanagi.shell.plant import ODEPlant, PlantDraw
@@ -25,7 +26,7 @@ def default_params():
     p0 = utils.distributions.Gaussian(x0, S0)
     x0a, S0a = utils.gTrig2_np(x0[None, :], np.array(S0)[None, :, :], angi, len(x0))
     p0a = utils.distributions.Gaussian(x0a[0], S0a[0]) 
-    
+
     # plant parameters
     plant_params = {}
     plant_params['dt'] = 0.1
@@ -53,7 +54,6 @@ def default_params():
 
     # cost function parameters
     cost_params = {}
-    cost_params['loss_func'] = kusanagi.ghost.cost.quadratic_saturating_loss
     cost_params['target'] = [0, 0, 0, np.pi]
     cost_params['cw'] = 0.25
     cost_params['expl'] = 0.0
@@ -83,6 +83,7 @@ def default_params():
 def cartpole_loss(mx, Sx,
                   angle_dims=[3],
                   pole_length=0.5,
+                  cw=[0.25],
                   target=np.array([0, 0, 0, np.pi]),
                   *args, **kwargs):
     target = np.array(target)
@@ -113,7 +114,7 @@ def cartpole_loss(mx, Sx,
     Q[-2, -2] = pole_length**2
     Q[-1, -1] = pole_length**2
 
-    return generic_loss(mxa, Sxa, targeta, Q, *args, **kwargs)
+    return generic_loss(mxa, Sxa, targeta, Q, cw, *args, **kwargs)
 
 class Cartpole(ODEPlant):
     metadata = {
@@ -123,6 +124,7 @@ class Cartpole(ODEPlant):
                  cart_mass=0.5, friction=0.1, gravity=9.82,
                  state0_dist=None,
                  loss_func=None,
+                 name='Cartpole',
                  *args, **kwargs):
         super(Cartpole, self).__init__(*args, **kwargs)
         # cartpole system parameters
@@ -131,7 +133,7 @@ class Cartpole(ODEPlant):
         self.M = cart_mass
         self.b = friction
         self.g = gravity
-        
+
         # initial state
         if state0_dist is None:
             self.state0_dist = utils.distributions.Gaussian([0, 0, 0, 0], 0.1*np.eye(4))
@@ -142,7 +144,7 @@ class Cartpole(ODEPlant):
         if loss_func is None:
             self.loss_func = build_loss_func(cartpole_loss, False, 'cartpole_loss')
         else:
-            self.loss_func = loss_func
+            self.loss_func = build_loss_func(loss_func, False, 'cartpole_loss')
 
         # pointer to the class that will draw the state of the carpotle system
         self.renderer = None

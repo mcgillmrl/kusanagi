@@ -45,16 +45,18 @@ class ExperienceDataset(Loadable):
                 if isinstance(pij, theano.tensor.sharedvar.SharedVariable):
                     self.policy_parameters[i][j] = pij.get_value()
 
-    def add_sample(self, t, x_t=None, u_t=None, c_t=None, info=None):
+    def add_sample(self, x_t=None, u_t=None, c_t=None, info=None, t=None):
         '''
             Adds new set of observations to the current episode
         '''
         curr_episode = self.curr_episode
-        self.time_stamps[curr_episode].append(t)
+        if curr_episode < 0:
+            self.new_episode()
         self.states[curr_episode].append(x_t)
         self.actions[curr_episode].append(u_t)
         self.costs[curr_episode].append(c_t)
         self.info[curr_episode].append(info)
+        self.time_stamps[curr_episode].append(t)
         self.state_changed = True
 
     def new_episode(self, policy_params=None):
@@ -154,6 +156,8 @@ class ExperienceDataset(Loadable):
             # use all data
             filter_episodes = list(range(self.n_episodes()))
         for epi in filter_episodes:
+            if len(self.states[epi]) == 0:
+                continue
             # get state action pairs for current episode
             states, actions = np.array(self.states[epi]), np.array(self.actions[epi])
             # convert input angle dimensions to complex representation

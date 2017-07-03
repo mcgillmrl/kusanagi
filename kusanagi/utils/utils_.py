@@ -101,7 +101,7 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
         out_str = '[%s] %s'%(str(datetime.now()), message)
     else:
         out_str = '[%s] %s > %s'%(str(datetime.now()), name, message)
-    
+
     logfile = get_logfile()
     # this will only log to a file if 1) use_log is True and 2) $KUSANAGI_LOGFILE
     # is set ( can be set with utils.set_logfile(new_path) )
@@ -182,7 +182,8 @@ def gTrig2(m, v, angi, D):
     '''
     if len(angi) < 1:
         return m, v, None
-
+    
+    # TODO make this a symbolic operation
     non_angle_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
     Dna = len(non_angle_dims)
@@ -244,6 +245,9 @@ def gTrig2(m, v, angi, D):
     return [M, V, Ca]
 
 def gTrig_np(x, angi):
+    '''
+        Replaces angle dimensions with their complex representation
+    '''
     if isinstance(x, list):
         x = np.array(x)
     if x.ndim == 1:
@@ -263,6 +267,11 @@ def gTrig_np(x, angi):
     return m
 
 def gTrig2_np(m, v, angi, D):
+    '''
+        Replaces angle dimensions with their complex represnetations. Given an input Gaussian
+        distribution (parametrized by its mean and covariance), it computes the Gaussian distribution
+        of the complex angle representation.
+    '''
     non_angle_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
     Dna = len(non_angle_dims)
@@ -270,7 +279,8 @@ def gTrig2_np(m, v, angi, D):
     Ma = np.zeros((n, Da))
     Va = np.zeros((n, Da, Da))
     Ca = np.zeros((n, D, Da))
-    Is = 2*np.arange(len(angi)); Ic = Is +1
+    Is = 2*np.arange(len(angi))
+    Ic = Is +1
 
     # compute the mean
     mi = m[:, angi]
@@ -438,6 +448,7 @@ def plot_results(learner, H=None, plot_samples=True):
         # plot  cost of trajectories
         plt.figure('Cost of last run and Predicted cost')
         plt.gca().clear()
+        print T_range.shape, predicted_costs_means.shape, predicted_costs_vars.shape
         plt.errorbar(T_range, predicted_costs_means,
                      color='b', yerr=2*np.sqrt(predicted_costs_vars))
         plt.plot(T_range, cost, color='g', linewidth=2)
@@ -450,10 +461,12 @@ def plot_results(learner, H=None, plot_samples=True):
                 for tr_d in predicted_trajectories:
                     plt.plot(T_range, tr_d[:, d], color='steelblue', alpha=0.3)
             else:
-                plt.errorbar(T_range, predicted_trajectories.mean(0)[:, d], yerr=2*np.sqrt(predicted_trajectories.var(0)[:, d]))
-            
+                plt.errorbar(T_range, predicted_trajectories.mean(0)[:, d],
+                             yerr=2*np.sqrt(predicted_trajectories.var(0)[:, d]))
+
             for ep in np.array(learner.experience.states):
                 plt.plot(T_range, ep[:, d], color='orange', alpha=0.5, linewidth=2)
+
             plt.plot(T_range, states[:, d], color='red', linewidth=2)
     else:
         # plot last run cost vs predicted cost
@@ -471,7 +484,7 @@ def plot_results(learner, H=None, plot_samples=True):
             plt.figure('Last run vs Predicted rollout for state dimension %d'%(d))
             plt.gca().clear()
             plt.errorbar(T_range, predicted_means[:, d], yerr=2*np.sqrt(predicted_vars[:, d, d]))
-            
+
             for ep in np.array(learner.experience.states):
                 plt.plot(T_range, ep[:, d], color='orange', alpha=0.5, linewidth=2)
             plt.plot(T_range, states[:, d], color='red', linewidth=3)
@@ -486,7 +499,7 @@ def plot_results(learner, H=None, plot_samples=True):
             iters.append(0)
             n_random += 1
         else:
-            iters.append(i-nndom)
+            iters.append(i-n_random)
         cost_sums.append(np.array(learner.experience.costs[i]).sum())
     plt.plot(np.array(iters)+1, np.array(cost_sums))
 

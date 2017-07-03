@@ -413,7 +413,7 @@ class GP_UI(GP):
         inp = iL.dot(zeta.T).transpose(0,2,1)
         iLdotSx = iL.dot(Sx) # force the matrix inverse to be done with double precision
         #TODO vectorize this
-        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in range(odims)]) + tt.eye(idims) 
+        B = tt.stack([iLdotSx[i].dot(iL[i]) for i in range(odims)]) + tt.eye(idims)
         t = tt.stack([solve(B[i].T, inp[i].T).T for i in range(odims)])      # E x N x D
         c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))         # E
         l = tt.exp(-0.5*tt.sum(inp*t,2))
@@ -460,7 +460,7 @@ class GP_UI(GP):
         M2 = M2_[-1]
         S = M2 - tt.outer(M,M)
 
-        return M,S,V  
+        return M,S,V
 
 class RBFGP(GP_UI):
     ''' RBF network (GP with uncertain inputs/deterministic outputs)'''

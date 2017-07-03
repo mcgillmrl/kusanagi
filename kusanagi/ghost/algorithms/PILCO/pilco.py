@@ -33,10 +33,16 @@ class PILCO(EpisodicLearner):
         self.dynmodel_class = dynmodel_class
         self.dynmodel_params = params['dynmodel']
 
+        # init cost model
+        print cost_func
+        self.cost = partial(cost_func, **params['cost'])
+
+        # init parent class
         filename_prefix = '%s_%s_%s'%(name, dynmodel_class.__name__, params['angle_dims'])\
         if filename_prefix is None else filename_prefix
-        super(PILCO, self).__init__(params, plant_class, policy_class, cost_func,
-                                    experience, async_plant, name, filename_prefix)
+        super(PILCO, self).__init__(params, plant_class, policy_class,
+                                    experience, async_plant, name,
+                                    filename_prefix)
 
         # create shared variables for rollout input parameters
         p0 = params['state0_dist']
@@ -237,7 +243,8 @@ class PILCO(EpisodicLearner):
 
         return [mcost, Scost, mx_next, Sx_next], updates
 
-    def get_rollout(self, mx0, Sx0, H, gamma0, dynmodel=None, policy=None):
+    def get_rollout(self, mx0, Sx0, H, gamma0, cost,
+                    dynmodel=None, policy=None):
         ''' Given some initial state distribution Normal(mx0,Sx0), and a prediction horizon H
         (number of timesteps), returns the predicted state distribution and discounted cost for
         every timestep. The discounted cost is returned as a distribution, since the state
@@ -248,17 +255,16 @@ class PILCO(EpisodicLearner):
             dynmodel = self.dynamics_model
         if policy is None:
             policy = self.policy
+        if cost is None:
+            cost = self.cost
 
         # this defines the loop where the state is propaagated
-        def rollout_single_step(mv,Sv,mx, Sx, gamma, *args):
+        def rollout_single_step(mx, Sx, gamma, *args):
             prop_out, updates = self.propagate_state(mx, Sx, dynmodel, policy)
             [mv_next, Sv_next, mx_next, Sx_next] = prop_out
             gamma0 = args[0]
             next_v = [gamma*mv_next, tt.square(gamma)*Sv_next, mx_next, Sx_next, gamma*gamma0]
             return next_v, updates
-
-        # this are the initial distribution of the cost
-        mv0, Sv0 = self.cost(mx0, Sx0)
 
         # these are the shared variables that will be used in the graph.
         # we need to pass them as non_sequences here
@@ -269,7 +275,7 @@ class PILCO(EpisodicLearner):
 
         # create the nodes that return the result from scan
         rollout_output, updts = theano.scan(fn=rollout_single_step,
-                                            outputs_info=[mv0, Sv0, mx0, Sx0, gamma0],
+                                            outputs_info=[None, None, mx0, Sx0, gamma0],
                                             non_sequences=shared_vars,
                                             n_steps=H,
                                             strict=True,
@@ -277,13 +283,6 @@ class PILCO(EpisodicLearner):
                                             name="%s>rollout_scan"%(self.name))
 
         mean_costs, var_costs, mean_states, cov_states, gamma_ = rollout_output
-
-        # prepend the initial cost distribution
-        mean_costs = tt.concatenate([mv0.dimshuffle('x'), mean_costs])
-        var_costs = tt.concatenate([Sv0.dimshuffle('x'), var_costs])
-        # prepend the initial state distribution
-        mean_states = tt.concatenate([mx0.dimshuffle('x', 0), mean_states])
-        cov_states = tt.concatenate([Sx0.dimshuffle('x', 0, 1), cov_states])
 
         mean_costs.name = 'mc_list'
         var_costs.name = 'Sc_list'
@@ -293,7 +292,7 @@ class PILCO(EpisodicLearner):
         return [mean_costs, var_costs, mean_states, cov_states], updts
 
     def get_policy_value(self, mx0=None, Sx0=None, H=None, gamma0=None,
-                         dynmodel=None, policy=None):
+                         cost=None, dynmodel=None, policy=None):
         ''' Returns a symbolic expression (theano tensor variable) for the value
         of the current policy'''
         mx0 = self.mx0 if mx0 is None else mx0
@@ -301,8 +300,10 @@ class PILCO(EpisodicLearner):
         H = self.H_steps if H is None else H
         gamma0 = self.gamma0 if gamma0 is None else gamma0
 
-        [mc_, Sc_, mx_, Sx_], updts = self.get_rollout(mx0, Sx0, H, gamma0, dynmodel, policy)
-        return mc_[1:].sum(), updts
+        outs, updts = self.get_rollout(mx0, Sx0, H, gamma0, cost,
+                                       dynmodel, policy)
+        mc_ = outs[0]
+        return mc_.sum(), updts
 
     def get_policy_gradients(self, expected_accumulated_cost, params, clip=None):
         ''' Creates the variables representing the policy gradients (theano tensor variables) of
@@ -317,7 +318,7 @@ class PILCO(EpisodicLearner):
         return dJdp
 
     def compile_rollout(self, mx0=None, Sx0=None, H=None, gamma0=None,
-                        dynmodel=None, policy=None):
+                        cost=None, dynmodel=None, policy=None):
         ''' Compiles a theano function graph that compute the predicted states and discounted
         costs for a given inital state and prediction horizon.'''
         mx0 = self.mx0 if mx0 is None else mx0
@@ -325,7 +326,8 @@ class PILCO(EpisodicLearner):
         H = self.H_steps if H is None else H
         gamma0 = self.gamma0 if gamma0 is None else gamma0
 
-        [mc_, Sc_, mx_, Sx_], updts = self.get_rollout(mx0, Sx0, H, gamma0, dynmodel, policy)
+        [mc_, Sc_, mx_, Sx_], updts = self.get_rollout(mx0, Sx0, H, gamma0, cost,
+                                                       dynmodel, policy)
 
         utils.print_with_stamp('Compiling belief state propagation', self.name)
         rollout_fn = theano.function([],
@@ -462,7 +464,7 @@ class PILCO(EpisodicLearner):
 
         dynmodel.train()
         utils.print_with_stamp('Done training dynamics model', self.name)
-        
+
         if self.dynamics_model is None:
             self.dynamics_model = dynmodel
         return dynmodel
@@ -489,7 +491,7 @@ class PILCO(EpisodicLearner):
         #    return np.zeros((H_steps,)),np.ones((H_steps,))
 
         # setup initial state
-        if self.use_empirical_x0:
+        if True or self.use_empirical_x0:
             mx = self.mx0.get_value()
             Sx = self.Sx0.get_value()
         else:

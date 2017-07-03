@@ -7,6 +7,7 @@ import time
 
 from functools import partial
 
+import kusanagi
 from kusanagi import utils
 from kusanagi.ghost.algorithms.ExperienceDataset import ExperienceDataset
 from kusanagi.ghost.control import RandPolicy
@@ -30,20 +31,16 @@ STOCHASTIC_MIN_METHODS = {'SGD': lasagne.updates.sgd,
 
 # TODO remove any theano dependency from here
 class EpisodicLearner(Loadable):
-    def __init__(self, params, plant_class, policy_class, cost_func=None,
-                 experience=None, async_plant=False, name='EpisodicLearner', filename_prefix=None):
+    def __init__(self, params, plant_class, policy_class, experience=None,
+                 async_plant=False, name='EpisodicLearner', filename_prefix=None):
         self.name = name
+
         # initialize plant
         self.plant = plant_class(**params['plant'])
 
         # initialize policy
         params['policy']['angle_dims'] = params['angle_dims']
         self.policy = policy_class(**params['policy'])
-
-        # initialize cost
-        params['cost']['angle_dims'] = params['angle_dims']
-        self.cost = partial(cost_func, params=params['cost']) if cost_func is not None else None
-        self.evaluate_cost = None
 
         # set filename
         self.filename = self.name if filename_prefix is None else filename_prefix
@@ -54,7 +51,7 @@ class EpisodicLearner(Loadable):
             self.experience = experience
         else:
             self.experience = ExperienceDataset(filename_prefix=self.filename)
-        
+
         # initialize learner state variables
         # TODO separate optimizer from this class
         self.n_episodes = 0
@@ -79,8 +76,6 @@ class EpisodicLearner(Loadable):
         self.register(['n_episodes',
                        'angle_idims',
                        'async_plant',
-                       'cost',
-                       'evaluate_cost',
                        'H',
                        'dt',
                        'discount',
@@ -95,7 +90,6 @@ class EpisodicLearner(Loadable):
         # load learner state
         super(EpisodicLearner, self).load(output_folder, output_filename)
         self.plant.dt = self.dt
-        utils.print_with_stamp('Cost parameters: %s'%(self.cost.keywords['params']), self.name)
 
         # load policy and experience separately
         policy_filename = None
@@ -108,18 +102,12 @@ class EpisodicLearner(Loadable):
             experience_filename = output_filename + '_experience'
         self.experience.load(output_folder, experience_filename)
 
-        #initialize cost if neeeded
-        self.init_cost()
-
         # initialize policy if needed
         p = self.policy.get_params()
         if len(p) == 0:
             self.policy.init_params()
 
     def save(self, output_folder=None, output_filename=None):
-        #initialize cost if neeeded
-        self.init_cost()
-
         # initialize policy if needed
         p = self.policy.get_params()
         if len(p) == 0:
@@ -159,31 +147,6 @@ class EpisodicLearner(Loadable):
         content_paths = self.get_snapshot_content_paths(output_folder)
         utils.save_snapshot_zip(snapshot_header, content_paths, with_timestamp)
 
-    def init_cost(self):
-        if not self.evaluate_cost:
-            if self.cost:
-                utils.print_with_stamp('Compiling cost function', self.name)
-                utils.print_with_stamp('Cost parameters: %s'%(self.cost.keywords['params']),
-                                       self.name)
-                mx = tt.vector('mx')
-                self.evaluate_cost = theano.function([mx], self.cost(mx, None)[0],
-                                                     allow_input_downcast=True,
-                                                     on_unused_input='ignore')
-            else:
-                utils.print_with_stamp('No cost function provided', self.name)
-
-    def set_cost(self, new_cost_func, new_cost_params):
-        ''' Replaces the old cost function with a new one (and recompiles it)'''
-        if 'angle_dims' not in new_cost_params:
-            new_cost_params['angle_dims'] = self.angle_idims
-        if self.cost is not None:
-            if self.cost.func == new_cost_func and self.cost.keywords['params'] == new_cost_params:
-                # do nothing, as the current cost has the same parameters
-                return
-        self.cost = partial(new_cost_func, params=new_cost_params)
-        self.evaluate_cost = None
-        self.init_cost()
-
     def set_experience(self, new_experience):
         # get state from the new experience
         self.experience.set_state(new_experience.get_state())
@@ -209,10 +172,6 @@ class EpisodicLearner(Loadable):
         @param random_controls Boolean flag that specifies whether to use the current policy or
                to apply random controls
         '''
-
-        #initialize cost if neeeded
-        self.init_cost()
-
         if random_controls:
             utils.print_with_stamp('Applying controls uniformly at random', self.name)
             policy = RandPolicy(self.policy.maxU, self.random_walk)
@@ -237,21 +196,21 @@ class EpisodicLearner(Loadable):
         x_t = self.plant.reset()
 
         H_steps = int(np.ceil(H/self.plant.dt))
-        print(H_steps)
+
         # do rollout
-        for t in range(H_steps+1):
+        for t in range(H_steps):
             # convert input angle dimensions to complex representation
             x_t_ = utils.gTrig_np(x_t[None, :], self.angle_idims).flatten()
             #  get command from policy
             # (this should be fast, or at least account for delays in processing):
-            u_t = policy.evaluate(x_t_, t)[0].flatten()
+            u_t = policy.evaluate(x_t_, t=t)[0].flatten()
 
             # apply control and step the plant
             x_t, c_t, done, info = self.plant.step(u_t)
             info['done'] = done
 
             # append to experience dataset
-            self.experience.add_sample(t, x_t, u_t, c_t, info)
+            self.experience.add_sample(x_t, u_t, c_t, info, t)
 
             if callable(callback):
                 callback(x_t, c_t, done, info, self)
@@ -274,7 +233,7 @@ class EpisodicLearner(Loadable):
             self.H = H
 
         # optimize value wrt to the policy parameters
-        self.learning_iteration+=1
+        self.learning_iteration += 1
         self.iter_time = 0
         self.start_time = time.time()
         self.n_evals = 0
@@ -282,14 +241,14 @@ class EpisodicLearner(Loadable):
         (self.learning_iteration), self.name)
 
         v0 = self.value()
-        utils.print_with_stamp('Initial value estimate [%f]'%(v0), self.name) 
+        utils.print_with_stamp('Initial value estimate [%f]'%(v0), self.name)
         p0 = self.policy.get_params(symbolic=False)
-        self.best_p = [v0,p0,0]
+        self.best_p = [v0, p0, 0]
         if not hasattr(self, 'average_p'):
             self.p_avg = [np.zeros_like(p) for p in p0]
 
         parameter_shapes = [p.shape for p in p0]
-        m_loss = utils.MemoizeJac(self.loss,args=(parameter_shapes,))
+        m_loss = utils.MemoizeJac(self.loss, args=(parameter_shapes, ))
         min_method = self.min_method.upper()
         # deterministic gradients
         if min_method in DETERMINISTIC_MIN_METHODS:
@@ -324,8 +283,9 @@ class EpisodicLearner(Loadable):
                     break
                 except ValueError:
                     print('')
-                    utils.print_with_stamp("Optimization with %s failed"%(min_methods[i]), self.name)
-                    v0,p0 = self.best_p
+                    utils.print_with_stamp("Optimization with %s failed"%(min_methods[i]),
+                                                                          self.name)
+                    v0, p0 = self.best_p
                     self.policy.set_params(p0)
 
         # stochastic gradients
@@ -339,7 +299,7 @@ class EpisodicLearner(Loadable):
                 utils.print_with_stamp("Compiling optimizer", self.name)
                 min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
                 p = self.policy.get_params(symbolic=True)
-                reg=0
+                reg = 0
                 if hasattr(self.policy, 'get_regularization_term'):
                     # get regularization term
                     reg += self.policy.get_regularization_term(1e-2,1e-2)
@@ -375,7 +335,7 @@ class EpisodicLearner(Loadable):
                 costs, updts = self.get_policy_value(cost_per_sample=True)
                 losses = costs[:,1:].sum(1)
                 params = self.policy.get_params(symbolic=True)
-                
+
                 compiled_loss_fn = probls.compile_loss_fn(losses, params, updates=updts)
                 # TODO we should need to pas the parameters around
                 def loss_fn(p):
@@ -383,7 +343,7 @@ class EpisodicLearner(Loadable):
                     self.policy.set_params(p)
                     return compiled_loss_fn()
                 self.loss_fn = loss_fn
-            
+
             # minimize via SGD with probabilistic line search
             probls.minimize(self.loss_fn,utils.wrap_params(p0))
 
@@ -391,7 +351,7 @@ class EpisodicLearner(Loadable):
             error_str = 'Unknown minimization method %s' % (self.min_method)
             utils.print_with_stamp(error_str, self.name)
             raise ValueError(error_str)
-     
+
         print('') 
         v,p,i = self.best_p
         #beta=0.5
@@ -411,13 +371,13 @@ class EpisodicLearner(Loadable):
         dv = utils.wrap_params(dv)
         v,dv = (np.array(v).astype(np.float64),np.array(dv).astype(np.float64))
         self.n_evals+=1
-        
+
         if v<self.best_p[0]:
             self.best_p = [v, p, self.n_evals]
 
         end_time = time.time()
         self.iter_time = ((end_time - self.start_time) - self.iter_time)/self.n_evals + self.iter_time
-        
+
         utils.print_with_stamp('Current value: %s, Total evaluations: %d, \
         Avg. time per call: %f   '%(str(v),self.n_evals,self.iter_time),self.name,True)
         self.start_time = time.time()

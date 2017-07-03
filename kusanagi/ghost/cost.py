@@ -8,6 +8,8 @@ from theano.tensor.nlinalg import det
 from theano.sandbox.linalg import psd
 from kusanagi.utils import print_with_stamp,gTrig2, gTrig_np, gTrig
 
+
+# TODO verify this produces same costs as before!
 def linear_loss(mx, Sx, target, Q, absolute=True, *args, **kwargs):
     '''
         Linear penalty function c(x) = Q.dot(|x-target|)
