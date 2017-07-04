@@ -9,7 +9,7 @@ from functools import partial
 
 import kusanagi
 from kusanagi import utils
-from kusanagi.ghost.algorithms.ExperienceDataset import ExperienceDataset
+from kusanagi.base.ExperienceDataset import ExperienceDataset
 from kusanagi.ghost.control import RandPolicy
 from kusanagi.base.Loadable import Loadable
 from kusanagi.utils import probls

@@ -180,6 +180,6 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False):
     loss = mean_costs.sum()
 
     if intermediate_outs:
-        return loss, inps, updts, r_out
+        return [loss]+list(r_outs), inps, updts
     else:
         return loss, inps, updts

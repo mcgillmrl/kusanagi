@@ -10,12 +10,10 @@ from gym import spaces
 from matplotlib import pyplot as plt
 from functools import partial
 
-import kusanagi
-from kusanagi.shell.plant import ODEPlant, PlantDraw
-from kusanagi.ghost.cost import generic_loss, build_loss_func
-from kusanagi.utils import gTrig2
-from kusanagi.ghost.control import RBFPolicy
-from kusanagi.ghost.regression import GP_UI
+from kusanagi.shell import plant, cartpole
+from kusanagi.ghost import cost
+from kusanagi.ghost import control
+from kusanagi.ghost import regression
 from kusanagi import utils
 
 def default_params():
@@ -29,7 +27,7 @@ def default_params():
     # plant parameters
     plant_params = {}
     plant_params['dt'] = 0.1
-    plant_params['pole_length'] = 0.5
+    plant_params['pole_length'] = 0.6
     plant_params['pole_mass'] = 0.5
     plant_params['cart_mass'] = 0.5
     plant_params['friction'] = 0.1
@@ -39,8 +37,8 @@ def default_params():
 
     # policy parameters
     policy_params = {}
-    policy_params
     policy_params['state0_dist'] = p0
+    policy_params['angle_dims'] = angi 
     policy_params['n_inducing'] = 30
     policy_params['maxU'] = [10]
 
@@ -53,31 +51,31 @@ def default_params():
 
     # cost function parameters
     cost_params = {}
+    cost_params['angle_dims'] = angi
     cost_params['target'] = [0, 0, 0, np.pi]
     cost_params['cw'] = 0.25
     cost_params['expl'] = 0.0
     cost_params['pole_length'] = plant_params['pole_length']
 
-    # general parameters
-    learner_params = {}
-    learner_params['state0_dist'] = p0
-    learner_params['angle_dims'] = angi           # angle dimensions
-    learner_params['H'] = 4.0                     # control horizon
-    learner_params['discount'] = 1.0              # discount factor
-    learner_params['max_evals'] = 150
-    learner_params['conv_thr'] = 1e-12
-    learner_params['min_method'] = 'BFGS'
-    learner_params['realtime'] = True
-    learner_params['plant'] = plant_params
-    learner_params['policy'] = policy_params
-    learner_params['dynmodel'] = dynmodel_params
-    learner_params['cost'] = cost_params
+    # optimizer params
+    opt_params = {}
+    opt_params['max_evals'] = 150
+    opt_params['conv_thr'] = 1e-12
+    opt_params['min_method'] = 'BFGS'
 
-    return {'params': learner_params,
-            'plant_class': Cartpole,
-            'policy_class': RBFPolicy,
-            'cost_func': cartpole_loss,
-            'dynmodel_class': GP_UI}
+    # general parameters
+    params = {}
+    params['state0_dist'] = p0
+    params['angle_dims'] = angi 
+    params['max_steps'] = 40              # control horizon
+    params['discount'] = 1.0              # discount factor
+    params['plant'] = plant_params
+    params['policy'] = policy_params
+    params['dynamics_model'] = dynmodel_params
+    params['cost'] = cost_params
+    params['optimizer'] = opt_params
+
+    return params
 
 def cartpole_loss(mx, Sx,
                   angle_dims=[3],
@@ -103,7 +101,7 @@ def cartpole_loss(mx, Sx,
         Sxa = None
     else:
         # angle dimensions are removed, and their complex representation is appended
-        mxa, Sxa = gTrig2(mx, Sx, angle_dims, D)[:2]
+        mxa, Sxa = utils.gTrig2(mx, Sx, angle_dims, D)[:2]
 
     # build cost scaling function
     Q = np.zeros((Da, Da))
@@ -113,9 +111,9 @@ def cartpole_loss(mx, Sx,
     Q[-2, -2] = pole_length**2
     Q[-1, -1] = pole_length**2
 
-    return generic_loss(mxa, Sxa, targeta, Q, cw, *args, **kwargs)
+    return cost.generic_loss(mxa, Sxa, targeta, Q, cw, *args, **kwargs)
 
-class Cartpole(ODEPlant):
+class Cartpole(plant.ODEPlant):
     metadata = {
         'render.modes': ['human']
     }
@@ -125,7 +123,7 @@ class Cartpole(ODEPlant):
                  loss_func=None,
                  name='Cartpole',
                  *args, **kwargs):
-        super(Cartpole, self).__init__(*args, **kwargs)
+        super(Cartpole, self).__init__(name=name, *args, **kwargs)
         # cartpole system parameters
         self.l = pole_length
         self.m = pole_mass
@@ -141,9 +139,9 @@ class Cartpole(ODEPlant):
 
         # reward/loss function
         if loss_func is None:
-            self.loss_func = build_loss_func(cartpole_loss, False, 'cartpole_loss')
+            self.loss_func = cost.build_loss_func(cartpole_loss, False, 'cartpole_loss')
         else:
-            self.loss_func = build_loss_func(loss_func, False, 'cartpole_loss')
+            self.loss_func = cost.build_loss_func(loss_func, False, 'cartpole_loss')
 
         # pointer to the class that will draw the state of the carpotle system
         self.renderer = None
@@ -189,8 +187,8 @@ class Cartpole(ODEPlant):
         if self.renderer is not None:
             self.renderer.close()
 
-class CartpoleDraw(PlantDraw):
-    def __init__(self, cartpole_plant, refresh_period=(1.0/24), name='CartpoleDraw'):
+class CartpoleDraw(plant.PlantDraw):
+    def __init__(self, cartpole_plant, refresh_period=(1.0/240), name='CartpoleDraw'):
         super(CartpoleDraw, self).__init__(cartpole_plant, refresh_period, name)
         l = self.plant.l
         m = self.plant.m

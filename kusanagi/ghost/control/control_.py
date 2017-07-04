@@ -103,7 +103,7 @@ class RBFPolicy(RBFGP):
         if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
 
         # call init loss to initialize the intermediate shared variables
-        super(RBFGP, self).init_loss(cache_vars=False, compile_funcs=compile_funcs)
+        super(RBFGP, self).get_loss(cache_intermediate=False)
 
         # init the prediction function
         self.evaluate(np.zeros((self.D, )))

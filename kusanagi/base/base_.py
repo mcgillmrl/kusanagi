@@ -18,7 +18,12 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
     @param callback Callable object to be called after every time step
     '''
     fnname = 'apply_controller'
-
+    # initialize policy if needed
+    if hasattr(policy, 'get_params'):
+        p = policy.get_params()
+        if len(p) == 0:
+            policy.init_params()
+    
     # start robot
     utils.print_with_stamp('Starting run', fnname)
     if hasattr(env, 'dt'):
@@ -41,13 +46,14 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
         # apply control and step the env
         x_next, c_t, done, info = env.step(u_t)
         info['done'] = done
+        
 
         # append to dataset
         data.append((x_t, u_t, c_t, info))
 
         # send data to callback
         if callable(callback):
-            callback(x_t, c_t, done, info)
+            callback(x_t, u_t, c_t, info)
 
         # break if done
         if env.done:

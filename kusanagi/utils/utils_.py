@@ -358,8 +358,6 @@ def unwrap_params(P, parameter_shapes):
         p.append(P[i:i+npi].reshape(pshape).astype(theano.config.floatX))
         # set index to the beginning  of next parameter
         i += npi
-    if len(p) == 1:
-        p = p[0]
     return p
 
 class MemoizeJac(object):

@@ -198,7 +198,8 @@ class SerialPlant(Plant):
         self.serial.close()
 
 class PlantDraw(object):
-    def __init__(self, plant, refresh_period=(1.0/24), name='PlantDraw'):
+    def __init__(self, plant, refresh_period=(1.0/240),
+                 name='PlantDraw', *args, **kwargs):
         super(PlantDraw, self).__init__()
         self.name = name
         self.plant = plant
@@ -206,6 +207,7 @@ class PlantDraw(object):
         self.polling_thread = None
 
         self.dt = refresh_period
+        self.exec_time = time()
         self.scale = 150 # pixels per meter
 
         self.center_x = 0
@@ -221,10 +223,10 @@ class PlantDraw(object):
         self.ax = plt.gca()
         self.ax.set_aspect('equal', 'datalim')
         self.ax.grid(True)
-        self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
-        self.init_artists()
         self.fig.canvas.draw()
+        self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
         self.cursor = Cursor(self.ax, useblit=True, color='red', linewidth=2)
+        self.init_artists()
         plt.ion()
         plt.show()
 
@@ -272,13 +274,14 @@ class PlantDraw(object):
     def update_canvas(self, updts):
         if updts is not None:
             # update the drawing from the plant state
-            #self.fig.canvas.restore_region(self.bg)
-
+            self.fig.canvas.restore_region(self.bg)
             for artist in updts:
                 self.ax.draw_artist(artist)
-            #self.fig.canvas.blit(self.ax.bbox)
-            self.fig.canvas.draw()
-            plt.waitforbuttonpress(1e-4)
+            self.fig.canvas.blit(self.ax.bbox)
+            # sleep to guarantee the desired frame rate
+            exec_time = time() - self.exec_time
+            plt.waitforbuttonpress(max(self.dt-exec_time, 1e-9))
+        self.exec_time = time()
 
     def polling_loop(self, polling_pipe):
         current_t = -1
