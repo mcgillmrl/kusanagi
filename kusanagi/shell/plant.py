@@ -55,7 +55,7 @@ class Plant(gym.Env):
 
     def stop(self):
         print_with_stamp('Stopping robot', self.name)
-        self._close()
+        #self._close()
 
     def _step(self, action):
         msg = "You need to implement self._step in your Plant subclass."

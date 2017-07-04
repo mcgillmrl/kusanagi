@@ -68,10 +68,11 @@ class RBFPolicy(RBFGP):
         utils.print_with_stamp('Initializing parameters', self.name)
 
         # init inputs
-        inputs = self.state0_dist.sample(self.n_inducing)
+        inputs_ = self.state0_dist.sample(self.n_inducing)
+        inputs = utils.gTrig_np(inputs_, self.angle_dims)
 
         # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
-        l0 = np.hstack([np.ones(inputs.shape[1]-len(self.angle_dims)),
+        l0 = np.hstack([np.ones(inputs_.shape[1]-len(self.angle_dims)),
                         0.7*np.ones(2*len(self.angle_dims)), 1, 0.01])
         l0 = np.log(np.tile(l0, (self.maxU.size, 1)))
 

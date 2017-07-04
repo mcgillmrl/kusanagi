@@ -36,8 +36,8 @@ if __name__ == '__main__':
 
     if not use_bnn:
         # gp based PILCO
-        learner_params['dynmodel_class'] = kreg.SSGP_UI
-        learner_params['params']['dynmodel']['n_inducing'] = 100
+        #learner_params['dynmodel_class'] = kreg.GP_UI
+        #learner_params['params']['dynmodel']['n_inducing'] = 100
         learner = PILCO(**learner_params)
     else:
         # dropout network (BNN) based PILCO

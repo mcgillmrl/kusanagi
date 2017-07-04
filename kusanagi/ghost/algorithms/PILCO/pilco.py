@@ -34,7 +34,6 @@ class PILCO(EpisodicLearner):
         self.dynmodel_params = params['dynmodel']
 
         # init cost model
-        print cost_func
         self.cost = partial(cost_func, **params['cost'])
 
         # init parent class

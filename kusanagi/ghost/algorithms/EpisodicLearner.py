@@ -206,7 +206,7 @@ class EpisodicLearner(Loadable):
             u_t = policy.evaluate(x_t_, t=t)[0].flatten()
 
             # apply control and step the plant
-            x_t, c_t, done, info = self.plant.step(u_t)
+            x_next, c_t, done, info = self.plant.step(u_t)
             info['done'] = done
 
             # append to experience dataset
@@ -214,9 +214,13 @@ class EpisodicLearner(Loadable):
 
             if callable(callback):
                 callback(x_t, c_t, done, info, self)
+            
+            self.plant.render()
 
             if self.plant.done:
                 break
+                
+            x_t = x_next
 
         # stop robot
         run_value = np.array(self.experience.costs[-1][:-1])

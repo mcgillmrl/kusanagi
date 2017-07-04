@@ -25,7 +25,6 @@ def default_params():
     S0 = np.eye(len(x0))*(0.1**2)
     p0 = utils.distributions.Gaussian(x0, S0)
     x0a, S0a = utils.gTrig2_np(x0[None, :], np.array(S0)[None, :, :], angi, len(x0))
-    p0a = utils.distributions.Gaussian(x0a[0], S0a[0]) 
 
     # plant parameters
     plant_params = {}
@@ -41,7 +40,7 @@ def default_params():
     # policy parameters
     policy_params = {}
     policy_params
-    policy_params['state0_dist'] = p0a
+    policy_params['state0_dist'] = p0
     policy_params['n_inducing'] = 30
     policy_params['maxU'] = [10]
 

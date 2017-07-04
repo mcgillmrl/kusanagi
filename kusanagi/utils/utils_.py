@@ -448,7 +448,7 @@ def plot_results(learner, H=None, plot_samples=True):
         # plot  cost of trajectories
         plt.figure('Cost of last run and Predicted cost')
         plt.gca().clear()
-        print T_range.shape, predicted_costs_means.shape, predicted_costs_vars.shape
+        print(T_range.shape, predicted_costs_means.shape, predicted_costs_vars.shape)
         plt.errorbar(T_range, predicted_costs_means,
                      color='b', yerr=2*np.sqrt(predicted_costs_vars))
         plt.plot(T_range, cost, color='g', linewidth=2)
