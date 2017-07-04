@@ -1,7 +1,7 @@
 from .GP import *
 
 class SSGP(GP):
-    ''' Sparse Spectrum Gaussian Process Regression LAzaro-GRedilla et al 2010'''
+    ''' Sparse Spectrum Gaussian Process Regression Lazaro-GRedilla et al 2010'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_inducing=100, **kwargs):
         self.w = None
         self.sr = None
@@ -93,8 +93,24 @@ class SSGP(GP):
         return loss_ss.sum(), inps, updts
 
     def train(self, pretrain_full=True):
-        # sample sparse spectrum
-        self.set_ss_samples()
+        if self.optimizer.loss_fn is not None:
+            loss_fn = self.optimizer.loss_fn
+            loss = loss_fn()
+            print(loss,)
+            best_w = self.w.get_value()
+            # try a couple spectrum samples and pick the one with the lowest loss
+            for i in range(50):
+                self.set_ss_samples()
+                loss_i = loss_fn()
+                if loss_i < loss:
+                    loss = loss_i
+                    print(loss,)
+                    best_w = self.w.get_value()
+            self.set_ss_samples(best_w)
+        else:
+            # sample sparse spectrum
+            self.set_ss_samples()
+
         super(SSGP, self).train()
 
     def predict_symbolic(self,mx,Sx):
@@ -126,7 +142,7 @@ class SSGP(GP):
         return M, S, V
 
 class SSGP_UI(SSGP, GP_UI):
-    ''' Sparse Spectrum Gaussian Process Regression with Uncertain Inputs'''
+    ''' Sparse Spectrum Gaussian Process Regression with Uncertain Inputs. Derived by Juan Camilo Gamboa Higuera'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI', idims=None, odims=None, profile=False, n_inducing=100, **kwargs):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_inducing=n_inducing,**kwargs)
 
@@ -136,7 +152,7 @@ class SSGP_UI(SSGP, GP_UI):
         
         # precompute some variables
         Ms = self.sr.shape[1]
-        sf2M = tt.exp(2*self.loghyp[:,idims])/tt.cast(Ms,'float64')
+        sf2M = tt.exp(2*self.loghyp[:,idims])/tt.cast(Ms,theano.config.floatX)
         sn2 = tt.exp(2*self.loghyp[:,idims+1])
         srdotx = self.sr.dot(mx)
         srdotSx = self.sr.dot(Sx) 
