@@ -100,7 +100,7 @@ class ScipyOptimizer(object):
             self.best_p = [loss, p, self.n_evals]
         end_time = time.time()
         self.iter_time += ((end_time - self.start_time) - self.iter_time)/self.n_evals
-        utils.print_with_stamp('Current value: %s, Total evaluations: %d, \
+        utils.print_with_stamp('Current loss: %s, Total evaluations: %d, \
         Avg. time per call: %f   '%(str(loss), self.n_evals, self.iter_time),
                                self.name, True)
         self.start_time = time.time()
