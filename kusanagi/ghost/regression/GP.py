@@ -156,8 +156,8 @@ class GP(BaseRegressor):
         # this code supports squared exponential only, at the moment
         X = self.X.get_value(); Y = self.Y.get_value()
         loghyp = np.zeros((odims, idims+2))
-        loghyp[:, :idims] = 0.5*X.std(0, ddof=1)
-        loghyp[:, idims] = 0.5*Y.std(0, ddof=1)
+        loghyp[:, :idims] = X.std(0, ddof=1)
+        loghyp[:, idims] = Y.std(0, ddof=1)
         loghyp[:, idims+1] = 0.1*loghyp[:, idims]
         loghyp = np.log(loghyp)
 
@@ -209,7 +209,7 @@ class GP(BaseRegressor):
         odims = self.E
         N = self.X.shape[0].astype(theano.config.floatX)
 
-        def log_marginal_likelihood(Y, loghyp, i, X, EyeN, nigp=None, y_var=None):
+        def nlml(Y, loghyp, i, X, EyeN, nigp=None, y_var=None):
             # initialise the (before compilation) kernel function
             loghyps = (loghyp[:idims+1], loghyp[idims+1])
             kernel_func = partial(cov.Sum, loghyps, self.covs)
@@ -241,7 +241,7 @@ class GP(BaseRegressor):
             nseq.append(self.Y_var.T)
 
         seq = [self.Y.T, self.loghyp, tt.arange(self.X.shape[0])]
-        (loss, iK, L, beta), updts = theano.scan(fn=log_marginal_likelihood,
+        (loss, iK, L, beta), updts = theano.scan(fn=nlml,
                                                  sequences=seq,
                                                  non_sequences=nseq,
                                                  allow_gc=False,

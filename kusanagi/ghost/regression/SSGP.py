@@ -47,9 +47,9 @@ class SSGP(GP):
         phi_f = tt.concatenate( [tt.sin(srdotX), tt.cos(srdotX)], axis=1 ) # E x 2*n_inducing x N
         
         # TODO vectorize these ops
-        def log_marginal_likelihood(sf2M, sn2, phi_f, Y, EyeM):
-            phi_f.ndim
-            A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM
+        def nlml(sf2M, sn2, phi_f, Y, EyeM):
+            ridge = 1e-6
+            A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM + ridge*EyeM
             Lmm = Cholesky(on_error='nan')(A)
             iA = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm,EyeM))
             Yc = solve_lower_triangular(Lmm,(phi_f.dot(Y)))
@@ -59,7 +59,7 @@ class SSGP(GP):
             
             return loss_ss,iA,Lmm,beta_ss
         
-        (loss_ss, iA, Lmm, beta_ss), updts = theano.scan(fn=log_marginal_likelihood,
+        (loss_ss, iA, Lmm, beta_ss), updts = theano.scan(fn=nlml,
                                                          sequences=[sf2M, sn2, phi_f, self.Y.T],
                                                          non_sequences=[tt.eye(Mi)],
                                                          allow_gc=False,
@@ -116,7 +116,7 @@ class SSGP(GP):
 
             mean[i] = phi_x.T.dot(self.beta_ss[i])
             phi_x_L = solve_lower_triangular(self.Lmm[i],phi_x)
-            variance[i] = sn2*(1 + (sf2/M)*phi_x_L.dot( phi_x_L ))
+            variance[i] = sn2*(1 + (sf2/M)*phi_x_L.dot( phi_x_L )) + 1e-6
 
         # reshape output variables
         M = tt.stack(mean).T.flatten()
@@ -193,7 +193,7 @@ class SSGP_UI(SSGP, GP_UI):
             
             m2 = theano.ifelse.ifelse(tt.eq(i,j), m2 + sn2[i]*(1.0 + sf2M[i]*tt.sum(self.iA[i]*Q)), m2)
             M2 = tt.set_subtensor(M2[i,j], m2)
-            M2 = theano.ifelse.ifelse(tt.eq(i,j), M2 , tt.set_subtensor(M2[j,i], m2))
+            M2 = theano.ifelse.ifelse(tt.eq(i,j), M2 + 1e-6, tt.set_subtensor(M2[j,i], m2))
 
             return M2
 

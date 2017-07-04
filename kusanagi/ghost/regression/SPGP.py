@@ -64,7 +64,7 @@ class SPGP(GP):
             N = self.X.shape[0].astype(theano.config.floatX)
 
             # initialize the training loss function of the sparse FITC approximation
-            def log_marginal_likelihood(Y, loghyp, X, X_sp, EyeM):
+            def nlml(Y, loghyp, X, X_sp, EyeM):
                 # TODO allow for different pseudo inputs for each dimension
                 # initialise the (before compilation) kernel function
                 loghyps = [loghyp[:idims+1],loghyp[idims+1]]
@@ -106,7 +106,7 @@ class SPGP(GP):
 
                 return loss_sp, iKmm, Lmm, Amm, iBmm, beta_sp
             
-            r_outs, updts = theano.scan(fn=log_marginal_likelihood,
+            r_outs, updts = theano.scan(fn=nlml,
                                         sequences=[self.Y.T, self.loghyp],
                                         non_sequences=[self.X, self.X_sp, tt.eye(self.X_sp.shape[0])],
                                         allow_gc=False)
@@ -248,7 +248,7 @@ class SPGP_UI(SPGP,GP_UI):
             M2 = theano.ifelse.ifelse(tt.eq(i,j), M2 + 1e-6, tt.set_subtensor(M2[j,i], m2))
             return M2
 
-        M2_,updts = theano.scan(fn=second_moments, 
+        M2_, updts = theano.scan(fn=second_moments, 
                                sequences=indices,
                                outputs_info=[M2],
                                non_sequences=[self.beta_sp,(self.iKmm - self.iBmm),sf2,R,logk_c,logk_r,z_,Sx],
