@@ -3,7 +3,7 @@ from scipy.cluster.vq import kmeans
 
 class SPGP(GP):
     '''Sparse Pseudo Input FITC approximation Snelson and Gharammani 2005'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP', idims=None, odims=None, profile=False, n_inducing = 50, uncertain_inputs=False, **kwargs):
+    def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP', idims=None, odims=None, profile=False, n_inducing=100, uncertain_inputs=False, **kwargs):
         self.X_sp = None # inducing inputs (symbolic variable)
         self.loss_sp_fn = None
         self.dloss_sp_fn = None
@@ -68,7 +68,6 @@ class SPGP(GP):
                 # TODO allow for different pseudo inputs for each dimension
                 # initialise the (before compilation) kernel function
                 loghyps = [loghyp[:idims+1],loghyp[idims+1]]
-                loghyps = [theano.printing.Print('lh\n')(lh) for lh in loghyps]
                 kernel_func = partial(cov.Sum, loghyps, self.covs)
 
                 ll = tt.exp(loghyp[:idims])
@@ -91,17 +90,17 @@ class SPGP(GP):
 
                 # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
                 sqrtGamma_inv = tt.sqrt(Gamma_inv)
-                Kmn_ = Kmn*sqrtGamma_inv                      # Kmn_*Gamma^-.5
+                Lmn_ = Lmn*sqrtGamma_inv                      # Kmn_*Gamma^-.5
                 Yi = Y*(sqrtGamma_inv)                        # Gamma^-.5* Y
-                #Kmm = theano.printing.Print('Kmm\n')()
-                Bmm = Kmm + (Kmn_).dot(Kmn_.T)                # Kmm + Kmn * Gamma^-1 * Knm
+                Bmm = tt.eye(Kmm.shape[0]) + (Lmn_).dot(Lmn_.T)     # I + Lmn * Gamma^-1 * Lnm
                 Amm = Cholesky(on_error='raise')(Bmm)
-                iBmm = solve_upper_triangular(Amm.T, solve_lower_triangular(Amm, EyeM))
+                LAmm = Lmm.dot(Amm)
+                iBmm = solve_upper_triangular(LAmm.T, solve_lower_triangular(LAmm, EyeM))
 
-                Yci = solve_lower_triangular(Amm, Kmn_.dot(Yi))
-                beta_sp = solve_upper_triangular(Amm.T, Yci)
+                Yci = solve_lower_triangular(Amm, Lmn_.dot(Yi))
+                beta_sp = solve_upper_triangular(LAmm.T, Yci)
 
-                log_det_K_sp = tt.sum(tt.log(Gamma)) - 2*tt.sum(tt.log(tt.diag(Lmm))) + 2*tt.sum(tt.log(tt.diag(Amm)))
+                log_det_K_sp = tt.sum(tt.log(Gamma)) + 2*tt.sum(tt.log(tt.diag(Amm)))
 
                 loss_sp = 0.5*( Yi.dot(Yi) - Yci.dot(Yci) + log_det_K_sp + N*np.log(2*np.pi) )
 
@@ -158,15 +157,16 @@ class SPGP(GP):
         # compute the mean and variance for each output dimension
         mean = [[]]*odims
         variance = [[]]*odims
-        def predict_odim(Lmm,Amm,beta_sp,loghyp,X_sp,mx):
+        def predict_odim(Lmm, Amm, beta_sp, loghyp, X_sp, mx):
             loghyps = (loghyp[:idims+1],loghyp[idims+1])
             kernel_func = partial(cov.Sum, loghyps, self.covs)
             
             k = kernel_func(mx[None,:],X_sp).flatten()
             mean = k.dot(beta_sp)
-            kL = solve_lower_triangular(Lmm,k)
-            kA = solve_lower_triangular(Amm,k)
-            variance = kernel_func(mx[None,:],all_pairs=False) - kL.dot(kL) -  kA.dot(kA)
+            kL = solve_lower_triangular(Lmm, k)
+            kA = solve_lower_triangular(Amm, Lmm.T.dot(k))
+            variance = kernel_func(mx[None,:],all_pairs=False) - (kL.dot(kL) + kA.dot(kA))
+            variance = tt.largest(variance, 0.0) + 1e-3
             
             return mean, variance
         
@@ -245,7 +245,7 @@ class SPGP_UI(SPGP,GP_UI):
             
             m2 = theano.ifelse.ifelse(tt.eq(i,j), m2 - tt.sum(iK[i]*Q) + sf2[i], m2)
             M2 = tt.set_subtensor(M2[i,j], m2)
-            M2 = theano.ifelse.ifelse(tt.eq(i,j), M2 , tt.set_subtensor(M2[j,i], m2))
+            M2 = theano.ifelse.ifelse(tt.eq(i,j), M2 + 1e-6, tt.set_subtensor(M2[j,i], m2))
             return M2
 
         M2_,updts = theano.scan(fn=second_moments, 
