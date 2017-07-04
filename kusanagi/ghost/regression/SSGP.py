@@ -11,27 +11,34 @@ class SSGP(GP):
         self.loss_ss_fn = None
         self.dloss_ss_fn = None
         self.n_inducing = n_inducing
-        GP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,**kwargs)
-    
-    def init_loss(self,cache_vars=True):
-        super(SSGP, self).init_loss()
+        GP.__init__(self, X_dataset, Y_dataset,
+                    name=name, idims=idims, odims=odims,
+                    profile=profile, **kwargs)
+            
+    def init_params(self):
+        super(SSGP, self).init_params()
+        # sample initial unscaled spectrum points
+        self.set_ss_samples()
+
+    def set_ss_samples(self,w=None):
+        idims = self.D
+        odims = self.E
+        if w is None:
+            w = np.random.randn(self.n_inducing,odims,idims)
+        else:
+            w = w.reshape((self.n_inducing,odims,idims))
+        self.set_params({'w': w})        
+        if self.sr is None:
+            self.sr = (self.w*tt.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+
+    def get_loss(self, cache_intermediate=True):
         utils.print_with_stamp('Initialising expression graph for sparse spectrum training loss function',self.name)
         idims = self.D
         odims = self.E
-
-        if self.iA is None:
-            self.iA = S(np.zeros((self.E,2*self.n_inducing,2*self.n_inducing)), name="%s>iA"%(self.name))
-        if self.Lmm is None:
-            self.Lmm = S(np.zeros((self.E,2*self.n_inducing,2*self.n_inducing)), name="%s>Lmm"%(self.name))
-        if self.beta_ss is None:
-            self.beta_ss = S(np.zeros((self.E,2*self.n_inducing)), name="%s>beta_ss"%(self.name))
         
-        # sample initial unscaled spectrum points
-        self.set_spectrum_samples()
-
         #init variables
-        N = self.X.shape[0].astype('float64')
-        M = self.sr.shape[1].astype('float64')
+        N = self.X.shape[0].astype(theano.config.floatX)
+        M = self.sr.shape[1].astype(theano.config.floatX)
         Mi = 2*self.sr.shape[1]
         sf2 = tt.exp(2*self.loghyp[:,idims])
         sf2M = sf2/M
@@ -52,19 +59,26 @@ class SSGP(GP):
             
             return loss_ss,iA,Lmm,beta_ss
         
-        (loss_ss,iA,Lmm,beta_ss),updts = theano.scan(fn=log_marginal_likelihood, sequences=[sf2M,sn2,phi_f,self.Y.T], non_sequences=[tt.eye(Mi)], allow_gc=False,name='%s>logL_ss'%(self.name))
+        (loss_ss, iA, Lmm, beta_ss), updts = theano.scan(fn=log_marginal_likelihood,
+                                                         sequences=[sf2M, sn2, phi_f, self.Y.T],
+                                                         non_sequences=[tt.eye(Mi)],
+                                                         allow_gc=False,
+                                                         name='%s>logL_ss'%(self.name))
         
         iA = tt.unbroadcast(iA,0) if iA.broadcastable[0] else iA
         Lmm = tt.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
         beta_ss = tt.unbroadcast(beta_ss,0) if beta_ss.broadcastable[0] else beta_ss
 
-        if cache_vars:
-            # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
-            updts = [(self.iA,iA),(self.Lmm,Lmm),(self.beta_ss,beta_ss)]
+        if cache_intermediate:
+            # we are going to save the intermediate results in the following shared variables,
+            # so we can use them during prediction without having to recompute them
+            kk = 2*self.n_inducing
+            self.iA = S(np.tile(np.eye(kk),(self.E, 1, 1)), name="%s>iA"%(self.name))
+            self.Lmm = S(np.tile(np.eye(kk),(self.E, 1, 1)), name="%s>Lmm"%(self.name))
+            self.beta_ss = S(np.ones((self.E, kk)), name="%s>beta_ss"%(self.name))
+            updts = [(self.iA, iA),(self.Lmm, Lmm),(self.beta_ss, beta_ss)]
         else:
-            self.iA = iA 
-            self.Lmm = Lmm 
-            self.beta_ss = beta_ss
+            self.iA, self.Lmm, self,beta_ss = iA, Lmm, beta_ss
             updts=None
 
         if self.snr_penalty is not None:
@@ -72,124 +86,16 @@ class SSGP(GP):
             loss_ss += self.snr_penalty(self.loghyp)
 
         # add a penalty for high frequencies
-        loss_ss += tt.sum(tt.abs_(self.sr))
-
-        # Compute the gradients for the sum of loss for all output dimensions
-        dloss_ss = tt.grad(loss_ss.sum(), [self.loghyp,self.w])
-        #dloss_ss =[  dloss_ss[0], 1e-3*dloss_ss[1] ] # scale the gradient for frequencies
-
-        utils.print_with_stamp('Compiling sparse spectrum training loss function',self.name)
-        self.loss_ss_fn = F((),loss_ss,name='%s>loss_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-        utils.print_with_stamp('Compiling gradient of sparse spectrum training loss function',self.name)
-        self.dloss_ss_fn = F((),(loss_ss,dloss_ss[0],dloss_ss[1]),name='%s>dloss_ss'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-
-    def set_spectrum_samples(self,w=None):
-        idims = self.D
-        odims = self.E
-        if w is None:
-            w = np.random.randn(self.n_inducing,odims,idims)
-        else:
-            w = w.reshape((self.n_inducing,odims,idims))
-    
-        self.set_params({'w': w})
+        loss_ss += tt.sum(tt.square(self.sr))
         
-        if self.sr is None:
-            self.sr = (self.w*tt.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
-
-    def loss_ss(self, params, parameter_shapes):
-        loghyp,w = utils.unwrap_params(params,parameter_shapes)
-        self.set_params({'loghyp': loghyp, 'w': w})
-        loss,dloss_lh,dloss_sr = self.dloss_ss_fn()
-        loss = np.array(loss)
-        dloss_lh = np.array(dloss_lh)
-        dloss_sr = np.array(dloss_sr)
-        loss = loss.sum()
-        dloss = utils.wrap_params([dloss_lh,dloss_sr])
-        # on a 64bit system, scipy optimize complains if we pass a 32 bit float
-        res = (loss.astype(np.float64), dloss.astype(np.float64))
-        utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
-        self.besthyp = [np.array(self.loss_ss_fn()).sum(), utils.unwrap_params(params,parameter_shapes)]
-        return res
+        inps = []
+        self.state_changed = True # for saving
+        return loss_ss.sum(), inps, updts
 
     def train(self, pretrain_full=True):
-        if pretrain_full:
-            # train the full GP ( if dataset too large, take a random subsample)
-            X_full = None
-            Y_full = None
-            n_subsample = 2048
-            X = self.X.get_value()
-            if X.shape[0] > n_subsample:
-                utils.print_with_stamp('Training full gp with random subsample of size %d'%(n_subsample),self.name)
-                idx = np.arange(X.shape[0]); np.random.shuffle(idx); idx= idx[:n_subsample]
-                X_full = X
-                Y_full = self.Y.get_value()
-                self.set_dataset(X_full[idx],Y_full[idx])
-
-            super(SSGP, self).train()
-
-            if X_full is not None:
-                # restore full dataset for SSGP training
-                utils.print_with_stamp('Restoring full dataset',self.name)
-                self.set_dataset(X_full,Y_full)
-
-        idims = self.D
-        odims = self.E
-
-        if self.loss_ss_fn is None or self.should_recompile:
-            self.init_loss()
-
-        # initialize spectrum samples
-        loss = self.loss_ss_fn()
-        best_w = self.w.get_value()
-
-        # try a couple spectrum samples and pick the one with the lowest loss
-        for i in range(100):
-            self.set_spectrum_samples()
-            loss_i = self.loss_ss_fn()
-            for d in range(odims):
-                if np.all(loss_i[d] < loss[d]):
-                    loss[d] = loss_i[d]
-                    best_w[:,d,:] = self.w.get_value()[:,d,:]
-
-        self.set_spectrum_samples( best_w )
-
-        # train the pseudo input locations
-        utils.print_with_stamp('loss SS: %s'%(np.array(self.loss_ss_fn())),self.name)
-        # wrap loghyp plus sr (save shapes)
-        p0 = [self.loghyp.get_value(),self.w.get_value()]
-        parameter_shapes = [p.shape for p in p0]
-        m_loss_ss = utils.MemoizeJac(self.loss_ss)
-        self.n_evals=0
-        min_methods = self.min_method if isinstance(self.min_method, list) else [self.min_method]
-        min_methods.extend([m for m in DETERMINISTIC_MIN_METHODS if m != self.min_method])
-        self.besthyp = [np.array(self.loss_ss_fn()).sum(), p0]
-        for m in min_methods:
-            try:
-                utils.print_with_stamp("Using %s optimizer"%(m),self.name)
-                opt_res = minimize(m_loss_ss, 
-                                   utils.wrap_params(p0), 
-                                   args=parameter_shapes,
-                                   jac=m_loss_ss.derivative,
-                                   method=m,
-                                   tol=self.conv_thr,
-                                   options={'maxiter': int(self.max_evals),
-                                            'maxfun': int(self.max_evals),
-                                            'maxcor': 100,
-                                            'maxls': 30,
-                                            'ftol': 1e7*np.finfo(float).eps, 
-                                            'gtol': 1e-5 }
-                                  )
-                break
-            except ValueError:
-                print('')
-                utils.print_with_stamp("Optimization with %s failed"%(m),self.name)
-                p0 = self.besthyp[1]
-
-        print('')
-        loghyp,w = utils.unwrap_params(opt_res.x,parameter_shapes)
-        self.set_params({'loghyp': loghyp, 'w': w})
-        utils.print_with_stamp('loss SS: %s'%(np.array(self.loss_ss_fn())),self.name)
-        self.trained = True
+        # sample sparse spectrum
+        self.set_ss_samples()
+        super(SSGP, self).train()
 
     def predict_symbolic(self,mx,Sx):
         odims = self.E
@@ -217,7 +123,7 @@ class SSGP(GP):
         S = tt.diag(tt.stack(variance).T.flatten())
         V = tt.zeros((self.D,self.E))
 
-        return M,S,V
+        return M, S, V
 
 class SSGP_UI(SSGP, GP_UI):
     ''' Sparse Spectrum Gaussian Process Regression with Uncertain Inputs'''
@@ -225,10 +131,6 @@ class SSGP_UI(SSGP, GP_UI):
         SSGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_inducing=n_inducing,**kwargs)
 
     def predict_symbolic(self,mx,Sx):
-        #if self.N < self.n_inducing:
-            # stick with the full GP
-        #    return GP_UI.predict_symbolic(self,mx,Sx)
-
         idims = self.D
         odims = self.E
         
@@ -305,4 +207,3 @@ class SSGP_UI(SSGP, GP_UI):
         S = M2 - tt.outer(M,M)
 
         return M,S,V
-

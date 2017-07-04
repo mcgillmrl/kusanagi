@@ -25,6 +25,7 @@ class ScipyOptimizer(object):
         self.iter_time = 0
         self.best_p = [None, None, self.n_evals]
         self.params = None
+        self.callback = None
 
     @property
     def min_method(self):
@@ -104,14 +105,18 @@ class ScipyOptimizer(object):
                                self.name, True)
         self.start_time = time.time()
 
+        if callable(self.callback):
+            self.callback(p, loss, dloss)
+
         # return loss+gradients
         return loss, dloss
 
-    def minimize(self, *inputs):
+    def minimize(self, *inputs, **kwargs):
         '''
             @param inputs python variables to pass as inputs to the compiled theano functions
                           for the loss and gradients
         '''
+        self.callback = kwargs.get('callback')
         self.iter_time = 0
         self.start_time = time.time()
         self.n_evals = 0

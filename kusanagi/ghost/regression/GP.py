@@ -6,7 +6,7 @@ import theano.tensor as tt
 
 from collections import OrderedDict
 from functools import partial
-from scipy.optimize import minimize, basinhopping
+from kusanagi.ghost.optimizers import ScipyOptimizer
 from theano import function as F, shared as S
 from theano.tensor.nlinalg import matrix_dot, matrix_inverse, det
 from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular, solve, Cholesky
@@ -16,8 +16,6 @@ from . import SNRpenalty
 from kusanagi import utils
 from kusanagi.ghost.regression import BaseRegressor
 
-
-DETERMINISTIC_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 class GP(BaseRegressor):
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None, odims=None,
                  profile=theano.config.profile, snr_penalty=SNRpenalty.SEard, filename=None,
@@ -27,9 +25,6 @@ class GP(BaseRegressor):
         self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
 
         # GP options
-        self.max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 500
-        self.conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
-        self.min_method = kwargs['min_method'] if 'min_method' in kwargs else 'L-BFGS-B'
         self.state_changed = True
         self.should_recompile = False
         self.trained = False
@@ -80,6 +75,13 @@ class GP(BaseRegressor):
         if filename is not None:
             self.load()
 
+        # optimizer options
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 500
+        conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
+        min_method = kwargs['min_method'] if 'min_method' in kwargs else 'L-BFGS-B'
+        self.optimizer = ScipyOptimizer(min_method, max_evals,
+                                        conv_thr, name=self.name+'_opt')
+
         # register theanno functions and shared variables for saving
         self.register_types([tt.sharedvar.SharedVariable])
         # register additional variables for saving
@@ -113,7 +115,9 @@ class GP(BaseRegressor):
         super(GP, self).set_dataset(X_dataset, Y_dataset)
 
         # extra operations when setting the dataset (specific to this class)
-        self.X_cov = X_cov
+        if X_cov is not None:
+            self.X_cov = X_cov
+            self.nigp = S(np.zeros((self.E, self.N)), name="%s>nigp"%(self.name))
         if Y_var is not None:
             if self.Y_var is None:
                 self.Y_var = S(Y_var, name='%s>Y_var'%(self.name), borrow=True)
@@ -121,7 +125,7 @@ class GP(BaseRegressor):
                 self.Y_var.set_value(Y_var, borrow=True)
 
         if not self.trained:
-            # init log hyperparameters
+            # init log hyperparameters and intermediate variables
             self.init_params()
 
         # we should be saving, since we updated the trianing dataset
@@ -171,24 +175,38 @@ class GP(BaseRegressor):
         else:
             return [attr for attr in list(self.__dict__.values())
                     if isinstance(attr, tt.sharedvar.SharedVariable)]
+    
+    def nigp_updates(self):
+        idims = self.D
+        utils.print_with_stamp('Compiling derivative of mean function at training inputs',self.name)
+        # we need to evaluate the derivative of the mean function at the training inputs
+        def dM2_f_i(mx,beta,loghyp,X):
+            loghyps = (loghyp[:idims+1],loghyp[idims+1])
+            kernel_func = partial(cov.Sum, loghyps, self.covs)
+            k = kernel_func(mx[None,:],X).flatten()
+            mean = k.dot(beta)
+            dmean = tt.jacobian(mean.flatten(),mx)
+            return tt.square(dmean.flatten())
+        
+        def dM2_f(beta,loghyp,X):
+            # iterate over training inputs
+            dM2_o, updts = theano.scan(fn=dM2_f_i, sequences=[X], non_sequences=[beta,loghyp,X], allow_gc = False)
+            return dM2_o
 
-    def init_loss(self, cache_vars=True, compile_funcs=True, unroll_scan=False):
+        # iterate over output dimensions
+        dM2, updts = theano.scan(fn=dM2_f, sequences=[self.beta,self.loghyp], non_sequences=[self.X], allow_gc = False)
+        
+        # update the nigp parameter using the derivative of the mean function
+        nigp = ((dM2[:, :, :, None]*self.X_cov[None]).sum(2)*dM2).sum(-1)
+        nigp_updts = updts + (self.nigp, nigp)
+        
+        return nigp_updts
+
+    def get_loss(self, cache_intermediate=True):
         msg = 'Initialising expression graph for full GP training loss function'
         utils.print_with_stamp(msg, self.name)
         idims = self.D
         odims = self.E
-
-        # these are shared variables for the kernel matrix,
-        # its cholesky decomposition and K^-1 dot Y
-        if self. iK is None:
-            self.iK = S(np.zeros((self.E, self.N, self.N)), name="%s>iK"%(self.name))
-        if self.L is None:
-            self.L = S(np.zeros((self.E, self.N, self.N)), name="%s>L"%(self.name))
-        if self.beta is None:
-            self.beta = S(np.zeros((self.E, self.N)), name="%s>beta"%(self.name))
-        if self.X_cov is not None and self.nigp is None:
-            self.nigp = S(np.zeros((self.E, self.N)), name="%s>nigp"%(self.name))
-
         N = self.X.shape[0].astype(theano.config.floatX)
 
         def log_marginal_likelihood(Y, loghyp, i, X, EyeN, nigp=None, y_var=None):
@@ -204,14 +222,14 @@ class GP(BaseRegressor):
             # add the contribution from the output uncertainty (acts as weight)
             if y_var:
                 K += tt.diag(y_var[i])
+
+            # compute chol(K) and (K^-1)dot(y)
             L = Cholesky(on_error='nan')(K)
             iK = solve_upper_triangular(L.T, solve_lower_triangular(L, EyeN))
             Yc = solve_lower_triangular(L, Y)
             beta = solve_upper_triangular(L.T, Yc)
 
-            # And finally, the negative log marginal likelihood ( again, one for each dimension;
-            # although we could share the loghyperparameters across all output dimensions and
-            # train the GPs jointly)
+            # And finally, the negative log marginal likelihood 
             loss = 0.5*(Yc.T.dot(Yc) + 2*tt.sum(tt.log(tt.diag(L))) + N*tt.log(2*np.pi))
 
             return loss, iK, L, beta
@@ -223,31 +241,26 @@ class GP(BaseRegressor):
             nseq.append(self.Y_var.T)
 
         seq = [self.Y.T, self.loghyp, tt.arange(self.X.shape[0])]
-        if unroll_scan:
-            from lasagne.utils import unroll_scan
-            loss, iK, L, beta = unroll_scan(fn=log_marginal_likelihood,
-                                            outputs_info=[],
-                                            sequences=seq,
-                                            non_sequences=nseq, n_steps=self.E)
-        else:
-            (loss, iK, L, beta), updts = theano.scan(fn=log_marginal_likelihood,
-                                                     sequences=seq,
-                                                     non_sequences=nseq,
-                                                     allow_gc=False,
-                                                     name="%s>logL_scan"%(self.name))
+        (loss, iK, L, beta), updts = theano.scan(fn=log_marginal_likelihood,
+                                                 sequences=seq,
+                                                 non_sequences=nseq,
+                                                 allow_gc=False,
+                                                 name="%s>logL_scan"%(self.name))
 
         iK = tt.unbroadcast(iK, 0) if iK.broadcastable[0] else iK
         L = tt.unbroadcast(L, 0) if L.broadcastable[0] else L
         beta = tt.unbroadcast(beta, 0) if beta.broadcastable[0] else beta
 
-        if cache_vars:
+        if cache_intermediate:
             # we are going to save the intermediate results in the following shared variables,
             # so we can use them during prediction without having to recompute them
+            self.iK = S(np.tile(np.eye(self.N),(self.E, 1, 1)), name="%s>iK"%(self.name))
+            self.L = S(np.tile(np.eye(self.N),(self.E, 1, 1)), name="%s>L"%(self.name))
+            self.beta = S(np.ones((self.E, self.N)), name="%s>beta"%(self.name))
             updts = [(self.iK, iK), (self.L, L), (self.beta, beta)]
         else:
-            self.iK = iK
-            self.L = L
-            self.beta = beta
+            # save intermediate graphs (in case we require grads wrt params)
+            self.iK, self.L, self.beta = iK, L, beta
             updts = None
 
         # we add some penalty to avoid having parameters that are too large
@@ -257,23 +270,9 @@ class GP(BaseRegressor):
                               'log_std': tt.log(self.X.std(0)*(N/(N-1.0))),
                               'p': 30}
             loss += self.snr_penalty(self.loghyp)
-
-        # Compute the gradients for the sum of loss for all output dimensions
-        dloss = tt.grad(loss.sum(), self.loghyp)
-
-        # Compile the theano functions
-        if compile_funcs:
-            utils.print_with_stamp('Compiling full GP training loss function',
-                                   self.name)
-            self.loss_fn = F((), loss, name='%s>loss'%(self.name),
-                             profile=self.profile, mode=self.compile_mode,
-                             allow_input_downcast=True, updates=updts)
-            utils.print_with_stamp('Compiling gradient of full GP training loss function',
-                                   self.name)
-            self.dloss_fn = F((), (loss,dloss), name='%s>dloss'%(self.name),
-                              profile=self.profile, mode=self.compile_mode,
-                              allow_input_downcast=True, updates=updts)
+        inps = []
         self.state_changed = True # for saving
+        return loss.sum(), inps, updts
 
     def predict_symbolic(self, mx, Sx):
         idims = self.D
@@ -304,90 +303,27 @@ class GP(BaseRegressor):
 
         return M, S, V
 
-    def loss(self, params, parameter_shapes):
-        loghyp = utils.unwrap_params(params, parameter_shapes)
-        self.set_params({'loghyp': loghyp})
-        if self.nigp:
-            # update the nigp parameter using the derivative of the mean function
-            dM2 = self.dM2_fn()
-            nigp = ((dM2[:, :, :, None]*self.X_cov[None]).sum(2)*dM2).sum(-1)
-            self.nigp.set_value(nigp)
-
-        loss,dloss = self.dloss_fn()
-        loss = loss.sum()
-        dloss = utils.wrap_params([dloss])
-        # on a 64bit system, scipy optimize complains if we pass a 32 bit float
-        res = (loss.astype(np.float64), dloss.astype(np.float64))
-        utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
-
-        if hasattr(self,'besthyp') and loss < self.besthyp[0]:
-            self.besthyp = [loss, loghyp]
-
-        return res
-
     def train(self):
-        if self.loss_fn is None or self.should_recompile:
-            self.init_loss()
+        if self.optimizer.loss_fn is None or self.should_recompile:
+            loss, inps, updts = self.get_loss()
+            self.optimizer.set_objective(loss, self.get_params(symbolic=True),
+                                         inps, updts)
+        
+        callback = None
+        if self.X_cov and not hasattr(self, 'nigp_fn'):
+            nigp_updts = self.nigp_updates()
+            self.nigp_fn = F([], [], updates=updts,
+                            name='%s>dM2'%(self.name),
+                            profile=self.profile,
+                            mode=self.compile_mode,
+                            allow_input_downcast=True)
 
-        if self.nigp and not hasattr(self, 'dM2_fn'):
-            idims = self.D
-            utils.print_with_stamp('Compiling derivative of mean function at training inputs',self.name)
-            # we need to evaluate the derivative of the mean function at the training inputs
-            def dM2_f_i(mx,beta,loghyp,X):
-                loghyps = (loghyp[:idims+1],loghyp[idims+1])
-                kernel_func = partial(cov.Sum, loghyps, self.covs)
-                k = kernel_func(mx[None,:],X).flatten()
-                mean = k.dot(beta)
-                dmean = tt.jacobian(mean.flatten(),mx)
-                return tt.square(dmean.flatten())
-            
-            def dM2_f(beta,loghyp,X):
-                # iterate over training inputs
-                dM2_o, updts = theano.scan(fn=dM2_f_i, sequences=[X], non_sequences=[beta,loghyp,X], allow_gc = False)
-                return dM2_o
+            def cb(*args, **kwargs):
+                # update the nigp parameter using the derivative of the mean function
+                self.nigp_fn()
+            callback = cb
 
-            # iterate over output dimensions
-            dM2, updts = theano.scan(fn=dM2_f, sequences=[self.beta,self.loghyp], non_sequences=[self.X], allow_gc = False)
-
-            self.dM2_fn = F((),dM2,name='%s>dM2'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-
-        p0 = [self.loghyp.eval()]
-        parameter_shapes = [p.shape for p in p0]
-        utils.print_with_stamp('Current hyperparameters:\n%s'%(p0),self.name)
-        utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
-        m_loss = utils.MemoizeJac(self.loss)
-        self.n_evals=0
-        min_methods = self.min_method if isinstance(self.min_method, list) else [self.min_method]
-        min_methods.extend([m for m in DETERMINISTIC_MIN_METHODS if m != self.min_method])
-        self.besthyp = [np.array(self.loss_fn()).sum(), p0]
-        for m in min_methods:
-            try:
-                utils.print_with_stamp("Using %s optimizer"%(m),self.name)
-                opt_res = minimize(m_loss, 
-                                   utils.wrap_params(p0),
-                                   jac=m_loss.derivative,
-                                   args=parameter_shapes,
-                                   method=m, 
-                                   tol=self.conv_thr,
-                                   options={ 'maxiter': self.max_evals,
-                                             'maxfun': self.max_evals, 
-                                             'maxcor': 100,
-                                             'maxls': 30,
-                                             'ftol': 1e7*np.finfo(float).eps, 
-                                             'gtol': 1e-5 }
-                                  )
-                break
-            except ValueError:
-                utils.print_with_stamp('',self.name)
-                utils.print_with_stamp("Optimization with %s failed"%(m),self.name)
-                loghyp0 = self.besthyp[1]
-
-        utils.print_with_stamp('',self.name)
-        loghyp = utils.unwrap_params(opt_res.x,parameter_shapes)
-        self.state_changed = not np.allclose(utils.wrap_params(p0),opt_res.x,1e-6,1e-9)
-        self.set_params({'loghyp': loghyp})
-        utils.print_with_stamp('New hyperparameters:\n%s'%(self.loghyp.eval()),self.name)
-        utils.print_with_stamp('loss: %s'%(np.array(self.loss_fn())),self.name)
+        self.optimizer.minimize(callback=callback)
         self.trained = True
 
 class GP_UI(GP):
@@ -544,27 +480,26 @@ class RBFGP(GP_UI):
             # Eq 2.55
             m2 = matrix_dot(beta[i], Q, beta[j])
             
-            m2 = theano.ifelse.ifelse(tt.eq(i,j), m2 + 1e-6, m2)
-            M2 = tt.set_subtensor(M2[i,j], m2)
-            M2 = theano.ifelse.ifelse(tt.eq(i,j), M2 , tt.set_subtensor(M2[j,i], m2))
+            m2 = theano.ifelse.ifelse(tt.eq(i, j), m2 + 1e-6, m2)
+            M2 = tt.set_subtensor(M2[i, j], m2)
+            M2 = theano.ifelse.ifelse(tt.eq(i, j), M2 , tt.set_subtensor(M2[j, i], m2))
             return M2
 
-        M2_,updts = theano.scan(fn=second_moments, 
-                            sequences=indices,
-                            outputs_info=[M2],
-                            non_sequences=[self.beta,R,logk_c,logk_r,z_,Sx],
-                            allow_gc=False,
-                            name="%s>M2_scan"%(self.name))
+        M2_, updts = theano.scan(fn=second_moments, 
+                                 sequences=indices,
+                                 outputs_info=[M2],
+                                 non_sequences=[self.beta, R, logk_c, logk_r, z_, Sx],
+                                 allow_gc=False,
+                                 name="%s>M2_scan"%(self.name))
         M2 = M2_[-1]
 
-        S = M2 - tt.outer(M,M)
+        S = M2 - tt.outer(M, M)
 
         # apply saturating function to the output if available
         if self.sat_func is not None:
             # saturate the output
-            M,S,U = self.sat_func(M,S)
+            M, S, U = self.sat_func(M, S)
             # compute the joint input output covariance
             V = V.dot(U)
 
-        return M,S,V
-
+        return M, S, V

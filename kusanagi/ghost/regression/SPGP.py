@@ -3,7 +3,7 @@ from scipy.cluster.vq import kmeans
 
 class SPGP(GP):
     '''Sparse Pseudo Input FITC approximation Snelson and Gharammani 2005'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP', idims=None, odims=None, profile=False, n_inducing = 100, uncertain_inputs=False, **kwargs):
+    def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP', idims=None, odims=None, profile=False, n_inducing = 50, uncertain_inputs=False, **kwargs):
         self.X_sp = None # inducing inputs (symbolic variable)
         self.loss_sp_fn = None
         self.dloss_sp_fn = None
@@ -17,8 +17,11 @@ class SPGP(GP):
         # intialize parent class params
         GP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,uncertain_inputs=uncertain_inputs, **kwargs)
 
+    def init_params(self):
+        super(SPGP, self).init_params()
+
     def init_pseudo_inputs(self):
-        assert self.N > self.n_inducing, "Dataset must have more than n_inducing [ %n ] to enable inference with sparse pseudo inputs"%(self.n_inducing)
+        assert self.N >= self.n_inducing, "Dataset must have more than n_inducing [ %n ] to enable inference with sparse pseudo inputs"%(self.n_inducing)
         self.should_recompile = True
         # pick initial cluster centers from dataset
         X = self.X.get_value()
@@ -33,7 +36,7 @@ class SPGP(GP):
     def set_dataset(self,X_dataset,Y_dataset):
         # set the dataset on the parent class
         super(SPGP, self).set_dataset(X_dataset,Y_dataset)
-        if self.N <= self.n_inducing:
+        if self.N < self.n_inducing:
             utils.print_with_stamp('Dataset is not large enough for using pseudo inputs. Training full GP.',self.name)
             self.X_sp = None
             self.loss_sp_fn = None
@@ -43,69 +46,60 @@ class SPGP(GP):
             self.Amm = None
             self.should_recompile = False
 
-        if self.N > self.n_inducing and self.X_sp is None:
+        if self.N >= self.n_inducing and self.X_sp is None:
             utils.print_with_stamp('Dataset is large enough for using pseudo inputs. You should reinitiialise the training loss function and predictions.',self.name)
             # init the shared variable for the pseudo inputs
             self.init_pseudo_inputs()
             self.should_recompile = True
         
-    def init_loss(self, cache_vars=True):
-        # initialize the training loss function of the GP class
-        super(SPGP, self).init_loss(cache_vars)
-        # here loss and dloss have already been innitialised, sow e can replace loss and dloss
-        # only if we have enough data to train the pseudo inputs ( i.e. self.N > self.n_inducing)
-        if self.N > self.n_inducing:
+    def get_loss(self, cache_intermediate=True):
+        if self.N < self.n_inducing:
+            # initialize the training loss function of the GP class
+            return super(SPGP, self).get_loss(cache_intermediate)
+        else:
             utils.print_with_stamp('Initialising FITC training loss function',self.name)
             self.should_recompile = False
             odims = self.E
             idims = self.D
-            
-            # initialize shared variables
-            if self.iKmm is None:
-                self.iKmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing)), name="%s>iKmm"%(self.name))
-            if self.Lmm is None:
-                self.Lmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing)), name="%s>Lmm"%(self.name))
-            if self.Amm is None:
-                self.Amm = S(np.zeros((self.E,self.n_inducing,self.n_inducing)), name="%s>Amm"%(self.name))
-            if self.iBmm is None:
-                self.iBmm = S(np.zeros((self.E,self.n_inducing,self.n_inducing)), name="%s>iBmm"%(self.name))
-            if self.beta_sp is None:
-                self.beta_sp = S(np.zeros((self.E,self.n_inducing)), name="%s>beta_sp"%(self.name))
+            N = self.X.shape[0].astype(theano.config.floatX)
 
             # initialize the training loss function of the sparse FITC approximation
-            def log_marginal_likelihood(Y,loghyp,X,X_sp,EyeM):
+            def log_marginal_likelihood(Y, loghyp, X, X_sp, EyeM):
                 # TODO allow for different pseudo inputs for each dimension
                 # initialise the (before compilation) kernel function
-                loghyps = (loghyp[:idims+1],loghyp[idims+1])
+                loghyps = [loghyp[:idims+1],loghyp[idims+1]]
+                loghyps = [theano.printing.Print('lh\n')(lh) for lh in loghyps]
                 kernel_func = partial(cov.Sum, loghyps, self.covs)
 
                 ll = tt.exp(loghyp[:idims])
                 sf2 = tt.exp(2*loghyp[idims])
                 sn2 = tt.exp(2*loghyp[idims+1])
-                N = X.shape[0].astype('float64')
-                M = X_sp.shape[0].astype('float64')
+                N = X.shape[0].astype(theano.config.floatX)
+                M = X_sp.shape[0].astype(theano.config.floatX)
 
                 ridge = 1e-6
                 Kmm = kernel_func(X_sp) + ridge*EyeM
                 Kmn = kernel_func(X_sp, X)
-                Lmm = Cholesky(on_error='nan')(Kmm)
-                iKmm = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm,EyeM))
-                Lmn  = solve_lower_triangular(Lmm,Kmn)
-                diagQnn =  tt.diag(Lmn.T.dot(Lmn))
+                Lmm = Cholesky(on_error='raise')(Kmm)
+                iKmm = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm, EyeM))
+                Lmn  = solve_lower_triangular(Lmm ,Kmn)
+                diagQnn =  (Lmn**2).sum(0)
 
                 # Gamma = diag(Knn - Qnn) + sn2*I
-                Gamma = sf2 - diagQnn + sn2
+                Gamma = sf2 + sn2 - diagQnn
                 Gamma_inv = 1.0/Gamma
 
                 # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
-                Kmn_ = Kmn*tt.sqrt(Gamma_inv)                    # Kmn_*Gamma^-.5
-                Yi = Y*(tt.sqrt(Gamma_inv))                      # Gamma^-.5* Y
-                Bmm = Kmm + (Kmn_).dot(Kmn_.T)                  # Kmm + Kmn * Gamma^-1 * Knm
-                Amm = Cholesky(on_error='nan')(Bmm)
-                iBmm = solve_upper_triangular(Amm.T, solve_lower_triangular(Amm,EyeM))
+                sqrtGamma_inv = tt.sqrt(Gamma_inv)
+                Kmn_ = Kmn*sqrtGamma_inv                      # Kmn_*Gamma^-.5
+                Yi = Y*(sqrtGamma_inv)                        # Gamma^-.5* Y
+                #Kmm = theano.printing.Print('Kmm\n')()
+                Bmm = Kmm + (Kmn_).dot(Kmn_.T)                # Kmm + Kmn * Gamma^-1 * Knm
+                Amm = Cholesky(on_error='raise')(Bmm)
+                iBmm = solve_upper_triangular(Amm.T, solve_lower_triangular(Amm, EyeM))
 
-                Yci = solve_lower_triangular(Amm,Kmn_.dot(Yi) )
-                beta_sp = solve_upper_triangular(Amm.T,Yci)
+                Yci = solve_lower_triangular(Amm, Kmn_.dot(Yi))
+                beta_sp = solve_upper_triangular(Amm.T, Yci)
 
                 log_det_K_sp = tt.sum(tt.log(Gamma)) - 2*tt.sum(tt.log(tt.diag(Lmm))) + 2*tt.sum(tt.log(tt.diag(Amm)))
 
@@ -113,38 +107,48 @@ class SPGP(GP):
 
                 return loss_sp, iKmm, Lmm, Amm, iBmm, beta_sp
             
-            (loss_sp, iKmm, Lmm, Amm, iBmm, beta_sp),updts = theano.scan(fn=log_marginal_likelihood, sequences=[self.Y.T,self.loghyp], non_sequences=[self.X,self.X_sp,tt.eye(self.X_sp.shape[0])],allow_gc=False)
+            r_outs, updts = theano.scan(fn=log_marginal_likelihood,
+                                        sequences=[self.Y.T, self.loghyp],
+                                        non_sequences=[self.X, self.X_sp, tt.eye(self.X_sp.shape[0])],
+                                        allow_gc=False)
+            (loss_sp, iKmm, Lmm, Amm, iBmm, beta_sp) = r_outs
             
-            iKmm = tt.unbroadcast(iKmm,0) if iKmm.broadcastable[0] else iKmm
-            Lmm = tt.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
-            Amm = tt.unbroadcast(Amm,0) if Amm.broadcastable[0] else Amm
-            iBmm = tt.unbroadcast(iBmm,0) if iBmm.broadcastable[0] else iBmm
-            beta_sp = tt.unbroadcast(beta_sp,0) if beta_sp.broadcastable[0] else beta_sp
+            iKmm = tt.unbroadcast(iKmm, 0) if iKmm.broadcastable[0] else iKmm
+            Lmm = tt.unbroadcast(Lmm, 0) if Lmm.broadcastable[0] else Lmm
+            Amm = tt.unbroadcast(Amm, 0) if Amm.broadcastable[0] else Amm
+            iBmm = tt.unbroadcast(iBmm, 0) if iBmm.broadcastable[0] else iBmm
+            beta_sp = tt.unbroadcast(beta_sp, 0) if beta_sp.broadcastable[0] else beta_sp
     
-            if cache_vars:
-                # we are going to save the intermediate results in the following shared variables, so we can use them during prediction without having to recompute them
-                updts = [(self.iKmm,iKmm),(self.Lmm,Lmm),(self.Amm,Amm),(self.iBmm,iBmm),(self.beta_sp,beta_sp)]
+            if cache_intermediate:
+                # we are going to save the intermediate results in the following shared variables,
+                # so we can use them during prediction without having to recompute them
+                # initialize shared variables
+                kk = self.n_inducing
+                self.iKmm = S(np.tile(np.eye(kk), (self.E, 1, 1)), name="%s>iKmm"%(self.name))
+                self.Lmm = S(np.tile(np.eye(kk), (self.E, 1, 1)), name="%s>Lmm"%(self.name))
+                self.Amm = S(np.tile(np.eye(kk), (self.E, 1, 1)), name="%s>Amm"%(self.name))
+                self.iBmm = S(np.tile(np.eye(kk), (self.E, 1, 1)), name="%s>iBmm"%(self.name))
+                self.beta_sp = S(np.ones((self.E, kk)), name="%s>beta_sp"%(self.name))
+                updts = [(self.iKmm, iKmm), (self.Lmm, Lmm), (self.Amm, Amm),
+                         (self.iBmm, iBmm), (self.beta_sp, beta_sp)]
             else:
-                self.iKmm = iKmm 
-                self.Lmm = Lmm 
-                self.Amm = Amm 
-                self.iBmm = iBmm 
-                self.beta_sp = beta_sp
+                self.iKmm, self.Lmm, self.Amm, self.iBmm, self.beta_sp = iKmm, Lmm, Amm, iBmm, beta_sp
                 updts=None
+            
+            # we add some penalty to avoid having parameters that are too large
+            if self.snr_penalty is not None:
+                penalty_params = {'log_snr': np.log(1000),
+                                  'log_ls': np.log(100),
+                                  'log_std': tt.log(self.X_sp.std(0)*(N/(N-1.0))),
+                                  'p': 30}
+                loss_sp += self.snr_penalty(self.loghyp)
 
-
-            # TODO include the log hyperparameters in the optimization
-            # TODO give the option for separate inducing inputs for every output dimension
-            dloss_sp = tt.grad(loss_sp.sum(),self.X_sp)
-
-            # Compile the theano functions
-            utils.print_with_stamp('Compiling FITC training loss function',self.name)
-            self.loss_sp_fn = F((),loss_sp,name='%s>loss_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True, updates=updts)
-            utils.print_with_stamp('Compiling gradient of FITC training loss function',self.name)
-            self.dloss_sp_fn = F((),(loss_sp,dloss_sp),name='%s>dloss_sp'%(self.name), profile=self.profile, mode=self.compile_mode, allow_input_downcast=True,updates=updts)
+            inps = []
+            self.state_changed = True # for saving
+            return loss_sp.sum(), inps, updts
             
     def predict_symbolic(self,mx,Sx):
-        if self.N <= self.n_inducing:
+        if self.N < self.n_inducing:
             # stick with the full GP
             return super(SPGP, self).predict_symbolic(mx,Sx)
 
@@ -175,41 +179,19 @@ class SPGP(GP):
 
         return M,S,V
     
-    def loss_sp(self,X_sp):
-        self.set_params({'X_sp': X_sp})
-        res = self.dloss_sp_fn()
-        loss = np.array(res[0]).sum()
-        dloss = np.array(res[1]).flatten()
-        # on a 64bit system, scipy optimize complains if we pass a 32 bit float
-        res = (loss.astype(np.float64),dloss.astype(np.float64))
-        utils.print_with_stamp('%s'%(str(res[0])),self.name,True)
-        return res
-
     def train(self):
-        if self.loss_sp_fn is None or self.should_recompile:
-            self.init_loss()
-        # train the full GP
+        # if dataset is big enough, recompile optimizer
+        if self.should_recompile:
+            self.optimizer.loss_fn = None
+            self.optimizer.grads_fn = None
         super(SPGP, self).train()
-
-        if self.N > self.n_inducing:
-            # train the pseudo input locations
-            if self.loss_sp_fn is None:
-                self.init_loss()
-            utils.print_with_stamp('loss SP: %s'%(np.array(self.loss_sp_fn())),self.name)
-            m_loss_sp = utils.MemoizeJac(self.loss_sp)
-            opt_res = minimize(m_loss_sp, self.X_sp.get_value(), jac=m_loss_sp.derivative, method=self.min_method, tol=self.conv_thr, options={'maxiter': int(self.max_evals)})
-            print('')
-            X_sp = opt_res.x.reshape(self.X_sp.get_value(borrow=True).shape)
-            self.set_params({'X_sp': X_sp})
-            utils.print_with_stamp('loss SP: %s'%(np.array(self.loss_sp_fn())),self.name)
-        self.trained = True
 
 class SPGP_UI(SPGP,GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name = 'SPGP_UI', idims=None, odims=None,profile=False, n_inducing = 100, **kwargs):
         SPGP.__init__(self,X_dataset,Y_dataset,name=name,idims=idims,odims=odims,profile=profile,n_inducing=n_inducing,uncertain_inputs=True, **kwargs)
 
     def predict_symbolic(self,mx,Sx):
-        if self.N <= self.n_inducing:
+        if self.N < self.n_inducing:
             # stick with the full GP
             return GP_UI.predict_symbolic(self,mx,Sx)
 
@@ -274,4 +256,5 @@ class SPGP_UI(SPGP,GP_UI):
         M2 = M2_[-1]
         S = M2 - tt.outer(M,M)
 
-        return M,S,V
+        return M, S, V
+ 

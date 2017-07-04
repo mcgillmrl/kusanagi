@@ -2,18 +2,17 @@
 Example of how to use the library for learning using the PILCO learner on the cartpole task
 '''
 # pylint: disable=C0103
-import atexit
-import sys
 import os
 import numpy as np
-import kusanagi.ghost.regression as kreg
 
+from kusanagi.ghost import control
+from kusanagi.ghost import regression
+from kusanagi.shell import cartpole
+from kusanagi.ghost.algorithms import pilco_
+from kusanagi.ghost.optimizers import ScipyOptimizer
+from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 from kusanagi import utils
-from kusanagi.shell.cartpole import default_params#, CartpoleDraw
-from kusanagi.ghost.algorithms.PILCO import PILCO, MC_PILCO
-from kusanagi.ghost.control import NNPolicy
-from kusanagi.ghost.control import RBFPolicy
-from kusanagi.utils import plot_results
+from functools import partial
 
 np.random.seed(31337)
 np.set_printoptions(linewidth=500)
@@ -22,84 +21,69 @@ if __name__ == '__main__':
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
-    J = 4                                                       # number of random initial trials
-    use_bnn = False
-    N = 100                                                     #learning iterations
-    learner_params = default_params()
-    # initialize learner
-    learner_params['params']['use_empirical_x0'] = True
-    learner_params['params']['realtime'] = False
-    learner_params['params']['H'] = 4.0
-    learner_params['params']['plant']['dt'] = 0.1
-    learner_params['params']['plant']['pole_length'] = .6
-    learner_params['params']['cost']['pole_length'] = .6
+    params = cartpole.default_params()
+    n_rnd = 4                                                # number of random initial trials
+    n_opt = 100                                              #learning iterations
+    max_steps = params['max_steps']
+    angle_dims = params['angle_dims']
 
-    if not use_bnn:
-        # gp based PILCO
-        #learner_params['dynmodel_class'] = kreg.GP_UI
-        #learner_params['params']['dynmodel']['n_inducing'] = 100
-        learner = PILCO(**learner_params)
-    else:
-        # dropout network (BNN) based PILCO
-        learner_params['params']['min_method'] = 'ADAM'
-        learner_params['params']['learning_rate'] = 1e-4
-        learner_params['params']['max_evals'] = 1000
-        learner_params['params']['clip'] = 10.0
-        learner_params['n_samples'] = 100
-        learner_params['dynmodel_class'] = kreg.BNN
-        learner_params['policy_class'] = RBFPolicy
+    # initial state distribution
+    p0 = params['state0_dist']
+    D = p0.mean.size
 
-        learner = MC_PILCO(**learner_params)
-        learner.resample = False
+    # init environment
+    env = cartpole.Cartpole(**params['plant'])
 
-    try:
-        learner.load(load_compiled_fns=False)
-        save_compiled_fns = False
-    except Exception:
-        utils.print_with_stamp('Unable to load compiled fns', 'main')
-        save_compiled_fns = False
+    # init policy
+    pol = control.RBFPolicy(**params['policy'])
+    randpol = control.RandPolicy(maxU=pol.maxU, random_walk=True)
 
-    if learner.experience.n_samples() == 0: #if we have no prior data
-        # gather data with random trials
-        for i in range(J):
-            learner.apply_controller(random_controls=True)
-    else:
-        last_pp = learner.experience.policy_parameters[-1]
-        current_pp = learner.policy.get_params(symbolic=False)
-        should_run = True
-        for lastp, curp in zip(last_pp, current_pp):
-            should_run = should_run and not np.allclose(lastp, curp)
+    # init dynmodel
+    dyn = regression.SSGP_UI(**params['dynamics_model'])
 
-        if should_run:
-            learner.apply_controller()
+    # init cost model
+    cost = partial(cartpole.cartpole_loss, **params['cost'])
 
-        # plot results
-        #plot_results(learner)
+    # create experience dataset
+    exp = ExperienceDataset()
 
-    # learning loop
-    for i in range(N):
-        # train the dynamics models given the collected data
-        if use_bnn:
-            learner.train_dynamics(max_episodes=10)
-            #learner.train_dynamics_from_rollouts()
-        else:
-            learner.train_dynamics()
+    # init policy optimizer
+    polopt = ScipyOptimizer(**params['optimizer'])
 
-        # plot results with new dynamics
-        plot_results(learner)
+    # callback executed after every call to env.step
+    def step_cb(state, action, cost, info):
+        exp.add_sample(state, action, cost, info)
+        env.render()
+    
+    # function to execute before applying policy
+    def gTrig(state):
+        return utils.gTrig_np(state, angle_dims).flatten()
 
+    # during first n_rnd trials, apply randomized controls
+    for i in range(n_rnd):
+        exp.new_episode()
+        apply_controller(env, randpol, max_steps,
+                         preprocess=gTrig,
+                         callback=step_cb)
+
+    # PILCO loop
+    for i in range(n_opt):
+        total_exp = sum([len(st) for st in exp.states])
+        utils.print_with_stamp('Iteration %d, experience: %d steps'%(i+1, total_exp))
+
+        # train dynamics model
+        train_dynamics(dyn, exp, angle_dims=angle_dims)
+    
         # train policy
-        learner.train_policy()
+        if polopt.loss_fn is None:
+            loss, inps, updts = pilco_.get_loss(pol, dyn, cost, D, angle_dims)
+            polopt.set_objective(loss, pol.get_params(symbolic=True), inps, updts)
+        polopt.minimize(p0.mean, p0.cov, 40, 1)
 
-        # execute it on the robot
-        learner.apply_controller()
-
-        # plot results with new policy
-        plot_results(learner)
-
-        # save latest state of the learner
-        learner.save(save_compiled_fns=save_compiled_fns)
-        save_compiled_fns = False  # only need to save the compiled functions once
+        # apply controller
+        exp.new_episode(policy_params=pol.get_params())
+        apply_controller(env, pol, max_steps,
+                         preprocess=gTrig, callback=step_cb)
 
     input('Finished training')
     sys.exit(0)
