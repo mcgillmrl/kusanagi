@@ -39,12 +39,13 @@ class Plant(gym.Env):
         if len(self.u.shape) < 2:
             self.u = self.u[:, None]
 
-    def get_state(self):
+    def get_state(self, noisy=True):
         state = self.state
-        assert state is not None, 'Plant has not been reset'
-        if self.noise_dist is not None:
+
+        if noisy and self.noise_dist is not None:
             # noisy state measurement
             state += self.noise_dist.sample(1).flatten()
+
         if self.angle_dims:
             # convert angle dimensions to complex representation
             state = gTrig_np(state, self.angle_dims).flatten()

@@ -10,7 +10,7 @@ from gym import spaces
 from matplotlib import pyplot as plt
 from functools import partial
 
-from kusanagi.shell import plant, cartpole
+from kusanagi.shell import plant
 from kusanagi.ghost import cost
 from kusanagi.ghost import control
 from kusanagi.ghost import regression
@@ -181,7 +181,7 @@ class Cartpole(plant.ODEPlant):
         if self.renderer is None:
             self.renderer = CartpoleDraw(self)
             self.renderer.init_ui()
-        updts = self.renderer.update(*self.get_state())
+        updts = self.renderer.update(*self.get_state(noisy=False))
 
     def _close(self):
         if self.renderer is not None:
