@@ -93,23 +93,21 @@ class SSGP(GP):
         return loss_ss.sum(), inps, updts
 
     def train(self, pretrain_full=True):
+        # sample sparse spectrum
+        self.set_ss_samples()
         if self.optimizer.loss_fn is not None:
             loss_fn = self.optimizer.loss_fn
             loss = loss_fn()
-            print(loss,)
             best_w = self.w.get_value()
             # try a couple spectrum samples and pick the one with the lowest loss
-            for i in range(50):
+            # TODO do this test per output dimension
+            for i in range(100):
                 self.set_ss_samples()
                 loss_i = loss_fn()
                 if loss_i < loss:
                     loss = loss_i
-                    print(loss,)
                     best_w = self.w.get_value()
             self.set_ss_samples(best_w)
-        else:
-            # sample sparse spectrum
-            self.set_ss_samples()
 
         super(SSGP, self).train()
 
