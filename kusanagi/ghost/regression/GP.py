@@ -6,7 +6,7 @@ import theano.tensor as tt
 
 from collections import OrderedDict
 from functools import partial
-from kusanagi.ghost.optimizers import ScipyOptimizer
+from kusanagi.ghost.optimizers import ScipyOptimizer, SGDOptimizer
 from theano import function as F, shared as S
 from theano.tensor.nlinalg import matrix_dot, matrix_inverse, det
 from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular, solve, Cholesky
@@ -79,6 +79,7 @@ class GP(BaseRegressor):
         max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 500
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'L-BFGS-B'
+        #self.optimizer = SGDOptimizer()
         self.optimizer = ScipyOptimizer(min_method, max_evals,
                                         conv_thr, name=self.name+'_opt')
 
@@ -303,13 +304,15 @@ class GP(BaseRegressor):
 
         return M, S, V
 
-    def train(self):
-        if self.optimizer.loss_fn is None or self.should_recompile:
+    def train(self, optimizer=None, callback=None):
+        if optimizer is None:
+            optimizer = self.optimizer
+
+        if optimizer.loss_fn is None or self.should_recompile:
             loss, inps, updts = self.get_loss()
-            self.optimizer.set_objective(loss, self.get_params(symbolic=True),
-                                         inps, updts)
+            optimizer.set_objective(loss, self.get_params(symbolic=True),
+                                    inps, updts)
         
-        callback = None
         if self.X_cov and not hasattr(self, 'nigp_fn'):
             nigp_updts = self.nigp_updates()
             self.nigp_fn = F([], [], updates=updts,
@@ -317,13 +320,23 @@ class GP(BaseRegressor):
                             profile=self.profile,
                             mode=self.compile_mode,
                             allow_input_downcast=True)
-
-            def cb(*args, **kwargs):
+            
+            def nigp_cb(*args, **kwargs):
                 # update the nigp parameter using the derivative of the mean function
                 self.nigp_fn()
-            callback = cb
 
-        self.optimizer.minimize(callback=callback)
+            if callable(callback):
+                # create a new callback that calls nigp_cb and the input callback
+                in_cb = callback
+                def combined_cb(*args, **kwargs):
+                    nigp_cb(*args, **kwargs)
+                    in_cb(*args, **kwargs)
+                
+                callback = combined_cb
+            else:
+                callback = cb
+
+        optimizer.minimize(callback=callback)
         self.trained = True
 
 class GP_UI(GP):
@@ -396,7 +409,7 @@ class GP_UI(GP):
         M2 = M2_[-1]
         S = M2 - tt.outer(M,M)
 
-        return M,S,V
+        return M, S, V
 
 class RBFGP(GP_UI):
     ''' RBF network (GP with uncertain inputs/deterministic outputs)'''
