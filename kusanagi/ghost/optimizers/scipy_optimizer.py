@@ -4,6 +4,7 @@ import theano
 import time
 from kusanagi import utils
 from scipy.optimize import minimize
+from theano.updates import OrderedUpdates
 import traceback
 
 SCIPY_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
@@ -55,6 +56,9 @@ class ScipyOptimizer(object):
         '''
         if inputs is None:
             inputs = []
+
+        if updts is not None:
+            updts = OrderedUpdates(updts)
 
         if grads is None:
             utils.print_with_stamp('Building computation graph for gradients',

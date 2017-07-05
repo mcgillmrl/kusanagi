@@ -1,10 +1,12 @@
 # pylint: disable=C0103
+import lasagne
 import numpy as np
 import theano
 import time
+import traceback
+from theano.updates import OrderedUpdates
 from kusanagi import utils
 from scipy.optimize import minimize
-import traceback
 
 LASAGNE_MIN_METHODS = {'sgd': lasagne.updates.sgd,
                        'momentum': lasagne.updates.momentum,
@@ -21,7 +23,8 @@ LASAGNE_MIN_METHODS = {'sgd': lasagne.updates.sgd,
 class SGDOptimizer(object):
     def __init__(self, min_method='ADAM',
                  max_evals=1000,
-                 name='ScipyOptimizer'):
+                 conv_thr=1e-12,
+                 name='SGDOptimizer', **kwargs):
         self.min_method = min_method
         self.max_evals = max_evals
         self.name = name
@@ -58,22 +61,31 @@ class SGDOptimizer(object):
         if inputs is None:
             inputs = []
 
-        min_method_updt = STOCHASTIC_MIN_METHODS[min_method]
+        if updts is not None:
+            updts = OrderedUpdates(updts)
+
         if grads is None:
             utils.print_with_stamp('Building computation graph for gradients',
                                    self.name)
             grads = theano.grad(loss, params)
 
-        utils.print_with_stamp("Computing gradient update rules", self.name)
+        utils.print_with_stamp("Computing parameter update rules", self.name)
+        min_method_updt = LASAGNE_MIN_METHODS[self.min_method]
         grad_updates = min_method_updt(grads, params)
 
-        utils.print_with_stamp("Compiling optimizer", self.name)
+        utils.print_with_stamp('Compiling function for loss', self.name)
+        self.loss_fn = theano.function(inputs, loss, updates=updts)
+
+        utils.print_with_stamp("Compiling parameter updates", self.name)
         self.update_params_fn = theano.function(inputs, [loss]+grads, updates=grad_updates+updts)
 
         self.n_evals = 0
         self.start_time = 0
         self.iter_time = 0
         self.params = params
+
+    def minibatch_train(self, X, Y, *inputs, **kwargs):
+        pass
 
     def minimize(self, *inputs, **kwargs):
         '''
@@ -86,20 +98,31 @@ class SGDOptimizer(object):
         self.start_time = time.time()
         self.n_evals = 0
         utils.print_with_stamp('Optimizing parameters', self.name)
-        
-        self.best_p = [loss0, p0, 0]
+
+        # set initial loss and parameters
+        loss0 = self.loss_fn(*inputs)
+        utils.print_with_stamp('Initial loss [%s]'%(loss0), self.name)
+        p = [p.get_value() for p in self.params]
+        self.best_p = [loss0, p, 0]
+
         # training loop
         for i in range(self.max_evals):
             # evaluate current policy and update parameters
-            ret = self.update_fn()     # v corresponds to the parameters before the training update
-            loss, dloss = ret[0], ret[1:]
+            start_time = time.time()
+            ret = self.update_params_fn()
+            # the returned loss corresponds to the parameters BEFORE the update
+            loss, dloss = self.loss_fn(), ret[1:]
             if loss < self.best_p[0]:
-                self.best_p = [v,p,i]
+                p = [p.get_value() for p in self.params]
+                self.best_p = [loss, p, i]
             self.n_evals+=1
-            gmag = [np.sqrt((p**2).sum()) for p in dJdp]
-            gmax = [p.max() for p in dJdp]
-            out_str = 'Current value: %E, Total evaluations: %d, gm: %s, lr: %f'
-            utils.print_with_stamp(out_str%(v, self.n_evals, gmag, lr), self.name,True)
+            gmag = [np.sqrt((p**2).sum()) for p in dloss]
+            gmax = [p.max() for p in dloss]
+            end_time = time.time()
+            self.iter_time += ((end_time - start_time) - self.iter_time)/self.n_evals
+            out_str = 'Current value: %E, Total evaluations: %d, Avg. time per updt: %f, gm: %s, lr: %f'
+            utils.print_with_stamp(out_str%(self.loss_fn(), self.n_evals, self.iter_time, gmag, lr),
+                                   self.name,True)
 
         print('') 
         v, p, i = self.best_p
