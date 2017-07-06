@@ -24,9 +24,9 @@ class SSGP(GP):
         idims = self.D
         odims = self.E
         if w is None:
-            w = np.random.randn(self.n_inducing,odims,idims)
+            w = np.random.randn(self.n_inducing, odims, idims)
         else:
-            w = w.reshape((self.n_inducing,odims,idims))
+            w = w.reshape((self.n_inducing, odims, idims))
         self.set_params({'w': w})
         if self.sr is None:
             self.sr = (self.w*tt.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
@@ -37,7 +37,7 @@ class SSGP(GP):
         odims = self.E
  
         if self.sr is None:
-            self.sr = (self.w*tt.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+            self.sr = (self.w*tt.exp(-self.loghyp[:, :idims])).transpose(1,  0,2)
 
         #init variables
         N = self.X.shape[0].astype(theano.config.floatX)
@@ -130,6 +130,7 @@ class SSGP(GP):
             self.set_dataset(X_full, Y_full)
     
     def resample_ss(self, iters=100):
+        self.set_ss_samples()
         if self.optimizer.loss_fn is not None:
             loss_fn = self.optimizer.loss_fn
             loss = loss_fn()

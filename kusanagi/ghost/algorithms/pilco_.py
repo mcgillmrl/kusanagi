@@ -83,8 +83,8 @@ def propagate_belief(mx, Sx, policy, dynmodel, D, angle_dims=None):
     return [mx_next, Sx_next], updates
 
 def rollout(mx0, Sx0, H, gamma0,
-                  policy, dynmodel, cost,
-                  D, angle_dims=None):
+            policy, dynmodel, cost,
+            D, angle_dims=None):
     ''' Given some initial state distribution Normal(mx0,Sx0), and a prediction horizon H
     (number of timesteps), returns the predicted state distribution and discounted cost for
     every timestep. The discounted cost is returned as a distribution, since the state
@@ -121,7 +121,7 @@ def rollout(mx0, Sx0, H, gamma0,
                                         n_steps=H,
                                         strict=True,
                                         allow_gc=False,
-                                        name="pilco.rollout_scan")
+                                        name="pilco>rollout_scan")
 
     mean_costs, var_costs, mean_states, cov_states = rollout_output[:4]
 
