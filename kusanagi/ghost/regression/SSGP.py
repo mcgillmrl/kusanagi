@@ -32,13 +32,13 @@ class SSGP(GP):
             self.sr = (self.w*tt.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
 
     def get_loss(self, cache_intermediate=True):
-        utils.print_with_stamp('Initialising expression graph for sparse spectrum training loss function',self.name)
+        utils.print_with_stamp('Building Sparse Spectrum loss',self.name)
         idims = self.D
         odims = self.E
-
+ 
         if self.sr is None:
             self.sr = (self.w*tt.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
- 
+
         #init variables
         N = self.X.shape[0].astype(theano.config.floatX)
         M = self.sr.shape[1].astype(theano.config.floatX)
@@ -89,45 +89,65 @@ class SSGP(GP):
             loss_ss += self.snr_penalty(self.loghyp)
 
         # add a penalty for high frequencies
-        loss_ss += tt.sum(tt.square(self.sr))
-
+        freq_penalty = tt.square(self.w).sum(-1).mean(0)
+        loss_ss = loss_ss + freq_penalty 
+        
         inps = []
         self.state_changed = True # for saving
         return loss_ss.sum(), inps, updts
 
-    def train(self, pretrain_full=True):
+    def pretrain_full(self):
+        if not hasattr(self, 'full_optimizer'):
+            import copy
+            self.full_optimizer = copy.copy(self.optimizer)
+            self.full_optimizer.name = self.name+'_fullopt'
+            self.full_optimizer.max_evals = self.optimizer.max_evals
+            self.full_optimizer.loss_fn = None
+
+        if self.full_optimizer.loss_fn is None or self.should_recompile:
+            loss, inps, updts = GP.get_loss(self)
+            self.full_optimizer.set_objective(loss, self.get_params(symbolic=True)[:-1],
+                                                inps, updts)
+
+        # train the full GP ( if dataset too large, take a random subsample)
+        X_full = None
+        Y_full = None
+        n_subsample = 2048
+        X = self.X.get_value()
+        if X.shape[0] > n_subsample:
+            utils.print_with_stamp('Training full gp with random subsample of size %d'%(n_subsample),
+                                    self.name)
+            idx = np.arange(X.shape[0]); np.random.shuffle(idx); idx= idx[:n_subsample]
+            X_full = X
+            Y_full = self.Y.get_value()
+            self.set_dataset(X_full[idx], Y_full[idx])
+
+        super(SSGP, self).train(self.full_optimizer)
+
+        if X_full is not None:
+            # restore full dataset for SSGP training
+            utils.print_with_stamp('Restoring full dataset', self.name)
+            self.set_dataset(X_full, Y_full)
+    
+    def resample_ss(self, iters=100):
+        if self.optimizer.loss_fn is not None:
+            loss_fn = self.optimizer.loss_fn
+            loss = loss_fn()
+            best_w = self.w.get_value()
+            # try a couple spectrum samples and pick the one with the lowest loss
+            # TODO do this test per output dimension
+            for i in range(iters):
+                self.set_ss_samples()
+                loss_i = loss_fn()
+                if loss_i < loss:
+                    loss = loss_i
+                    best_w = self.w.get_value()
+            self.set_ss_samples(best_w)
+
+    def train(self, pretrain_full=False):
         if pretrain_full:
-            if not hasattr(self, 'full_optimizer'):
-                import copy
-                self.full_optimizer = copy.deepcopy(self.optimizer)
-                self.full_optimizer.name = self.name+'_fullopt'
-            if self.optimizer.loss_fn is None or self.should_recompile:
-                loss, inps, updts = GP.get_loss(self)
-                self.full_optimizer.set_objective(loss, self.get_params(symbolic=True)[:-1],
-                                                  inps, updts)
-
-            # train the full GP ( if dataset too large, take a random subsample)
-            X_full = None
-            Y_full = None
-            n_subsample = 2048
-            X = self.X.get_value()
-            if X.shape[0] > n_subsample:
-                utils.print_with_stamp('Training full gp with random subsample of size %d'%(n_subsample),self.name)
-                idx = np.arange(X.shape[0]); np.random.shuffle(idx); idx= idx[:n_subsample]
-                X_full = X
-                Y_full = self.Y.get_value()
-                self.set_dataset(X_full[idx], Y_full[idx])
-
-            super(SSGP, self).train(self.full_optimizer)
-
-            if X_full is not None:
-                # restore full dataset for SSGP training
-                utils.print_with_stamp('Restoring full dataset', self.name)
-                self.set_dataset(X_full, Y_full)
-
-            # sample initial unscaled spectrum points
-            self.set_ss_samples()
-
+            self.pretrain_full()
+        self.resample_ss(100)
         super(SSGP, self).train()
 
     def predict_symbolic(self,mx,Sx):

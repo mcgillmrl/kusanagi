@@ -57,7 +57,7 @@ class SPGP(GP):
             # initialize the training loss function of the GP class
             return super(SPGP, self).get_loss(cache_intermediate)
         else:
-            utils.print_with_stamp('Initialising FITC training loss function',self.name)
+            utils.print_with_stamp('Building FITC loss',self.name)
             self.should_recompile = False
             odims = self.E
             idims = self.D

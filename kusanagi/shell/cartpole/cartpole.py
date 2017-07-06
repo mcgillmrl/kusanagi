@@ -20,7 +20,7 @@ def default_params():
     # setup learner parameters
     angi = [3]
     x0 = np.array([0, 0, 0, 0])
-    S0 = np.eye(len(x0))*(0.1**2)
+    S0 = np.eye(len(x0))*(0.2**2)
     p0 = utils.distributions.Gaussian(x0, S0)
     x0a, S0a = utils.gTrig2_np(x0[None, :], np.array(S0)[None, :, :], angi, len(x0))
 
@@ -59,9 +59,9 @@ def default_params():
 
     # optimizer params
     opt_params = {}
-    opt_params['max_evals'] = 150
+    opt_params['max_evals'] = 100
     opt_params['conv_thr'] = 1e-12
-    opt_params['min_method'] = 'BFGS'
+    opt_params['min_method'] = 'L-BFGS-B'
 
     # general parameters
     params = {}

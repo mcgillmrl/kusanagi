@@ -32,6 +32,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
     else:
         utils.print_with_stamp('Running for %d steps'%(max_steps), fnname)
     x_t = env.reset()
+
     # data corresponds to state at time t, action at time t, reward after applying action at time t
     data = []
 
@@ -46,7 +47,6 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
         # apply control and step the env
         x_next, c_t, done, info = env.step(u_t)
         info['done'] = done
-        
 
         # append to dataset
         data.append((x_t, u_t, c_t, info))
@@ -108,10 +108,6 @@ def train_dynamics(dynmodel, data, angle_dims=[],
     o_shp = dynmodel.Y.get_value(borrow=True).shape
     msg = 'Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(i_shp, o_shp)
     utils.print_with_stamp(msg, 'train_dynamics')
-
-    if dynmodel.should_recompile:
-        # reinitialize log likelihood
-        dynmodel.init_loss()
 
     # finally, train the dynamics model
     dynmodel.train()

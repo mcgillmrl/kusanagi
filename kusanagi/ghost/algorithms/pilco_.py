@@ -28,13 +28,7 @@ def propagate_belief(mx, Sx, policy, dynmodel, D, angle_dims=None):
     mxa, Sxa, Ca = utils.gTrig2(mx, Sx, angle_dims, D)
 
     # compute distribution of control signal
-    if hasattr(dynmodel, 'logsn'):
-        sn2 = tt.exp(2*dynmodel.logsn)
-        Sx_ = Sx + tt.diag(0.5*sn2)# noisy state measurement
-        mxa_, Sxa_ = utils.gTrig2(mx, Sx_, angle_dims, D)[:2]
-    else:
-        mxa_, Sxa_ = mxa, Sxa
-    mu, Su, Cu = policy.evaluate(mxa_, Sxa_, symbolic=True)
+    mu, Su, Cu = policy.evaluate(mxa, Sxa, symbolic=True)
 
     # compute state control joint distribution
     mxu = tt.concatenate([mxa, mu])
@@ -175,9 +169,9 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False):
 
     mean_costs = r_outs[0]
 
-    # loss is E_{dynmodels}(sum c(x_t))
-    #          = sum E_{x_t}(c(x_t))
-    loss = mean_costs.sum()
+    # loss is E_{dynmodels}((1/H)*sum c(x_t))
+    #          = (1/H)*sum E_{x_t}(c(x_t))
+    loss = mean_costs.mean()
 
     if intermediate_outs:
         return [loss]+list(r_outs), inps, updts

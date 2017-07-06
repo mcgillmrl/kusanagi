@@ -142,16 +142,20 @@ class ScipyOptimizer(object):
         for min_method in self.alt_min_methods:
             try:
                 utils.print_with_stamp("Using %s optimizer"%(min_method), self.name)
-                opt_res = minimize(mloss, utils.wrap_params(p0),
+                p0_wrapped = utils.wrap_params(p0)
+                opts = {'maxiter': self.max_evals,
+                        'ftol': 1e6*np.finfo(float).eps,
+                        'gtol': 1.0e-6}
+                if min_method.lower() == 'l-bfgs-b':
+                    #opts['maxfun'] = self.max_evals
+                    opts['maxcor'] = min(100,p0_wrapped.size)
+                    opts['maxls'] = 30
+
+                opt_res = minimize(mloss, p0_wrapped,
                                    jac=mloss.derivative,
                                    method=min_method,
                                    tol=self.conv_thr,
-                                   options={'maxiter': self.max_evals,
-                                            'maxfun': self.max_evals,
-                                            'maxcor': 100,
-                                            'maxls': 30,
-                                            'ftol': 1e6*np.finfo(float).eps,
-                                            'gtol': 1.0e-6}
+                                   options=opts
                                   )
                 # set params to new values
                 popt = utils.unwrap_params(opt_res.x, p_shapes)

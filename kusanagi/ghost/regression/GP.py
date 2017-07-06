@@ -76,10 +76,11 @@ class GP(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 500
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 300
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'L-BFGS-B'
-        #self.optimizer = SGDOptimizer()
+        #self.optimizer = SGDOptimizer("adam", max_evals,
+        #                              conv_thr, name=self.name+'_opt')
         self.optimizer = ScipyOptimizer(min_method, max_evals,
                                         conv_thr, name=self.name+'_opt')
 
@@ -204,7 +205,7 @@ class GP(BaseRegressor):
         return nigp_updts
 
     def get_loss(self, cache_intermediate=True):
-        msg = 'Initialising expression graph for full GP training loss function'
+        msg = 'Building full GP loss'
         utils.print_with_stamp(msg, self.name)
         idims = self.D
         odims = self.E
@@ -312,6 +313,9 @@ class GP(BaseRegressor):
             loss, inps, updts = self.get_loss()
             optimizer.set_objective(loss, self.get_params(symbolic=True),
                                     inps, updts)
+        #utils.print_with_stamp('checking if same', self.name)
+        #loss, inps, updts = self.get_loss()
+        #print(theano.gof.graph.is_same_graph(loss, self.optimizer.loss_fn.outputs[0].variable))
         
         if self.X_cov and not hasattr(self, 'nigp_fn'):
             nigp_updts = self.nigp_updates()

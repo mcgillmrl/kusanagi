@@ -14,7 +14,7 @@ from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 from kusanagi import utils
 from functools import partial
 
-np.random.seed(31337)
+#np.random.seed(1337)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
@@ -24,7 +24,8 @@ if __name__ == '__main__':
     params = cartpole.default_params()
     n_rnd = 4                                                # number of random initial trials
     n_opt = 100                                              #learning iterations
-    max_steps = params['max_steps']
+    H = params['max_steps']
+    gamma = params['discount']
     angle_dims = params['angle_dims']
 
     # initial state distribution
@@ -36,7 +37,7 @@ if __name__ == '__main__':
 
     # init policy
     pol = control.RBFPolicy(**params['policy'])
-    randpol = control.RandPolicy(maxU=pol.maxU, random_walk=True)
+    randpol = control.RandPolicy(maxU=pol.maxU)
 
     # init dynmodel
     dyn = regression.SSGP_UI(**params['dynamics_model'])
@@ -62,27 +63,32 @@ if __name__ == '__main__':
     # during first n_rnd trials, apply randomized controls
     for i in range(n_rnd):
         exp.new_episode()
-        apply_controller(env, randpol, max_steps,
+        apply_controller(env, randpol, H,
                          preprocess=gTrig,
                          callback=step_cb)
 
     # PILCO loop
     for i in range(n_opt):
         total_exp = sum([len(st) for st in exp.states])
-        utils.print_with_stamp('Iteration %d, experience: %d steps'%(i+1, total_exp))
+        utils.print_with_stamp('==== Iteration [%d], experience: [%d steps] ===='%(i+1, total_exp))
 
         # train dynamics model
         train_dynamics(dyn, exp, angle_dims=angle_dims)
-    
+
+        # initial state distribution
+        x0 = np.array([st[0] for st in exp.states])
+        m0 = x0.mean(0)
+        S0 = np.cov(x0.T).T if len(x0) > 2 else p0.cov
+
         # train policy
-        if polopt.loss_fn is None:
+        if polopt.loss_fn is None or dyn.should_recompile:
             loss, inps, updts = pilco_.get_loss(pol, dyn, cost, D, angle_dims)
             polopt.set_objective(loss, pol.get_params(symbolic=True), inps, updts)
-        polopt.minimize(p0.mean, p0.cov, 40, 1)
+        polopt.minimize(m0, S0, H, gamma)
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())
-        apply_controller(env, pol, max_steps,
+        apply_controller(env, pol, H,
                          preprocess=gTrig, callback=step_cb)
 
     input('Finished training')
