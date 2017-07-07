@@ -56,7 +56,7 @@ class SGDOptimizer(object):
             @param updts dictionary of list of theano updates to be applied after every evaluation
                          of the loss function
             @param grads gradients of the loss function. If not provided, will be computed here
-            @param kwargs
+            @param kwargs arguments to pass to the lasagne.updates function
         '''
         if inputs is None:
             inputs = []
@@ -68,24 +68,64 @@ class SGDOptimizer(object):
             utils.print_with_stamp('Building computation graph for gradients',
                                    self.name)
             grads = theano.grad(loss, params)
-
+        
         utils.print_with_stamp("Computing parameter update rules", self.name)
         min_method_updt = LASAGNE_MIN_METHODS[self.min_method]
-        grad_updates = min_method_updt(grads, params)
-
+        grad_updates = min_method_updt(grads, params, **kwargs)
+        print(params)
+        print(grad_updates)
+        print(updts)
         utils.print_with_stamp('Compiling function for loss', self.name)
-        self.loss_fn = theano.function(inputs, loss, updates=updts)
+        self.loss_fn = theano.function(inputs, loss, updates=updts, on_unused_input='ignore')
 
         utils.print_with_stamp("Compiling parameter updates", self.name)
-        self.update_params_fn = theano.function(inputs, [loss]+grads, updates=grad_updates+updts)
+        self.update_params_fn = theano.function(inputs, [loss]+grads, updates=grad_updates+updts,
+                                                on_unused_input='ignore')
 
         self.n_evals = 0
         self.start_time = 0
         self.iter_time = 0
         self.params = params
 
-    def minibatch_train(self, X, Y, *inputs, **kwargs):
-        pass
+    def minibatch_minimize(self, X, Y, *inputs, **kwargs):
+        callback = kwargs.get('callback')
+        batch_size = kwargs.get('batch_size', 100)
+        batch_size = min(batch_size, X.shape[0])
+        self.iter_time = 0
+        self.start_time = time.time()
+        self.n_evals = 0
+        utils.print_with_stamp('Optimizing parameters via mini batches', self.name)
+        print(inputs)
+        # set initial loss and parameters
+        loss0 = self.loss_fn(X[-batch_size:], Y[-batch_size:], *inputs)
+        utils.print_with_stamp('Initial loss [%s]'%(loss0), self.name)
+        p = [p.get_value() for p in self.params]
+        self.best_p = [loss0, p, 0]
+
+        # go through the dataset
+        while True:
+            start_time = time.time()
+            should_exit=False
+            for x, y in utils.iterate_minibatches(X, Y, batch_size, shuffle=True):
+                # mini batch update
+                ret = self.update_params_fn(x, y, *inputs)
+                # the returned loss corresponds to the parameters BEFORE the update
+                loss, dloss = ret[0], ret[1:]
+                if loss < self.best_p[0]:
+                    p = [p.get_value() for p in self.params]
+                    self.best_p = [loss, p, self.n_evals]
+                self.n_evals+=1
+                if self.n_evals > self.max_evals:
+                    should_exit = True
+                    break
+                end_time = time.time()
+                self.iter_time += ((end_time - start_time) - self.iter_time)/self.n_evals
+                out_str = 'Current value: %E, Total evaluations: %d, Avg. time per updt: %f'
+                utils.print_with_stamp(out_str%(self.loss_fn(x, y, *inputs), self.n_evals, self.iter_time),
+                                       self.name,True)
+            if should_exit:
+                break
+        print('')
 
     def minimize(self, *inputs, **kwargs):
         '''
@@ -93,7 +133,6 @@ class SGDOptimizer(object):
                           for the loss and gradients
         '''
         callback = kwargs.get('callback')
-        lr = kwargs.get('lr', 1e-4)
         self.iter_time = 0
         self.start_time = time.time()
         self.n_evals = 0
@@ -109,9 +148,9 @@ class SGDOptimizer(object):
         for i in range(self.max_evals):
             # evaluate current policy and update parameters
             start_time = time.time()
-            ret = self.update_params_fn()
+            ret = self.update_params_fn(*inputs)
             # the returned loss corresponds to the parameters BEFORE the update
-            loss, dloss = self.loss_fn(), ret[1:]
+            loss, dloss = ret[0], ret[1:]
             if loss < self.best_p[0]:
                 p = [p.get_value() for p in self.params]
                 self.best_p = [loss, p, i]
@@ -121,7 +160,7 @@ class SGDOptimizer(object):
             end_time = time.time()
             self.iter_time += ((end_time - start_time) - self.iter_time)/self.n_evals
             out_str = 'Current value: %E, Total evaluations: %d, Avg. time per updt: %f, gm: %s, lr: %f'
-            utils.print_with_stamp(out_str%(self.loss_fn(), self.n_evals, self.iter_time, gmag, lr),
+            utils.print_with_stamp(out_str%(self.loss_fn(*inputs), self.n_evals, self.iter_time, gmag, lr),
                                    self.name,True)
 
         print('') 

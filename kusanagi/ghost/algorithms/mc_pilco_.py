@@ -1,5 +1,6 @@
 import lasagne
 import theano
+import theano.tensor as tt
 
 from kusanagi import utils
 
@@ -96,7 +97,9 @@ def rollout(x0, H, gamma0,
 
     return [costs, trajectories], rollout_updts
 
-def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False):
+def get_loss(policy, dynmodel, cost, D, angle_dims, n_samples=10,
+             intermediate_outs=False, resample_particles=True,
+             resample_dynmodel=False):
     '''
         Constructs the computation graph for the value function according to the
         mcpilco algorithm:
@@ -127,16 +130,19 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False):
     inps = [mx0, Sx0, H, gamma0]
 
     # draw initial set of particles
-    z0 = self.m_rng.normal((self.trajectory_samples, self.mx0.size))
-    Lx0 = tt.slinalg.cholesky(self.Sx0)
-    x0 = self.mx0 + z0.dot(Lx0.T)
+    z0 = m_rng.normal((n_samples, mx0.size))
+    Lx0 = tt.slinalg.cholesky(Sx0)
+    x0 = mx0 + z0.dot(Lx0.T)
 
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma0,
                             policy, dynmodel, cost,
-                            D, angle_dims)
+                            D, angle_dims
+                            resample=resample_particles,
+                            iid_per_eval=resample_dynmodel)
 
-    mean_costs = r_outs[0]
+    costs = r_outs[0]
+    mean_costs = costs.mean(0) # mean over particles
 
     # loss is E_{dynmodels}((1/H)*sum c(x_t))
     #          = (1/H)*sum E_{x_t}(c(x_t))

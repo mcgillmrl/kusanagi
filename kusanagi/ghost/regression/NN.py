@@ -7,6 +7,7 @@ import time
 import kusanagi
 from collections import OrderedDict
 from kusanagi import utils
+from kusanagi.ghost.optimizers import SGDOptimizer
 from kusanagi.ghost.regression import BaseRegressor
 
 class BNN(BaseRegressor):
@@ -29,8 +30,6 @@ class BNN(BaseRegressor):
         self.network_spec = None
         self.network_params = None
         self.sample_network_fn = None
-        self.loss_fn = None
-        self.train_fn = None
         self.predict_fn = None
         self.prediction_updates = None
         self.dropout_samples = theano.shared(np.array(dropout_samples).astype('int32'),
@@ -56,6 +55,13 @@ class BNN(BaseRegressor):
         BaseRegressor.__init__(self, name=name, filename=self.filename)
         if filename is not None:
             self.load()
+        
+        # optimizer options
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 500
+        conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
+        min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
+        self.optimizer = SGDOptimizer(min_method, max_evals,
+                                      conv_thr, name=self.name+'_opt')
 
         # register theanno functions and shared variables for saving
         #self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
@@ -210,7 +216,7 @@ class BNN(BaseRegressor):
 
         return network
     
-    def init_loss(self):
+    def get_loss(self):
         ''' initializes the loss function for training '''
         # build the network
         if self.network is None:
@@ -242,33 +248,28 @@ class BNN(BaseRegressor):
 
         # build the dropout loss function ( See Gal and Ghahramani 2015)
         delta_y = train_predictions-train_targets_std
-        N,E = train_targets.shape
+        N, E = train_targets.shape
         N = N.astype(theano.config.floatX)
         E = E.astype(theano.config.floatX)
+
         # compute negative log likelihood
-        nll = tt.square(delta_y*tt.exp(-logsn_std)).sum(-1) + logsn_std.sum(-1) # note that if we have logsn_std be a 1xD vector, broadcasting rules apply
-        loss = 0.5*nll.mean()
+        nlml = tt.square(delta_y*tt.exp(-logsn_std)).sum(-1) + logsn_std.sum(-1) # note that if we have logsn_std be a 1xD vector, broadcasting rules apply
+        loss = 0.5*nlml.mean()
 
         # compute regularization term
         loss += self.get_regularization_term(input_lengthscale, hidden_lengthscale)/N
 
-        # build the updates dictionary ( sets the optimization algorithm for the network parameters)
-        params = lasagne.layers.get_all_params(self.network, trainable=True)
+        inputs = [train_inputs, train_targets, 
+                  input_lengthscale, hidden_lengthscale]
+        updates = {}
 
-        # SGD trainer
-        min_method = lasagne.updates.adam
-        lr = tt.scalar('lr')
-        updates = min_method(loss,params,learning_rate=lr)
+        # get trainable network parameters
+        params = lasagne.layers.get_all_params(self.network, trainable=True)
         # if we are learning the noise
         if self.learn_noise and not self.heteroscedastic:
-            updates.update(min_method(loss,[logsn],learning_rate=lr))
-        
-        # compile the training function
-        l2_error = tt.square(delta_y).sum(1).mean()
-        utils.print_with_stamp('Compiling training and  loss functions',self.name)
-        self.train_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale,lr],[loss,l2_error],updates=updates,allow_input_downcast=True)
-        self.loss_fn = theano.function([train_inputs,train_targets,input_lengthscale,hidden_lengthscale],[loss,l2_error],allow_input_downcast=True)
-        utils.print_with_stamp('Done compiling',self.name)
+            params.append(logsn)
+        self.set_params(dict([(p.name, p) for p in params]))
+        return loss, inputs, updates
 
     def get_regularization_term(self, input_lengthscale, hidden_lengthscale):
         reg = 0
@@ -380,32 +381,28 @@ class BNN(BaseRegressor):
         # draw samples from the network
         self.update_fn()
 
-    def train(self, batchsize=100, maxiters=5000, input_ls=None, hidden_ls=None, lr=1e-4):
+    def train(self, batch_size=100,
+              input_ls=None, hidden_ls=None, lr=1e-4,
+              optimizer=None, callback=None):
+        if optimizer is None:
+            optimizer = self.optimizer
+
+        if optimizer.loss_fn is None or self.should_recompile:
+            loss, inps, updts = self.get_loss()
+            # we pass the learning rate as an input, and as a parameter to the updates method
+            learning_rate = theano.tensor.scalar('lr')
+            inps.append(learning_rate)
+            optimizer.set_objective(loss, self.get_params(symbolic=True),
+                                    inps, updts, learning_rate=learning_rate)
         if input_ls is None:
-            # set to some proportion of the standard deviation (inputs are scaled and centered to N(0,1) )
+            # set to some proportion of the standard deviation
+            # (inputs are scaled and centered to N(0,1) )
             input_ls = 1.0
+
         if hidden_ls is None:
             hidden_ls = input_ls
-
-        if self.train_fn is None:
-            self.init_loss()
-
-        # go through the dataset
-        batch_size = min(batchsize,self.N)
-        iters = 1
-        while True:
-            start_time = time.time()
-            should_exit=False
-            for x,y in utils.iterate_minibatches(self.X.get_value(borrow=True), self.Y.get_value(borrow=True), batch_size, shuffle=True):
-                ret = self.train_fn(x,y,input_ls,hidden_ls,lr)
-                iters+=1
-                if iters > maxiters:
-                    should_exit=True
-                    break
-            elapsed_time = time.time() - start_time
-            #utils.print_with_stamp('iter: %d, loss: %E, error: %E, elapsed: %E, sn2: %s'%(iters,ret[0],ret[1],elapsed_time, np.exp(2*self.logsn.get_value())),self.name,True)
-            utils.print_with_stamp('iter: %d, loss: %E, error: %E, elapsed: %E'%(iters,ret[0],ret[1],elapsed_time),self.name,True)
-            if should_exit:
-                break
-        print('')
+        
+        optimizer.minibatch_minimize(self.X.get_value(), self.Y.get_value(),
+                                     input_ls, hidden_ls, lr,
+                                     batch_size=batch_size)
         self.trained = True

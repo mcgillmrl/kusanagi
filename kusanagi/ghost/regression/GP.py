@@ -6,7 +6,7 @@ import theano.tensor as tt
 
 from collections import OrderedDict
 from functools import partial
-from kusanagi.ghost.optimizers import ScipyOptimizer, SGDOptimizer
+from kusanagi.ghost.optimizers import ScipyOptimizer
 from theano import function as F, shared as S
 from theano.tensor.nlinalg import matrix_dot, matrix_inverse, det
 from theano.tensor.slinalg import solve_lower_triangular, solve_upper_triangular, solve, Cholesky
@@ -79,8 +79,6 @@ class GP(BaseRegressor):
         max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 300
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'L-BFGS-B'
-        #self.optimizer = SGDOptimizer("adam", max_evals,
-        #                              conv_thr, name=self.name+'_opt')
         self.optimizer = ScipyOptimizer(min_method, max_evals,
                                         conv_thr, name=self.name+'_opt')
 
