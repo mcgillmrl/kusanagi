@@ -70,17 +70,19 @@ class SGDOptimizer(object):
             grads = theano.grad(loss, params)
         
         utils.print_with_stamp("Computing parameter update rules", self.name)
-        min_method_updt = LASAGNE_MIN_METHODS[self.min_method]
-        grad_updates = min_method_updt(grads, params, **kwargs)
-        print(params)
-        print(grad_updates)
-        print(updts)
+        min_method_updt = LASAGNE_MIN_METHODS['adam']
+        grad_updates = min_method_updt(grads, params, 1e-2)
+
         utils.print_with_stamp('Compiling function for loss', self.name)
-        self.loss_fn = theano.function(inputs, loss, updates=updts, on_unused_input='ignore')
+        self.loss_fn = theano.function(inputs, loss, updates=updts,
+                                       on_unused_input='ignore',
+                                       allow_input_downcast=True)
 
         utils.print_with_stamp("Compiling parameter updates", self.name)
-        self.update_params_fn = theano.function(inputs, [loss]+grads, updates=grad_updates+updts,
-                                                on_unused_input='ignore')
+        self.update_params_fn = theano.function(inputs, [loss]+grads,
+                                                updates=grad_updates+updts,
+                                                on_unused_input='ignore',
+                                                allow_input_downcast=True)
 
         self.n_evals = 0
         self.start_time = 0
@@ -95,7 +97,6 @@ class SGDOptimizer(object):
         self.start_time = time.time()
         self.n_evals = 0
         utils.print_with_stamp('Optimizing parameters via mini batches', self.name)
-        print(inputs)
         # set initial loss and parameters
         loss0 = self.loss_fn(X[-batch_size:], Y[-batch_size:], *inputs)
         utils.print_with_stamp('Initial loss [%s]'%(loss0), self.name)
@@ -155,12 +156,10 @@ class SGDOptimizer(object):
                 p = [p.get_value() for p in self.params]
                 self.best_p = [loss, p, i]
             self.n_evals+=1
-            gmag = [np.sqrt((p**2).sum()) for p in dloss]
-            gmax = [p.max() for p in dloss]
             end_time = time.time()
             self.iter_time += ((end_time - start_time) - self.iter_time)/self.n_evals
-            out_str = 'Current value: %E, Total evaluations: %d, Avg. time per updt: %f, gm: %s, lr: %f'
-            utils.print_with_stamp(out_str%(self.loss_fn(*inputs), self.n_evals, self.iter_time, gmag, lr),
+            out_str = 'Current value: %E, Total evaluations: %d, Avg. time per updt: %f'
+            utils.print_with_stamp(out_str%(self.loss_fn(*inputs), self.n_evals, self.iter_time),
                                    self.name,True)
 
         print('') 

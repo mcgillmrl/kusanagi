@@ -8,8 +8,8 @@ import numpy as np
 from kusanagi.ghost import control
 from kusanagi.ghost import regression
 from kusanagi.shell import cartpole
-from kusanagi.ghost.algorithms import pilco_
-from kusanagi.ghost.optimizers import ScipyOptimizer
+from kusanagi.ghost.algorithms import pilco_, mc_pilco_
+from kusanagi.ghost.optimizers import ScipyOptimizer, SGDOptimizer
 from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 from kusanagi import utils
 from functools import partial
@@ -22,7 +22,7 @@ if __name__ == '__main__':
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
     params = cartpole.default_params()
-    n_rnd = 4                                                # number of random initial trials
+    n_rnd = 1                                                # number of random initial trials
     n_opt = 100                                              #learning iterations
     H = params['max_steps']
     gamma = params['discount']
@@ -40,7 +40,8 @@ if __name__ == '__main__':
     randpol = control.RandPolicy(maxU=pol.maxU)
 
     # init dynmodel
-    dyn = regression.SSGP_UI(**params['dynamics_model'])
+    #dyn = regression.SSGP_UI(**params['dynamics_model'])
+    dyn = regression.BNN(**params['dynamics_model'])
 
     # init cost model
     cost = partial(cartpole.cartpole_loss, **params['cost'])
@@ -49,7 +50,9 @@ if __name__ == '__main__':
     exp = ExperienceDataset()
 
     # init policy optimizer
-    polopt = ScipyOptimizer(**params['optimizer'])
+    params['optimizer']['min_method'] = 'nesterov'
+    params['optimizer']['max_evals'] = 1000
+    polopt = SGDOptimizer(**params['optimizer'])
 
     # callback executed after every call to env.step
     def step_cb(state, action, cost, info):
@@ -78,11 +81,11 @@ if __name__ == '__main__':
         # initial state distribution
         x0 = np.array([st[0] for st in exp.states])
         m0 = x0.mean(0)
-        S0 = np.cov(x0.T).T if len(x0) > 2 else p0.cov
+        S0 = np.cov(x0, rowvar=False, ddof=1) + 1e-7*np.eye(x0.shape[1]) if len(x0) > 2 else p0.cov
 
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
-            loss, inps, updts = pilco_.get_loss(pol, dyn, cost, D, angle_dims)
+            loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D, angle_dims)
             polopt.set_objective(loss, pol.get_params(symbolic=True), inps, updts)
         polopt.minimize(m0, S0, H, gamma)
 

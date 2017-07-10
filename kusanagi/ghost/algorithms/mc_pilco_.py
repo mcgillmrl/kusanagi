@@ -7,7 +7,7 @@ from kusanagi import utils
 randint = lasagne.random.get_rng().randint(1, 2147462579)
 m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
 
-def propagate_particles(x, policy, dynmodel, D, angle_dims=None, resample=False, iid_per_eval=False):
+def propagate_particles(x, policy, dynmodel, D, angle_dims=None, resample=True, iid_per_eval=False):
     ''' Given a set of input states, this function returns predictions for
         the next states. This is done by 1) evaluating the current policy
         2) using the dynamics model to estimate the next state. If x has
@@ -15,9 +15,6 @@ def propagate_particles(x, policy, dynmodel, D, angle_dims=None, resample=False,
         dimension, this function will return x_next with shape [n, D]
         representing the next states and costs with shape [n, 1]
     '''
-    resample = kwargs.get('resample', self.resample)
-    iid_per_eval = kwargs.get('iid_per_eval', False)
-
     # resample if requested
     if resample:
         n = x.shape[0]
@@ -40,6 +37,7 @@ def propagate_particles(x, policy, dynmodel, D, angle_dims=None, resample=False,
     delta_x = dynmodel.predict_symbolic(xu, iid_per_eval=iid_per_eval, return_samples=True)
     
     # add measurement noise TODO: this should go inside the dynmodel predict_symbolic method
+    sn = tt.exp(dynmodel.logsn)
     delta_x += m_rng.normal(x.shape).dot(tt.diag(sn))
 
     # compute the successor states
@@ -67,7 +65,7 @@ def rollout(x0, H, gamma0,
         x_next = propagate_particles(x, policy, dynmodel, D, angle_dims, **kwargs)
 
         #  get cost of applying action:
-        cost = cost(x_next, None)
+        c_next = cost(x_next, None)
         return [gamma*c_next, x_next, gamma*gamma0]
 
     # these are the shared variables that will be used in the scan graph.
@@ -77,7 +75,7 @@ def rollout(x0, H, gamma0,
     shared_vars.extend(dynmodel.get_all_shared_vars())
     shared_vars.extend(policy.get_all_shared_vars())
     # loop over the planning horizon
-    output = theano.scan(fn=rollout_single_step,
+    output = theano.scan(fn=step_rollout,
                          outputs_info=[None, x0, gamma0],
                          non_sequences=[gamma0]+shared_vars,
                          n_steps=H,
@@ -137,7 +135,7 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, n_samples=10,
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma0,
                             policy, dynmodel, cost,
-                            D, angle_dims
+                            D, angle_dims,
                             resample=resample_particles,
                             iid_per_eval=resample_dynmodel)
 

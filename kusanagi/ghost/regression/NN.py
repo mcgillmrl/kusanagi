@@ -24,7 +24,6 @@ class BNN(BaseRegressor):
 
         self.logsn = theano.shared((np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX),
                                    name='%s_logsn'%(self.name))
-        self.lengthscale = 1e-2
 
         self.network = None
         self.network_spec = None
@@ -57,7 +56,7 @@ class BNN(BaseRegressor):
             self.load()
         
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 500
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 5000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -107,7 +106,7 @@ class BNN(BaseRegressor):
         
         if self.learn_noise:
             # default log of measurement noise variance is set to 10% of dataset variation
-            self.logsn.set_value(np.log((0.1*Y_dataset.std(0)).astype(theano.config.floatX)))
+            self.logsn.set_value(np.log((0.05*Y_dataset.std(0)).astype(theano.config.floatX)))
 
     def append_dataset(self,X_dataset,Y_dataset):
         # set dataset
@@ -132,7 +131,7 @@ class BNN(BaseRegressor):
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
     def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None,
-                                 hidden_dims=[1000,1000,1000], p=0.1, p_input=0.0,
+                                 hidden_dims=[200, 200], p=0.05, p_input=0.0,
                                  nonlinearities=lasagne.nonlinearities.sigmoid, name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
@@ -382,7 +381,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-4,
+              input_ls=None, hidden_ls=None, lr=1e-3,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
@@ -397,7 +396,7 @@ class BNN(BaseRegressor):
         if input_ls is None:
             # set to some proportion of the standard deviation
             # (inputs are scaled and centered to N(0,1) )
-            input_ls = 1.0
+            input_ls = 0.1
 
         if hidden_ls is None:
             hidden_ls = input_ls
