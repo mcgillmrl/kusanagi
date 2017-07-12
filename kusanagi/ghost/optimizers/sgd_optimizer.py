@@ -46,7 +46,7 @@ class SGDOptimizer(object):
     def min_method(self, min_method):
         self.__min_method = min_method.lower()
 
-    def set_objective(self, loss, params, inputs=None, updts=None, grads=None, **kwargs):
+    def set_objective(self, loss, params, inputs=None, updts=None, grads=None, clip=None, **kwargs):
         '''
             Changes the objective function to be optimized
             @param loss theano graph representing the loss to be optimized
@@ -68,10 +68,13 @@ class SGDOptimizer(object):
             utils.print_with_stamp('Building computation graph for gradients',
                                    self.name)
             grads = theano.grad(loss, params)
+            if clip is not None:
+                grads = lasagne.updates.total_norm_constraint(grads, clip)
+
         
         utils.print_with_stamp("Computing parameter update rules", self.name)
-        min_method_updt = LASAGNE_MIN_METHODS['adam']
-        grad_updates = min_method_updt(grads, params, 1e-2)
+        min_method_updt = LASAGNE_MIN_METHODS[self.min_method]
+        grad_updates = min_method_updt(grads, params, **kwargs)
 
         utils.print_with_stamp('Compiling function for loss', self.name)
         self.loss_fn = theano.function(inputs, loss, updates=updts,

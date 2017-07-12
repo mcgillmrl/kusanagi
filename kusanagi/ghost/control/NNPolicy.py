@@ -84,8 +84,9 @@ class NNPolicy(BNN):
                                                       p=0.0, name=self.name)
 
         if self.network is None:
+            params = self.network_params if self.network_params is not None else {}
             self.network = self.build_network(self.network_spec,
-                                              params=self.network_params,
+                                              params=params,
                                               name=self.name)
 
         ret = super(NNPolicy, self).predict_symbolic(mx, Sx, **kwargs)

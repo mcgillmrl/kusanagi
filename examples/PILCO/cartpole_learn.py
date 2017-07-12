@@ -50,7 +50,7 @@ if __name__ == '__main__':
     exp = ExperienceDataset()
 
     # init policy optimizer
-    params['optimizer']['min_method'] = 'nesterov'
+    params['optimizer']['min_method'] = 'adam'
     params['optimizer']['max_evals'] = 1000
     polopt = SGDOptimizer(**params['optimizer'])
 
@@ -86,8 +86,9 @@ if __name__ == '__main__':
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D, angle_dims)
-            polopt.set_objective(loss, pol.get_params(symbolic=True), inps, updts)
-        polopt.minimize(m0, S0, H, gamma)
+            polopt.set_objective(loss, pol.get_params(symbolic=True), inps, updts, clip=10.0, learning_rate=1e-2)
+                
+        polopt.minimize(m0, S0, H, gamma, callback=lambda *args, **kwargs: dynmodel.update)
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())

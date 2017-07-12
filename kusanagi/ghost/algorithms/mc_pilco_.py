@@ -54,7 +54,7 @@ def rollout(x0, H, gamma0,
     trajectory.
     '''
     utils.print_with_stamp('Building computation graph for state particles propagation',
-                           'pilco.rollout')
+                           'mc_pilco.rollout')
 
     # define internal scan computations
     def step_rollout(x, gamma, *args):
@@ -97,7 +97,7 @@ def rollout(x0, H, gamma0,
 
 def get_loss(policy, dynmodel, cost, D, angle_dims, n_samples=10,
              intermediate_outs=False, resample_particles=True,
-             resample_dynmodel=False):
+             resample_dynmodel=False, average=True):
     '''
         Constructs the computation graph for the value function according to the
         mcpilco algorithm:
@@ -117,15 +117,17 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, n_samples=10,
                 output variables, input variables and updates dictionary, if any.
                 By default, the only output variable is the value.
     '''
+    # make sure that the dynamics model has the same number of samples
+    dynmodel.update(n_samples)
+
     # initial state distribution
     mx0 = tt.vector('mx0')
     Sx0 = tt.matrix('Sx0')
     # prediction horizon
     H = tt.iscalar('H')
     # discount factor
-    gamma0 = tt.scalar('gamma0')
+    gamma = tt.scalar('gamma')
 
-    inps = [mx0, Sx0, H, gamma0]
 
     # draw initial set of particles
     z0 = m_rng.normal((n_samples, mx0.size))
@@ -133,20 +135,27 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, n_samples=10,
     x0 = mx0 + z0.dot(Lx0.T)
 
     # get rollout output
-    r_outs, updts = rollout(x0, H, gamma0,
+    r_outs, updts = rollout(x0, H, gamma,
                             policy, dynmodel, cost,
                             D, angle_dims,
                             resample=resample_particles,
                             iid_per_eval=resample_dynmodel)
 
-    costs = r_outs[0]
+    costs, trajectories = r_outs
     mean_costs = costs.mean(0) # mean over particles
 
     # loss is E_{dynmodels}((1/H)*sum c(x_t))
     #          = (1/H)*sum E_{x_t}(c(x_t))
-    loss = mean_costs.mean()
+    loss = mean_costs.mean() if average else mean_costs.sum()
 
+    inps = [mx0, Sx0, H, gamma]
     if intermediate_outs:
-        return [loss]+list(r_outs), inps, updts
+        return [loss, costs, trajectories], inps, updts
     else:
         return loss, inps, updts
+
+def build_rollout(*args, **kwargs):
+    kwargs['intermediate_outs'] = True
+    outs, inps, updts = get_loss(*args, **kwargs)  
+    rollout_fn = theano.function(inps, outs, updates=updts, allow_input_downcast=True)
+    return rollout_fn
