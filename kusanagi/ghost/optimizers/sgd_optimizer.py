@@ -115,9 +115,11 @@ class SGDOptimizer(object):
                 ret = self.update_params_fn(x, y, *inputs)
                 # the returned loss corresponds to the parameters BEFORE the update
                 loss, dloss = ret[0], ret[1:]
+                p = [p.get_value() for p in self.params]
                 if loss < self.best_p[0]:
-                    p = [p.get_value() for p in self.params]
                     self.best_p = [loss, p, self.n_evals]
+                if callable(callback):
+                    callback(p, loss, dloss)
                 self.n_evals+=1
                 if self.n_evals > self.max_evals:
                     should_exit = True
@@ -155,9 +157,11 @@ class SGDOptimizer(object):
             ret = self.update_params_fn(*inputs)
             # the returned loss corresponds to the parameters BEFORE the update
             loss, dloss = ret[0], ret[1:]
+            p = [p.get_value() for p in self.params]
             if loss < self.best_p[0]:
-                p = [p.get_value() for p in self.params]
                 self.best_p = [loss, p, i]
+            if callable(callback):
+                callback(p, loss, dloss)
             self.n_evals+=1
             end_time = time.time()
             self.iter_time += ((end_time - start_time) - self.iter_time)/self.n_evals

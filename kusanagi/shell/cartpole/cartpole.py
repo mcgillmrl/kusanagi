@@ -56,6 +56,7 @@ def default_params():
     cost_params['cw'] = 0.25
     cost_params['expl'] = 0.0
     cost_params['pole_length'] = plant_params['pole_length']
+    cost_params['loss_func'] = cost.quadratic_saturating_loss
 
     # optimizer params
     opt_params = {}

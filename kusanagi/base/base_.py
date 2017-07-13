@@ -76,7 +76,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
 
 def train_dynamics(dynmodel, data, angle_dims=[],
                    init_episode=0, max_episodes=None,
-                   wrap_angles=True):
+                   wrap_angles=True, append=False):
     ''' Trains a dynamics model using the data dataset '''
     utils.print_with_stamp('Training dynamics model', 'train_dynamics')
 
@@ -88,7 +88,7 @@ def train_dynamics(dynmodel, data, angle_dims=[],
         episodes = list(range(init_episode, n_episodes))\
         if max_episodes is None or n_episodes < max_episodes\
         else list(range(max(0, n_episodes-max_episodes), n_episodes))
-
+        print(episodes)
         X, Y = data.get_dynmodel_dataset(filter_episodes=episodes,
                                          angle_dims=angle_dims,
                                          deltas=True)
@@ -98,11 +98,11 @@ def train_dynamics(dynmodel, data, angle_dims=[],
             # wrap angle differences to [-pi,pi]
             Y[:, angle_dims] = (Y[:, angle_dims] + np.pi) % (2 * np.pi) - np.pi
 
-        if  init_episode == 0 or (max_episodes is not None and len(episodes) == max_episodes):
-            dynmodel.set_dataset(X, Y)
-        else:
+        if append:
             # append data to the dynamics model
             dynmodel.append_dataset(X, Y)
+        else:
+            dynmodel.set_dataset(X, Y)
 
     i_shp = dynmodel.X.get_value(borrow=True).shape
     o_shp = dynmodel.Y.get_value(borrow=True).shape

@@ -63,7 +63,7 @@ class NNPolicy(BNN):
         for i in range(len(hidden_dims)):
             network_spec.append((DenseLayer,
                                  dict(num_units=hidden_dims[i],
-                                      nonlinearity=selu,
+                                      nonlinearity=elu,
                                       W=lasagne.init.HeNormal(gain=1),
                                       name=name+'_fc%d'%(i)
                                      )

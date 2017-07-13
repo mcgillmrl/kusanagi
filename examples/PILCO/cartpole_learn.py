@@ -24,7 +24,7 @@ if __name__ == '__main__':
     params = cartpole.default_params()
     n_rnd = 1                                                # number of random initial trials
     n_opt = 100                                              #learning iterations
-    H = params['max_steps']
+    H = 26#params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
 
@@ -85,10 +85,10 @@ if __name__ == '__main__':
 
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
-            loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D, angle_dims)
-            polopt.set_objective(loss, pol.get_params(symbolic=True), inps, updts, clip=10.0, learning_rate=1e-2)
+            loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D, angle_dims, resample_particles=True)
+            polopt.set_objective(loss, pol.get_params(symbolic=True), inps, updts, clip=10.0, learning_rate=1e-3)
                 
-        polopt.minimize(m0, S0, H, gamma, callback=lambda *args, **kwargs: dynmodel.update)
+        polopt.minimize(m0, S0, H, gamma, callback=lambda *args, **kwargs: dyn.update())
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())
