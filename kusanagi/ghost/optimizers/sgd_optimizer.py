@@ -79,13 +79,13 @@ class SGDOptimizer(object):
         utils.print_with_stamp('Compiling function for loss', self.name)
         self.loss_fn = theano.function(inputs, loss, updates=updts,
                                        on_unused_input='ignore',
-                                       allow_input_downcast=True)
+                                       allow_input_downcast=True, profile=True)
 
         utils.print_with_stamp("Compiling parameter updates", self.name)
         self.update_params_fn = theano.function(inputs, [loss]+grads,
                                                 updates=grad_updates+updts,
                                                 on_unused_input='ignore',
-                                                allow_input_downcast=True)
+                                                allow_input_downcast=True, profile=True)
 
         self.n_evals = 0
         self.start_time = 0

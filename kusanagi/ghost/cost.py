@@ -88,6 +88,8 @@ def generic_loss(mx, Sx, target, Q,
     '''
         Loss function that depends on a quadratic function of state
     '''
+    Q = Q.astype(theano.config.floatX)
+    target = target.astype(theano.config.floatX)
     if not isinstance(cw, list):
         cw = [cw]
     if Sx is None:

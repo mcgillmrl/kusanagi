@@ -245,6 +245,8 @@ class GP(BaseRegressor):
                                                  sequences=seq,
                                                  non_sequences=nseq,
                                                  allow_gc=False,
+                                                 profile=True,
+                                                 strict=True,
                                                  name="%s>logL_scan"%(self.name))
 
         iK = tt.unbroadcast(iK, 0) if iK.broadcastable[0] else iK
@@ -505,6 +507,8 @@ class RBFGP(GP_UI):
                                  outputs_info=[M2],
                                  non_sequences=[self.beta, R, logk_c, logk_r, z_, Sx],
                                  allow_gc=False,
+                                 profile=True,
+                                 strict=True,
                                  name="%s>M2_scan"%(self.name))
         M2 = M2_[-1]
 

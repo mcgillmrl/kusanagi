@@ -212,8 +212,8 @@ class LocalLinearPolicy(Loadable):
             u_t += self.noise*tt_.random.randn(*u_t.shape)
 
         # limit the controller output
-        #u_t = tt_.maximum(u_t, -self.maxU)
-        #u_t = tt_.minimum(u_t, self.maxU)
+        u_t = tt_.maximum(u_t, -self.maxU)
+        u_t = tt_.minimum(u_t, self.maxU)
 
         U = u_t.shape[0]
         self.t += 1
