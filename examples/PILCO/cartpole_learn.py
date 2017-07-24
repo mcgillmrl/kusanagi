@@ -22,9 +22,9 @@ if __name__ == '__main__':
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
     params = cartpole.default_params()
-    n_rnd = 1                                                # number of random initial trials
-    n_opt = 100                                              #learning iterations
-    H = 26#params['max_steps']
+    n_rnd = 1                           # number of random initial trials
+    n_opt = 100                         # learning iterations
+    H = 26  # params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
 
