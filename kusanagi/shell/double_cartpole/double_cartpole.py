@@ -146,7 +146,6 @@ class DoubleCartpole(plant.ODEPlant):
         self.g = gravity
 
         # initial state
-        print(state0_dist)
         if state0_dist is None:
             m0, s0 = [0, 0, 0, 0, np.pi, np.pi], (0.1**2)*np.eye(6)
             self.state0_dist = utils.distributions.Gaussian(m0, s0)
@@ -211,9 +210,6 @@ class DoubleCartpole(plant.ODEPlant):
 
     def _reset(self):
         state0 = self.state0_dist.sample()
-        print(self.state0_dist.mean)
-        print(self.state0_dist.cov)
-        print(state0)
         self.set_state(state0)
         return self.state
 
