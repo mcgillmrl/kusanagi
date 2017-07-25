@@ -33,6 +33,7 @@ def default_params():
     plant_params['cart_mass'] = 0.5
     plant_params['friction'] = 0.1
     plant_params['gravity'] = 9.82
+    plant_params['state0_dist'] = p0
     plant_params['noise_dist'] = utils.distributions.Gaussian(np.zeros((p0.dim,)),
                                                               np.eye(p0.dim)*0.01**2)
 

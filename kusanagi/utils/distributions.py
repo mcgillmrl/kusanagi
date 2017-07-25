@@ -41,4 +41,4 @@ class Gaussian(Distribution):
             self.cov_chol = np.linalg.cholesky(cov)
 
     def sample(self, n_samples=1):
-        return np.random.randn(n_samples, self.mean.size).dot(self.cov_chol)
+        return self.mean + np.random.randn(n_samples, self.mean.size).dot(self.cov_chol)
