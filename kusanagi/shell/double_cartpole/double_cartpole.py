@@ -1,179 +1,196 @@
+# pylint: disable=C0103
+'''
+Contains the DoubleCartpole envionment, along with default parameters and a rendering class
+'''
 import numpy as np
 import theano
 import theano.tensor as tt
 
-from kusanagi.shell.plant import ODEPlant, PlantDraw
-from kusanagi.ghost.cost import quadratic_saturating_loss
-from kusanagi.utils import print_with_stamp, gTrig_np, gTrig2
-from kusanagi.ghost.control import RBFPolicy
-from kusanagi.ghost.regression import GP_UI
-from kusanagi import utils
+from gym import spaces
 from matplotlib import pyplot as plt
+from functools import partial
+
+from kusanagi.shell import plant
+from kusanagi.ghost import cost
+from kusanagi.ghost import control
+from kusanagi.ghost import regression
+from kusanagi import utils
+
 
 def default_params():
     # setup learner parameters
-    # general parameters
-    J = 2                                                                   # number of random initial trials
-    N = 100                                                                 # learning iterations
-    learner_params = {}
-    learner_params['x0'] = [0,0,0,0,np.pi,np.pi]                            # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2
-    learner_params['S0'] = np.eye(6)*(0.1**2)                               # initial state covariance
-    learner_params['angle_dims'] = [4,5]                                    # angle dimensions
-    learner_params['H'] = 5.0                                               # control horizon
-    learner_params['discount'] = 1.0                                        # discoutn factor
-    # plant
+    # initial state mean ( x, dx, dtheta1, dtheta2, theta1, theta2)
+    x0 = np.array([0, 0, 0, 0, np.pi, np.pi])
+    S0 = np.eye(len(x0))*(0.1**2)
+    p0 = utils.distributions.Gaussian(x0, S0)
+    angi = [4, 5]
+    x0a, S0a = utils.gTrig2_np(x0[None, :], np.array(S0)[None, :, :], angi, len(x0))
+
+    # plant parameters
     plant_params = {}
     plant_params['dt'] = 0.05
-    plant_params['params'] = {'m1': 0.5, 'm2': 0.5, 'm3': 0.5, 'l2': 0.6, 'l3': 0.6, 'b': 0.1, 'g': 9.82}
-    plant_params['noise'] = np.diag(np.ones(len(learner_params['x0']))*0.01**2)   # model measurement noise (randomizes the output of the plant)
-    # policy
+    plant_params['link1_length'] = 0.6
+    plant_params['link2_length'] = 0.6
+    plant_params['link1_mass'] = 0.5
+    plant_params['link2_mass'] = 0.5
+    plant_params['cart_mass'] = 0.5
+    plant_params['friction'] = 0.1
+    plant_params['gravity'] = 9.82
+    plant_params['noise_dist'] = utils.distributions.Gaussian(np.zeros((p0.dim,)),
+                                                              np.eye(p0.dim)*0.01**2)
+
+    # policy parameters
     policy_params = {}
-    policy_params['m0'] = learner_params['x0']
-    policy_params['S0'] = learner_params['S0']
+    policy_params['state0_dist'] = p0
+    policy_params['angle_dims'] = angi 
     policy_params['n_inducing'] = 100
     policy_params['maxU'] = [20]
-    # dynamics model
+
+    # dynamics model parameters
     dynmodel_params = {}
-    # cost function
+    dynmodel_params['idims'] = x0a.size + len(policy_params['maxU'])
+    dynmodel_params['odims'] = x0.size
+    dynmodel_params['n_inducing'] = 100
+
+    # cost function parameters
     cost_params = {}
-    cost_params['target'] = [0,0,0,0,0,0]
-    cost_params['width'] = 0.5
+    cost_params['angle_dims'] = angi
+    cost_params['target'] = [0, 0, 0, 0, 0, 0]
+    cost_params['cw'] = 0.5
     cost_params['expl'] = 0.0
-    cost_params['pendulum_lengths'] = [ plant_params['params']['l2'], plant_params['params']['l3'] ]
+    cost_params['link1_length'] = plant_params['link1_length']
+    cost_params['link2_length'] = plant_params['link2_length']
+    cost_params['loss_func'] = cost.quadratic_saturating_loss
 
-    learner_params['max_evals'] = 150
-    learner_params['conv_thr'] = 1e-12
-    learner_params['min_method'] = 'BFGS'#utils.fmin_lbfgs
-    learner_params['realtime'] = True
+    # optimizer params
+    opt_params = {}
+    opt_params['max_evals'] = 100
+    opt_params['conv_thr'] = 1e-12
+    opt_params['min_method'] = 'L-BFGS-B'
 
-    learner_params['plant'] = plant_params
-    learner_params['policy'] = policy_params
-    learner_params['dynmodel'] = dynmodel_params
-    learner_params['cost'] = cost_params
+    # general parameters
+    params = {}
+    params['state0_dist'] = p0
+    params['angle_dims'] = angi 
+    params['max_steps'] = 40              # control horizon
+    params['discount'] = 1.0              # discount factor
+    params['plant'] = plant_params
+    params['policy'] = policy_params
+    params['dynamics_model'] = dynmodel_params
+    params['cost'] = cost_params
+    params['optimizer'] = opt_params
 
-    return {'params': learner_params, 'plant_class': DoubleCartpole, 'policy_class': RBFPolicy, 'cost_func': double_cartpole_loss, 'dynmodel_class': GP_UI}
+    return params
 
-# TODO this can be converted into a generic loss function
-def double_cartpole_loss(mx,Sx,params, loss_func=quadratic_saturating_loss):
-    angle_dims = params['angle_dims']
-    cw = params['width']
-    if not isinstance(cw, list):
-        cw = [cw]
-    b = params['expl']
-    ell1,ell2 = params['pendulum_lengths']
-    target = np.array(params['target'])
+def double_cartpole_loss(mx, Sx,
+                         angle_dims=[4, 5],
+                         link1_length=0.5,
+                         link2_length=0.5,
+                         cw=[0.5],
+                         target=np.array([0, 0, 0, 0, 0, 0]),
+                         *args, **kwargs):
+    target = np.array(target)
     D = target.size
-    
+
     #convert angle dimensions
-    targeta = gTrig_np(target,angle_dims).flatten()
+    targeta = utils.gTrig_np(target, angle_dims).flatten()
     Da = targeta.size
-    
-    # build cost scaling function
-    cost_dims = np.hstack([0, np.arange(Da-2*len(angle_dims),Da)])[:,None]  # these are the dimensions used to comptue the cost ( x, sin(theta1), cos(theta1), sin(theta2), cos(theta2) )
-    Q = np.zeros((Da,Da))
-    C = np.array([ [ 1, -ell1,    0, -ell2,    0], 
-                   [ 0,     0, ell1,     0, ell2]]);
-    Q[cost_dims,cost_dims.T] = C.T.dot(C)
-    
     if Sx is None:
         flatten = False
         if mx.ndim == 1:
             flatten = True
-            mx = mx[None,:]
-        mxa = utils.gTrig(mx,angle_dims,D)
+            mx = mx[None, :]
+        mxa = utils.gTrig(mx, angle_dims, D)
         if flatten:
-            mxa = mxa.flatten() # since we are dealing with one input vector at a time
+            # since we are dealing with one input vector at a time
+            mxa = mxa.flatten()
         Sxa = None
-
-        cost = [];
-        # total cost is the sum of costs with different widths
-        for c in cw:
-            loss_params = {}
-            loss_params['target'] = targeta
-            loss_params['Q'] = Q/c**2
-            cost_c = loss_func(mxa,None,loss_params)
-            cost.append(cost_c)
-        
-        return sum(cost)/len(cost)
     else:
-        mxa,Sxa,Ca = gTrig2(mx,Sx,angle_dims,D) # angle dimensions are removed, and their complex representation is appended
-        
-        M_cost = [] ; S_cost = []
-        
-        # total cost is the sum of costs with different widths
-        for c in cw:
-            loss_params = {}
-            loss_params['target'] = targeta
-            loss_params['Q'] = Q/c**2
-            m_cost, s_cost = loss_func(mxa,Sxa,loss_params)
-            if b is not None and b != 0.0:
-                m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
-            M_cost.append(m_cost)
-            S_cost.append(s_cost)
-    
-        return sum(M_cost)/len(M_cost), sum(S_cost)/(len(M_cost)**2)
-
-def double_cartpole_loss_openAI(mx,Sx,params, loss_func=quadratic_saturating_loss):
-    angle_dims = params['angle_dims']
-    cw = params['width']
-    if not isinstance(cw, list):
-        cw = [cw]
-    b = params['expl']
-    ell1,ell2 = params['pendulum_lengths']
-    target = np.array(params['target'])
-    D = target.size
+        # angle dimensions are removed, and their complex 
+        # representation is appended
+        mxa, Sxa = utils.gTrig2(mx, Sx, angle_dims, D)[:2]
 
     # build cost scaling function
-    cost_dims = np.arange(5)[:,None]
-    Q = np.zeros((D,D))
-    C = np.array([ [ 1, -ell1, -ell2,    0,    0], 
-                   [ 0,     0,     0, ell1, ell2]]);
-    Q[cost_dims,cost_dims.T] = C.T.dot(C)
-    
-    M_cost = [] ; S_cost = []
-    
-    # total cost is the sum of costs with different widths
-    for c in cw:
-        loss_params = {}
-        loss_params['target'] = target
-        loss_params['Q'] = Q/c**2
-        m_cost, s_cost = loss_func(mx,Sx,loss_params)
-        if b is not None and b != 0.0:
-            m_cost += b*tt.sqrt(s_cost) # UCB  exploration term
-        M_cost.append(m_cost)
-        S_cost.append(s_cost)
-    
-    return sum(M_cost), sum(S_cost)
+    Q = np.zeros((Da, Da))
+    # these are the dimensions used to compute the cost
+    # (x, sin(theta1), cos(theta1), sin(theta2), cos(theta2))
+    cost_dims = np.hstack([0, np.arange(Da-2*len(angle_dims),Da)])[:,None]
+    C = np.array([[1, -link1_length, 0, -link2_length, 0], 
+                  [0, 0, link1_length, 0, link2_length]])
+    Q[cost_dims, cost_dims.T] = C.T.dot(C)
 
-class DoubleCartpole(ODEPlant):
-    def __init__(self, params, x0, S0=None, dt=0.01, noise=None, name='DoubleCartpole', integrator='dopri5', atol=1e-12, rtol=1e-12):
-        super(DoubleCartpole, self).__init__(params, x0, S0, dt=dt, noise=noise, name=name, integrator=integrator, atol=atol, rtol=rtol)
+    return cost.generic_loss(mxa, Sxa, targeta, Q, cw, *args, **kwargs)
 
-    def dynamics(self,t,z):
-        m1 = self.params['m1']
-        m2 = self.params['m2']
-        m3 = self.params['m3']
-        l2 = self.params['l2']
-        l3 = self.params['l3']
-        b = self.params['b']
-        g = self.params['g']
+
+class DoubleCartpole(plant.ODEPlant):
+    metadata = {
+        'render.modes': ['human']
+    }
+    def __init__(self,
+                 link1_length=0.5, link1_mass=0.5,
+                 link2_length=0.5, link2_mass=0.5,
+                 cart_mass=0.5, friction=0.1, gravity=9.82,
+                 state0_dist=None,
+                 loss_func=None,
+                 name='DoubleCartpole',
+                 *args, **kwargs):
+        super(DoubleCartpole, self).__init__(name=name, *args, **kwargs)
+        # double cartpole system parameters
+        self.l1 = link1_length
+        self.l2 = link2_length
+        self.m1 = link1_mass
+        self.m2 = link2_mass
+        self.M = cart_mass
+        self.b = friction
+        self.g = gravity
+
+        # initial state
+        if state0_dist is None:
+            m0, s0 = [0, 0, 0, 0, np.pi, np.pi], (0.1**2)*np.eye(6)
+            self.state0_dist = utils.distributions.Gaussian(m0, s0)
+        else:
+            self.state0_dist = state0_dist
+
+        # reward/loss function
+        if loss_func is None:
+            self.loss_func = cost.build_loss_func(double_cartpole_loss,
+                                                  False,
+                                                  'double_cartpole_loss')
+        else:
+            self.loss_func = cost.build_loss_func(loss_func,
+                                                  False,
+                                                  'double_cartpole_loss')
+
+        # pointer to the class that will draw the state of the carpotle system
+        self.renderer = None
+
+        # 6 state dims (x, dx, dtheta1, dtheta2, theta1, theta2)
+        o_lims = np.array([np.finfo(np.float).max for i in range(6)])
+        self.observation_space = spaces.Box(-o_lims, o_lims)
+        # 1 action dim (x_force)
+        a_lims = np.array([np.finfo(np.float).max for i in range(1)])
+        self.action_space = spaces.Box(-a_lims, a_lims)
+
+    def dynamics(self, t, z):
+        m1, m2, M, l1, l2, b, g = self.m1, self.m2, self.M,\
+                                  self.l1, self.l2, self.b,\
+                                  self.g
 
         f = self.u if self.u is not None else np.array([0])
-
         f = f.flatten()
 
         sz4 = np.sin(z[4]); cz4 = np.cos(z[4]);
         sz5 = np.sin(z[5]); cz5 = np.cos(z[5]);
         cz4m5 = np.cos(z[4] - z[5])
         sz4m5 = np.sin(z[4] - z[5])
-        a0 = m2+2*m3
-        a1 = m3*l3
-        a2 = l2*(z[2]*z[2])
+        a0 = m2+2*M
+        a1 = M*l2
+        a2 = l1*(z[2]*z[2])
         a3 = a1*(z[3]*z[3])
 
-        A = np.array([[ 2*(m1+m2+m3), -a0*l2*cz4,       -a1*cz5    ],
-                      [-3*a0*cz4,     (2*a0+2*m3)*l2,   3*a1*cz4m5 ],
-                      [-3*cz5,         3*l2*cz4m5,       2*l3      ]])
+        A = np.array([[ 2*(m1+m2+M), -a0*l1*cz4,       -a1*cz5    ],
+                      [-3*a0*cz4,     (2*a0+2*M)*l1,   3*a1*cz4m5 ],
+                      [-3*cz5,         3*l1*cz4m5,       2*l2      ]])
         b = np.array([ 2*f[0]-2*b*z[1]-a0*a2*sz4-a3*sz5,
                        3*a0*g*sz4 - 3*a3*sz4m5,
                        3*a2*sz4m5 + 3*g*sz5]).flatten()
@@ -190,31 +207,51 @@ class DoubleCartpole(ODEPlant):
 
         return dz
 
+    def _reset(self):
+        state0 = self.state0_dist.sample()
+        self.set_state(state0)
+        return self.state
 
-class DoubleCartpoleDraw(PlantDraw):
-    def __init__(self, cartpole_plant, refresh_period=(1.0/24), name='DoubleCartpoleDraw'):
-        super(DoubleCartpoleDraw, self).__init__(cartpole_plant, refresh_period,name)
-        m1 = self.plant.params['m1']
-        m2 = self.plant.params['m2']
-        m3 = self.plant.params['m3']
-        l2 = self.plant.params['l2']
-        l3 = self.plant.params['l3']
-        b = self.plant.params['b']
-        g = self.plant.params['g']
+    def _render(self, mode='human', close=False):
+        if self.renderer is None:
+            self.renderer = DoubleCartpoleDraw(self)
+            self.renderer.init_ui()
+        updts = self.renderer.update(*self.get_state(noisy=False))
+
+    def _close(self):
+        if self.renderer is not None:
+            self.renderer.close()
+
+
+class DoubleCartpoleDraw(plant.PlantDraw):
+    def __init__(self, double_cartpole_plant, refresh_period=(1.0/240), name='DoubleCartpoleDraw'):
+        super(DoubleCartpoleDraw, self).__init__(double_cartpole_plant, refresh_period, name)
+        m1 = self.plant.m1
+        m2 = self.plant.m2
+        M = self.plant.M
+        l1 = self.plant.l1
+        l2 = self.plant.l2
+        b = self.plant.b
+        g = self.plant.g
 
         self.body_h = 0.5*np.sqrt( m1 )
         self.mass_r1 = 0.05*np.sqrt( m2 ) # distance to corner of bounding box
-        self.mass_r2 = 0.05*np.sqrt( m3 ) # distance to corner of bounding box
+        self.mass_r2 = 0.05*np.sqrt( M ) # distance to corner of bounding box
 
         self.center_x = 0
         self.center_y = 0
 
         # initialize the patches to draw the cartpole
-        self.body_rect = plt.Rectangle( (self.center_x-0.5*self.body_h, self.center_y-0.125*self.body_h), self.body_h, 0.25*self.body_h, facecolor='black')
-        self.pole_line1 = plt.Line2D((self.center_x, 0), (self.center_y, l2), lw=2, c='r')
-        self.mass_circle1 = plt.Circle((0, l2), self.mass_r1, fc='y')
-        self.pole_line2 = plt.Line2D((self.center_x, 0), (l2, l3), lw=2, c='r')
-        self.mass_circle2 = plt.Circle((0, l2+l3), self.mass_r2, fc='y')
+        self.body_rect = plt.Rectangle((self.center_x - 0.5*self.body_h,
+                                       self.center_y - 0.125*self.body_h),
+                                       self.body_h, 0.25*self.body_h,
+                                       facecolor='black')
+        self.pole_line1 = plt.Line2D((self.center_x, 0),
+                                     (self.center_y, l1), lw=2, c='r')
+        self.mass_circle1 = plt.Circle((0, l1), self.mass_r1, fc='y')
+        self.pole_line2 = plt.Line2D((self.center_x, 0),
+                                     (l1, l2), lw=2, c='r')
+        self.mass_circle2 = plt.Circle((0, l1+l2), self.mass_r2, fc='y')
 
     def init_artists(self):
         self.ax.add_patch(self.body_rect)
@@ -223,16 +260,16 @@ class DoubleCartpoleDraw(PlantDraw):
         self.ax.add_patch(self.mass_circle2)
         self.ax.add_line(self.pole_line2)
 
-    def update(self, state, t):
-        l2 = self.plant.params['l2']
-        l3 = self.plant.params['l3']
+    def _update(self, state, t, *args, **kwargs):
+        l1 = self.plant.l1
+        l2 = self.plant.l2
 
         body_x = self.center_x + state[0]
         body_y = self.center_y
-        mass1_x = -l2*np.sin(state[4]) + body_x
-        mass1_y = l2*np.cos(state[4]) + body_y
-        mass2_x = -l3*np.sin(state[5]) + mass1_x
-        mass2_y = l3*np.cos(state[5]) + mass1_y
+        mass1_x = -l1*np.sin(state[4]) + body_x
+        mass1_y = l1*np.cos(state[4]) + body_y
+        mass2_x = -l2*np.sin(state[5]) + mass1_x
+        mass2_y = l2*np.cos(state[5]) + mass1_y
 
         self.body_rect.set_xy((body_x-0.5*self.body_h,body_y-0.125*self.body_h))
         self.pole_line1.set_xdata(np.array([body_x,mass1_x]))
@@ -243,3 +280,4 @@ class DoubleCartpoleDraw(PlantDraw):
         self.mass_circle2.center = (mass2_x,mass2_y)
 
         return (self.body_rect, self.pole_line1, self.mass_circle1, self.pole_line2, self.mass_circle2)
+

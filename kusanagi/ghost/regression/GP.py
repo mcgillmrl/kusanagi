@@ -230,7 +230,9 @@ class GP(BaseRegressor):
             beta = solve_upper_triangular(L.T, Yc)
 
             # And finally, the negative log marginal likelihood 
-            loss = 0.5*(Yc.T.dot(Yc) + 2*tt.sum(tt.log(tt.diag(L))) + N*tt.log(2*np.pi))
+            loss = 0.5*(Yc.T.dot(Yc) +
+                   2*tt.sum(tt.log(tt.ExtractDiag(view=True)(L))) +
+                   N*tt.log(2*np.pi))
 
             return loss, iK, L, beta
 

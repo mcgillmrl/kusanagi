@@ -16,6 +16,7 @@ from kusanagi.ghost import control
 from kusanagi.ghost import regression
 from kusanagi import utils
 
+
 def default_params():
     # setup learner parameters
     angi = [3]
@@ -43,7 +44,6 @@ def default_params():
     policy_params['maxU'] = [10]
 
     # dynamics model parameters
-    # TODO init classes here
     dynmodel_params = {}
     dynmodel_params['idims'] = x0a.size + len(policy_params['maxU'])
     dynmodel_params['odims'] = x0.size
@@ -77,6 +77,7 @@ def default_params():
     params['optimizer'] = opt_params
 
     return params
+
 
 def cartpole_loss(mx, Sx,
                   angle_dims=[3],
@@ -114,6 +115,7 @@ def cartpole_loss(mx, Sx,
 
     return cost.generic_loss(mxa, Sxa, targeta, Q, cw, *args, **kwargs)
 
+
 class Cartpole(plant.ODEPlant):
     metadata = {
         'render.modes': ['human']
@@ -134,7 +136,7 @@ class Cartpole(plant.ODEPlant):
 
         # initial state
         if state0_dist is None:
-            self.state0_dist = utils.distributions.Gaussian([0, 0, 0, 0], 0.1*np.eye(4))
+            self.state0_dist = utils.distributions.Gaussian([0, 0, 0, 0], (0.1**2)*np.eye(4))
         else:
             self.state0_dist = state0_dist
 
@@ -188,6 +190,7 @@ class Cartpole(plant.ODEPlant):
         if self.renderer is not None:
             self.renderer.close()
 
+
 class CartpoleDraw(plant.PlantDraw):
     def __init__(self, cartpole_plant, refresh_period=(1.0/240), name='CartpoleDraw'):
         super(CartpoleDraw, self).__init__(cartpole_plant, refresh_period, name)
@@ -230,3 +233,4 @@ class CartpoleDraw(plant.PlantDraw):
         self.mass_circle.center = (mass_x, mass_y)
 
         return (self.cart_rect, self.pole_line, self.mass_circle)
+

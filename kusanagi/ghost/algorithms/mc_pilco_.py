@@ -106,7 +106,6 @@ def rollout(x0, H, gamma0,
                          n_steps=H,
                          strict=True,
                          allow_gc=False,
-                         profile=True,
                          name="mc_pilco>rollout_scan")
     rollout_output, rollout_updts = output
     mcosts, costs, trajectories = rollout_output[:3]
