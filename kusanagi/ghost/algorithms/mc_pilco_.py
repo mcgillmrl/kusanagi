@@ -19,16 +19,9 @@ def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
     xa = utils.gTrig(x, angle_dims, D)
 
     # compute controls for each sample
-    sn = tt.exp(dyn.logsn)
-    Lnoise = tt.diag(sn/2)
-    x_noisy = x + m_rng.normal(x.shape).dot(Lnoise)
-    xa_noisy = utils.gTrig(x_noisy, angle_dims, D)
-    u = pol.evaluate(xa_noisy, symbolic=True,
+    u = pol.evaluate(xa, symbolic=True,
                      iid_per_eval=iid_per_eval,
                      return_samples=True)
-    # u = pol.evaluate(xa, symbolic=True,
-    #                  iid_per_eval=iid_per_eval,
-    #                  return_samples=True)
 
     # build state-control vectors
     xu = tt.concatenate([xa, u], axis=1)
