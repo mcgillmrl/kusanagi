@@ -1,11 +1,11 @@
 import lasagne
 import theano
 import theano.tensor as tt
-
 from kusanagi import utils
 
 randint = lasagne.random.get_rng().randint(1, 2147462579)
 m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
+
 
 def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
     ''' Given a set of input states, this function returns predictions for
@@ -17,34 +17,30 @@ def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
     '''
     # convert angles from input states to their complex representation
     xa = utils.gTrig(x, angle_dims, D)
-    xa.name='xa'
 
     # compute controls for each sample
     sn = tt.exp(dyn.logsn)
-    sn.name = 'sn'
     Lnoise = tt.diag(sn/2)
-    Lnoise.name = 'Lnoise'
     x_noisy = x + m_rng.normal(x.shape).dot(Lnoise)
-    x_noisy.name='x_noisy'
     xa_noisy = utils.gTrig(x_noisy, angle_dims, D)
-    xa_noisy.name = 'xa_noisy'
-    u = pol.evaluate(xa_noisy, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
-    u.name = 'u'
-    #u = pol.evaluate(xa, symbolic=True, iid_per_eval=iid_per_eval, return_samples=True)
+    u = pol.evaluate(xa_noisy, symbolic=True,
+                     iid_per_eval=iid_per_eval,
+                     return_samples=True)
+    # u = pol.evaluate(xa, symbolic=True,
+    #                  iid_per_eval=iid_per_eval,
+    #                  return_samples=True)
 
     # build state-control vectors
     xu = tt.concatenate([xa, u], axis=1)
-    xu.name='xu'
 
     # predict the change in state given current state-control for each particle
     delta_x = dyn.predict_symbolic(xu, iid_per_eval=iid_per_eval, return_samples=True)
-    delta_x.name='delta_x'
 
     # compute the successor states
     x_next = x + delta_x
-    x_next.name='x_next'
 
     return x_next
+
 
 def rollout(x0, H, gamma0,
             pol, dyn, cost,
@@ -63,33 +59,25 @@ def rollout(x0, H, gamma0,
         '''
             Single step of rollout.
         '''
-        x.name = 'x'
         # get next state distribution
         x_next = propagate_particles(x, pol, dyn, D, angle_dims, **kwargs)
-        x_next.name = 'x_next'
         #  get cost of applying action:
         n = x_next.shape[0]
         n = n.astype(theano.config.floatX)
-        n.name='n'
         mx_next = x_next.mean(0)
-        mx_next.name='mx_next'
         Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
-        Sx_next.name='Sx_next'
+
         # with measurement noise
         sn2 = tt.exp(2*dyn.logsn)
-        sn2.name='sn2'
         Sx_next += tt.diag(sn2)
-        Sx_next.name = 'Sx_next+noise'
         mc_next = cost(mx_next, Sx_next)[0]
-        mc_next.name = 'mc_next'
         c_next = cost(x_next, None)
-        c_next.name = 'c_next'
+
         # resample if requested
         if resample:
             z = m_rng.normal(x.shape)
-            z.name = 'z'
             x_next = mx_next + z.dot(tt.slinalg.cholesky(Sx_next).T)
-            x_next.name = 'x_next_resampled'
+
         return [gamma*mc_next, gamma*c_next, x_next, gamma*gamma0]
 
     # these are the shared variables that will be used in the scan graph.
@@ -109,8 +97,6 @@ def rollout(x0, H, gamma0,
                          name="mc_pilco>rollout_scan")
     rollout_output, rollout_updts = output
     mcosts, costs, trajectories = rollout_output[:3]
-    mcosts.name = 'mcosts'
-    costs.name = 'costs'
     trajectories.name = 'trajectories'
 
     # first axis: batch, second axis: time step
@@ -118,11 +104,8 @@ def rollout(x0, H, gamma0,
     # first axis; batch, second axis: time step
     trajectories = trajectories.transpose(1, 0, 2)
 
-    mcosts.name = 'mc_list'
-    costs.name = 'c_list'
-    trajectories.name = 'x_list'
-
     return [mcosts, costs, trajectories], rollout_updts
+
 
 def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
              intermediate_outs=False, resample_particles=False,
@@ -188,6 +171,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         return [loss, costs, trajectories], inps, updts
     else:
         return loss, inps, updts
+
 
 def build_rollout(*args, **kwargs):
     kwargs['intermediate_outs'] = True

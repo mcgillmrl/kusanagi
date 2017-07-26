@@ -73,7 +73,7 @@ def default_params():
     params = {}
     params['state0_dist'] = p0
     params['angle_dims'] = angi 
-    params['max_steps'] = 40              # control horizon
+    params['max_steps'] = 80              # control horizon
     params['discount'] = 1.0              # discount factor
     params['plant'] = plant_params
     params['policy'] = policy_params

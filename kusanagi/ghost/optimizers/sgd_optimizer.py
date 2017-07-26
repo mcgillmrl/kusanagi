@@ -1,5 +1,6 @@
 # pylint: disable=C0103
 import lasagne
+import numpy as np
 import theano
 import time
 
@@ -78,15 +79,22 @@ class SGDOptimizer(object):
         grad_updates = min_method_updt(grads, params, **kwargs)
 
         utils.print_with_stamp('Compiling function for loss', self.name)
-        self.loss_fn = theano.function(inputs, loss, updates=updts,
+        # converts inputs to shared variables to avoid repeated gpu transfers
+        self.shared_inpts = [theano.shared(np.empty([1]*inp.ndim, 
+                                           dtype=inp.dtype),
+                                           name=inp.name) for inp in inputs]
+        givens_dict = dict(zip(inputs, self.shared_inpts))                                       
+        self.loss_fn = theano.function([], loss, updates=updts,
                                        on_unused_input='ignore',
-                                       allow_input_downcast=True)
+                                       allow_input_downcast=True,
+                                       givens=givens_dict)
 
         utils.print_with_stamp("Compiling parameter updates", self.name)
-        self.update_params_fn = theano.function(inputs, [loss]+grads,
+        self.update_params_fn = theano.function([], [loss]+grads,
                                                 updates=grad_updates+updts,
                                                 on_unused_input='ignore',
-                                                allow_input_downcast=True)
+                                                allow_input_downcast=True,
+                                                givens=givens_dict)
 
         self.n_evals = 0
         self.start_time = 0
@@ -102,8 +110,14 @@ class SGDOptimizer(object):
         self.n_evals = 0
         utils.print_with_stamp('Optimizing parameters via mini batches',
                                self.name)
+        # set values for shared inputs
+        self.shared_inpts[0].set_value(X[-batch_size:])
+        self.shared_inpts[1].set_value(Y[-batch_size:])
+        for s,i in zip(self.shared_inpts[2:], inputs):
+            s.set_value(np.array(i).astype(s.dtype))
+
         # set initial loss and parameters
-        loss0 = self.loss_fn(X[-batch_size:], Y[-batch_size:], *inputs)
+        loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value() for p in self.params]
         self.best_p = [loss0, p, 0]
@@ -116,7 +130,9 @@ class SGDOptimizer(object):
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
                 # mini batch update
-                ret = self.update_params_fn(x, y, *inputs)
+                self.shared_inpts[0].set_value(x)
+                self.shared_inpts[1].set_value(y)
+                ret = self.update_params_fn()
                 # the returned loss corresponds to the parameters
                 # BEFORE the update
                 loss, dloss = ret[0], ret[1:]
@@ -150,9 +166,12 @@ class SGDOptimizer(object):
         self.start_time = time.time()
         self.n_evals = 0
         utils.print_with_stamp('Optimizing parameters', self.name)
+        # set values for shared inputs
+        for s,i in zip(self.shared_inpts, inputs):
+            s.set_value(np.array(i).astype(s.dtype))
 
         # set initial loss and parameters
-        loss0 = self.loss_fn(*inputs)
+        loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value() for p in self.params]
         self.best_p = [loss0, p, 0]
@@ -161,7 +180,7 @@ class SGDOptimizer(object):
         for i in range(self.max_evals):
             # evaluate current policy and update parameters
             start_time = time.time()
-            ret = self.update_params_fn(*inputs)
+            ret = self.update_params_fn()
             # the returned loss corresponds to the parameters BEFORE the update
             loss, dloss = ret[0], ret[1:]
 

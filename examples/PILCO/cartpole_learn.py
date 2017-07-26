@@ -24,7 +24,7 @@ if __name__ == '__main__':
     params = cartpole.default_params()
     n_rnd = 1                           # number of random initial trials
     n_opt = 100                         # learning iterations
-    H = 26  # params['max_steps']
+    H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
 
