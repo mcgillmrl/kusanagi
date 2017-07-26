@@ -37,6 +37,7 @@ if __name__ == '__main__':
 
     # init policy
     pol = control.RBFPolicy(**params['policy'])
+    #pol = control.NNPolicy(p0.mean, **params['policy'])
     randpol = control.RandPolicy(maxU=pol.maxU)
 
     # init dynmodel
@@ -88,7 +89,7 @@ if __name__ == '__main__':
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D,
-                                                   angle_dims, n_samples=100,
+                                                   angle_dims, n_samples=25,
                                                    resample_particles=True)
             polopt.set_objective(loss, pol.get_params(symbolic=True),
                                  inps, updts, clip=10.0, learning_rate=1e-3)
