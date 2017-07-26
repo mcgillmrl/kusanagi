@@ -83,7 +83,8 @@ class SGDOptimizer(object):
         self.shared_inpts = [theano.shared(np.empty([1]*inp.ndim, 
                                            dtype=inp.dtype),
                                            name=inp.name) for inp in inputs]
-        givens_dict = dict(zip(inputs, self.shared_inpts))                                       
+
+        givens_dict = dict(zip(inputs, self.shared_inpts))
         self.loss_fn = theano.function([], loss, updates=updts,
                                        on_unused_input='ignore',
                                        allow_input_downcast=True,

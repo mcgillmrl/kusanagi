@@ -366,7 +366,7 @@ class BNN(BaseRegressor):
                 mask_shape = mask.shape.eval()
                 if mask_shape[0] != n_samples:
                     mask_shape[0] = n_samples
-                    mask.set_value(np.zeros(mask_shape))
+                    mask.set_value(np.zeros(mask_shape, dtype=mask.dtype))
 
         if not hasattr(self,'update_fn') or self.update_fn is None:
             # get prediction with non deterministic samples

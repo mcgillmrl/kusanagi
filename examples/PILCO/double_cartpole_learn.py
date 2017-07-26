@@ -73,7 +73,8 @@ if __name__ == '__main__':
     # PILCO loop
     for i in range(n_opt):
         total_exp = sum([len(st) for st in exp.states])
-        utils.print_with_stamp('==== Iteration [%d], experience: [%d steps] ===='%(i+1, total_exp))
+        msg = '==== Iteration [%d], experience: [%d steps] ===='
+        utils.print_with_stamp(msg%(i+1, total_exp))
 
         # train dynamics model
         train_dynamics(dyn, exp, angle_dims=angle_dims)
@@ -81,14 +82,20 @@ if __name__ == '__main__':
         # initial state distribution
         x0 = np.array([st[0] for st in exp.states])
         m0 = x0.mean(0)
-        S0 = np.cov(x0, rowvar=False, ddof=1) + 1e-7*np.eye(x0.shape[1]) if len(x0) > 2 else p0.cov
+        S0 = np.cov(x0, rowvar=False, ddof=1) +\
+             1e-7*np.eye(x0.shape[1]) if len(x0) > 2 else p0.cov
 
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
-            loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D, angle_dims, n_samples=100, resample_particles=True)
-            polopt.set_objective(loss, pol.get_params(symbolic=True), inps, updts, clip=10.0, learning_rate=1e-4)
-                
-        polopt.minimize(m0, S0, H, gamma, callback=lambda *args, **kwargs: dyn.update())
+            loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D, 
+                                                   angle_dims, n_samples=100
+                                                   resample_particles=True)
+            polopt.set_objective(loss, pol.get_params(symbolic=True),
+                                 inps, updts, clip=10.0, learning_rate=1e-3)
+        
+        
+        polopt.minimize(m0, S0, H, gamma,
+                        callback=lambda *args, **kwargs: dyn.update())
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())
@@ -97,3 +104,4 @@ if __name__ == '__main__':
 
     input('Finished training')
     sys.exit(0)
+

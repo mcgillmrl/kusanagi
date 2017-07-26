@@ -138,19 +138,16 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     # initial state distribution
     mx0 = tt.vector('mx0')
     Sx0 = tt.matrix('Sx0')
+    
     # prediction horizon
     H = tt.iscalar('H')
     # discount factor
     gamma = tt.scalar('gamma')
 
-
     # draw initial set of particles
     z0 = m_rng.normal((n_samples, mx0.size))
-    z0.name = 'z0'
     Lx0 = tt.slinalg.cholesky(Sx0)
-    Lx0.name = 'Lx0'
     x0 = mx0 + z0.dot(Lx0.T)
-    x0.name = 'x0'
 
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma,
