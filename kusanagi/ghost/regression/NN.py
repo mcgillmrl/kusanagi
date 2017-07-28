@@ -130,9 +130,11 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
-    def get_default_network_spec(self, batchsize=None, input_dims=None, output_dims=None,
-                                 hidden_dims=[200, 200], p=0.05, p_input=0.0,
-                                 nonlinearities=lasagne.nonlinearities.sigmoid, name=None):
+    def get_default_network_spec(self, batchsize=None, input_dims=None,
+                                 output_dims=None, hidden_dims=[200, 200],
+                                 p=0.05, p_input=0.0,
+                                 nonlinearities=lasagne.nonlinearities.sigmoid,
+                                 name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
         from lasagne.nonlinearities import linear
@@ -145,23 +147,37 @@ class BNN(BaseRegressor):
         if not isinstance(p, list):
             p = [p]*len(hidden_dims)
         if not isinstance(nonlinearities, list):
-            nonlinearities = [nonlinearities]*len(hidden_dims)        
+            nonlinearities = [nonlinearities]*len(hidden_dims)
+        n_samples = self.dropout_samples.get_value()
         network_spec = []
-
         # input layer
-        input_shape = (batchsize,input_dims)
-        network_spec.append( (InputLayer, dict(shape=input_shape, name=name+'_input') ) )
+        input_shape = (batchsize, input_dims)
+        network_spec.append((InputLayer,
+                             dict(shape=input_shape,
+                                  name=name+'_input')))
         if p_input > 0:
-            network_spec.append( (DropoutLayer, dict(p=p_input, rescale=False, name=name+'_drop_input', dropout_samples=self.dropout_samples.get_value()) ) )
+            network_spec.append((DropoutLayer,
+                                 dict(p=p_input,
+                                      rescale=False,
+                                      name=name+'_drop_input',
+                                      dropout_samples=n_samples)))
         # hidden layers
-        #network_spec.append( (ReshapeLayer, dict(shape=([0],1,[1]), name=name+'_rshp%d'%(0)) ) )
-        #network_spec.append( (GRULayer, dict(num_units=32, name=name+'_gru%d'%(0)) ) )
         for i in range(len(hidden_dims)):
-            network_spec.append( (DenseLayer, dict(num_units=hidden_dims[i], nonlinearity=nonlinearities[i], name=name+'_fc%d'%(i)) ) )
+            network_spec.append((DenseLayer,
+                                 dict(num_units=hidden_dims[i],
+                                      nonlinearity=nonlinearities[i],
+                                      name=name+'_fc%d'%(i))))
             if p[i] > 0:
-                network_spec.append( (DropoutLayer, dict(p=p[i], rescale=False, name=name+'_drop%d'%(i), dropout_samples=self.dropout_samples.get_value()) ) )
+                network_spec.append((DropoutLayer,
+                                     dict(p=p[i],
+                                          rescale=False,
+                                          name=name+'_drop%d'%(i),
+                                          dropout_samples=n_samples)))
         # output layer
-        network_spec.append( (DenseLayer, dict(num_units=output_dims, nonlinearity=linear,name=name+'_output')) )
+        network_spec.append((DenseLayer,
+                             dict(num_units=output_dims, 
+                                  nonlinearity=linear,
+                                  name=name+'_output')))
 
         return network_spec
 
