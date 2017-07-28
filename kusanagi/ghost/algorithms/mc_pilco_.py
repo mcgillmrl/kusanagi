@@ -37,7 +37,8 @@ def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
 
 def rollout(x0, H, gamma0,
             pol, dyn, cost,
-            D, angle_dims=None, resample=False,
+            D, angle_dims=None, resample=True,
+            truncate_gradient=-1,
             **kwargs):
     ''' Given some initial state particles x0, and a prediction horizon H
     (number of timesteps), returns a set of trajectories sampled from the
@@ -87,6 +88,7 @@ def rollout(x0, H, gamma0,
                          n_steps=H,
                          strict=True,
                          allow_gc=False,
+                         truncate_gradient=truncate_gradient,
                          name="mc_pilco>rollout_scan")
     rollout_output, rollout_updts = output
     mcosts, costs, trajectories = rollout_output[:3]
@@ -101,8 +103,8 @@ def rollout(x0, H, gamma0,
 
 
 def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
-             intermediate_outs=False, resample_particles=False,
-             resample_dyn=False, average=True):
+             intermediate_outs=False, resample_particles=True,
+             resample_dyn=False, average=True, truncate_gradient=-1):
     '''
         Constructs the computation graph for the value function according to the
         mcpilco algorithm:
@@ -147,7 +149,8 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
                             pol, dyn, cost,
                             D, angle_dims,
                             resample=resample_particles,
-                            iid_per_eval=resample_dyn)
+                            iid_per_eval=resample_dyn,
+                            truncate_gradient=truncate_gradient)
 
     mean_costs, costs, trajectories = r_outs
     #mean_costs = costs.mean(0) # mean over particles
