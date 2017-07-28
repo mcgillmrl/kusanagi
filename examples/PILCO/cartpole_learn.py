@@ -59,7 +59,11 @@ if __name__ == '__main__':
     def step_cb(state, action, cost, info):
         exp.add_sample(state, action, cost, info)
         env.render()
-    
+
+    def polopt_cb(*args, **kwargs):
+        if hasattr(dyn, 'update'): dyn.update()
+        if hasattr(pol, 'update'): pol.update()
+
     # function to execute before applying policy
     def gTrig(state):
         return utils.gTrig_np(state, angle_dims).flatten()
@@ -89,14 +93,14 @@ if __name__ == '__main__':
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D,
-                                                   angle_dims, n_samples=25,
-                                                   resample_particles=True)
+                                                   angle_dims, n_samples=50,
+                                                   resample_particles=True,
+                                                   truncate_gradient=-1)
             polopt.set_objective(loss, pol.get_params(symbolic=True),
                                  inps, updts, clip=10.0, learning_rate=1e-3)
         
-        
         polopt.minimize(m0, S0, H, gamma,
-                        callback=lambda *args, **kwargs: dyn.update())
+                        callback=polopt_cb)
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())
