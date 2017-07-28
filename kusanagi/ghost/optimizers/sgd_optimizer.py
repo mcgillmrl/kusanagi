@@ -204,4 +204,5 @@ class SGDOptimizer(object):
         v, p, i = self.best_p
         for sp_i, p_i in zip(self.params, p):
             sp_i.set_value(p_i)
+        v = self.loss_fn()
         utils.print_with_stamp('Done training. New loss [%f] iter: [%d]' % (v, i), self.name)

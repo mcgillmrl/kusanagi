@@ -93,7 +93,7 @@ if __name__ == '__main__':
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D,
-                                                   angle_dims, n_samples=50,
+                                                   angle_dims, n_samples=100,
                                                    resample_particles=True,
                                                    truncate_gradient=-1)
             polopt.set_objective(loss, pol.get_params(symbolic=True),
