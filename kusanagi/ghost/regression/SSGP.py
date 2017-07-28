@@ -53,7 +53,7 @@ class SSGP(GP):
         def nlml(sf2M, sn2, phi_f, Y, EyeM):
             ridge = 1e-6
             A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM + ridge*EyeM
-            Lmm = Cholesky(on_error='nan')(A)
+            Lmm = Cholesky()(A)
             iA = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm,EyeM))
             Yc = solve_lower_triangular(Lmm,(phi_f.dot(Y)))
             beta_ss = sf2M*solve_upper_triangular(Lmm.T,Yc)

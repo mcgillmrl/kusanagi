@@ -79,7 +79,7 @@ class SPGP(GP):
                 ridge = 1e-6
                 Kmm = kernel_func(X_sp) + ridge*EyeM
                 Kmn = kernel_func(X_sp, X)
-                Lmm = Cholesky(on_error='raise')(Kmm)
+                Lmm = Cholesky()(Kmm)
                 iKmm = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm, EyeM))
                 Lmn  = solve_lower_triangular(Lmm ,Kmn)
                 diagQnn =  (Lmn**2).sum(0)
@@ -93,7 +93,7 @@ class SPGP(GP):
                 Lmn_ = Lmn*sqrtGamma_inv                      # Kmn_*Gamma^-.5
                 Yi = Y*(sqrtGamma_inv)                        # Gamma^-.5* Y
                 Bmm = tt.eye(Kmm.shape[0]) + (Lmn_).dot(Lmn_.T)     # I + Lmn * Gamma^-1 * Lnm
-                Amm = Cholesky(on_error='raise')(Bmm)
+                Amm = Cholesky()(Bmm)
                 LAmm = Lmm.dot(Amm)
                 iBmm = solve_upper_triangular(LAmm.T, solve_lower_triangular(LAmm, EyeM))
 

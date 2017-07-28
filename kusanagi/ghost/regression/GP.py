@@ -224,7 +224,7 @@ class GP(BaseRegressor):
                 K += tt.diag(y_var[i])
 
             # compute chol(K) and (K^-1)dot(y)
-            L = Cholesky(on_error='nan')(K)
+            L = Cholesky()(K)
             iK = solve_upper_triangular(L.T, solve_lower_triangular(L, EyeN))
             Yc = solve_lower_triangular(L, Y)
             beta = solve_upper_triangular(L.T, Yc)
