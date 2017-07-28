@@ -1,3 +1,4 @@
+import lasagne
 import theano.tensor as tt
 import numpy as np
 import theano
@@ -86,3 +87,8 @@ def gSat(m,v=None,i=None,e=None):
     retvars = [M,V,C]
 
     return retvars
+
+
+def tanhSat(u, e):
+    from lasagne.nonlinearities import rectify, sigmoid, tanh, elu, linear, ScaledTanh
+    return e*tanh(u)
