@@ -88,7 +88,7 @@ def train_dynamics(dynmodel, data, angle_dims=[],
         episodes = list(range(init_episode, n_episodes))\
         if max_episodes is None or n_episodes < max_episodes\
         else list(range(max(0, n_episodes-max_episodes), n_episodes))
-        print(episodes)
+
         X, Y = data.get_dynmodel_dataset(filter_episodes=episodes,
                                          angle_dims=angle_dims,
                                          deltas=True)
