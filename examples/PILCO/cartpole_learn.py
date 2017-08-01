@@ -95,11 +95,11 @@ if __name__ == '__main__':
             import theano
             lr = theano.tensor.scalar('lr')
             loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D,
-                                                   angle_dims, n_samples=50,
+                                                   angle_dims, n_samples=100,
                                                    resample_particles=True,
                                                    truncate_gradient=-1)
             polopt.set_objective(loss, pol.get_params(symbolic=True),
-                                 inps+[lr], updts, clip=10.0, learning_rate=lr)
+                                 inps+[lr], updts, clip=1.0, learning_rate=lr)
         
         polopt.minimize(m0, S0, H, gamma, 1e-2*(1/(1 + 0.25*i)),
                         callback=polopt_cb)

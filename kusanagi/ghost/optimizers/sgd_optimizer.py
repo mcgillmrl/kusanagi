@@ -130,18 +130,24 @@ class SGDOptimizer(object):
             should_exit = False
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
+                # get previous params
+                p = [p.get_value(return_internal_type=True, borrow=False)\
+                     for p in self.params]
+
                 # mini batch update
                 self.shared_inpts[0].set_value(x)
                 self.shared_inpts[1].set_value(y)
                 ret = self.update_params_fn()
-                # the returned loss corresponds to the parameters
+
+                # the returned loss and gradients correspond to the parameters
                 # BEFORE the update
                 loss, dloss = ret[0], ret[1:]
-                p = [p.get_value() for p in self.params]
+
                 if loss < self.best_p[0]:
                     self.best_p = [loss, p, self.n_evals]
                 if callable(callback):
                     callback(p, loss, dloss)
+                
                 self.n_evals += 1
                 if self.n_evals > self.max_evals:
                     should_exit = True

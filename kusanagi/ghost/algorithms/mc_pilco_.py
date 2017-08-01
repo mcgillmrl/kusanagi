@@ -49,7 +49,7 @@ def rollout(x0, H, gamma0,
                            'mc_pilco.rollout')
 
     # define internal scan computations
-    def step_rollout(x, gamma, *args):
+    def step_rollout(i, x, gamma, *args):
         '''
             Single step of rollout.
         '''
@@ -83,9 +83,9 @@ def rollout(x0, H, gamma0,
 
     # loop over the planning horizon
     output = theano.scan(fn=step_rollout,
+                         sequences=[theano.tensor.arange(H)],
                          outputs_info=[None, None, x0, gamma0],
                          non_sequences=[gamma0]+shared_vars,
-                         n_steps=H,
                          strict=True,
                          allow_gc=False,
                          truncate_gradient=truncate_gradient,
