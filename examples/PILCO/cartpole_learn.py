@@ -38,11 +38,11 @@ if __name__ == '__main__':
 
     # init policy
     pol = control.RBFPolicy(**params['policy'])
-    #pol = control.NNPolicy(p0.mean, **params['policy'])
+    # pol = control.NNPolicy(p0.mean, **params['policy'])
     randpol = control.RandPolicy(maxU=pol.maxU)
 
     # init dynmodel
-    #dyn = regression.SSGP_UI(**params['dynamics_model'])
+    # dyn = regression.SSGP_UI(**params['dynamics_model'])
     dyn = regression.BNN(**params['dynamics_model'])
 
     # init cost model
@@ -99,12 +99,12 @@ if __name__ == '__main__':
             import theano
             lr = theano.tensor.scalar('lr')
             loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D,
-                                                   angle_dims, n_samples=50,
+                                                   angle_dims, n_samples=40,
                                                    resample_particles=True,
                                                    truncate_gradient=-1)
             polopt.set_objective(loss, pol.get_params(symbolic=True),
                                  inps+[lr], updts, clip=1.0, learning_rate=lr)
-        
+
         polopt.minimize(m0, S0, H, gamma, 1e-2*(1/(1 + 0.25*i)),
                         callback=polopt_cb)
 
