@@ -63,8 +63,8 @@ def rollout(x0, H, gamma0,
 
         # with measurement noise
         sn2 = tt.exp(2*dyn.logsn)
-        Sx_next += tt.diag(sn2)
-        mc_next = cost(mx_next, Sx_next)[0]
+        Sx_next_noisy = Sx_next + tt.diag(sn2)
+        mc_next = cost(mx_next, Sx_next_noisy)[0]
         c_next = cost(x_next, None)
 
         # resample if requested
