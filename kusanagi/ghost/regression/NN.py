@@ -131,9 +131,9 @@ class BNN(BaseRegressor):
             self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
-                                 output_dims=None, hidden_dims=[200, 200],
+                                 output_dims=None, hidden_dims=[256, 256],
                                  p=0.05, p_input=0.0,
-                                 nonlinearities=lasagne.nonlinearities.sigmoid,
+                                 nonlinearities=lasagne.nonlinearities.elu,
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
