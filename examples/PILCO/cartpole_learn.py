@@ -51,7 +51,7 @@ if __name__ == '__main__':
     exp = ExperienceDataset()
 
     # init policy optimizer
-    params['optimizer']['min_method'] = 'adam'
+    params['optimizer']['min_method'] = 'nesterov'
     params['optimizer']['max_evals'] = 1000
     polopt = SGDOptimizer(**params['optimizer'])
 
@@ -82,7 +82,7 @@ if __name__ == '__main__':
         utils.print_with_stamp(msg%(i+1, total_exp))
 
         # train dynamics model
-        train_dynamics(dyn, exp, angle_dims=angle_dims)
+        train_dynamics(dyn, exp, angle_dims=angle_dims, init_episode=max(0,i-10))
 
         # initial state distribution
         x0 = np.array([st[0] for st in exp.states])
@@ -92,14 +92,16 @@ if __name__ == '__main__':
 
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
+            import theano
+            lr = theano.tensor.scalar('lr')
             loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D,
-                                                   angle_dims, n_samples=100,
+                                                   angle_dims, n_samples=50,
                                                    resample_particles=True,
                                                    truncate_gradient=-1)
             polopt.set_objective(loss, pol.get_params(symbolic=True),
-                                 inps, updts, clip=10.0, learning_rate=1e-3)
+                                 inps+[lr], updts, clip=10.0, learning_rate=lr)
         
-        polopt.minimize(m0, S0, H, gamma,
+        polopt.minimize(m0, S0, H, gamma, 1e-2*(1/(1 + 0.25*i)),
                         callback=polopt_cb)
 
         # apply controller
