@@ -9,6 +9,7 @@ import traceback
 
 SCIPY_MIN_METHODS = ['L-BFGS-B', 'TNC', 'BFGS', 'SLSQP', 'CG']
 
+
 class ScipyOptimizer(object):
     def __init__(self, min_method='L-BFGS-B',
                  max_evals=150,
@@ -38,21 +39,25 @@ class ScipyOptimizer(object):
 
         self.alt_min_methods = [min_method]
 
-        # setup alternative minimization methods (in case the one selected fails)
+        # setup alternative minimization methods (in case the one selected
+        # fails)
         for method in SCIPY_MIN_METHODS:
             if method not in self.alt_min_methods:
                 self.alt_min_methods.append(method)
 
-    def set_objective(self, loss, params, inputs=None, updts=None, grads=None):
+    def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
+                      diff_mode=0):
         '''
             Changes the objective function to be optimized
             @param loss theano graph representing the loss to be optimized
-            @param params theano shared variables representing the parameters to be optimized
-            @param inputs theano variables representing the inputs required to compute the loss,
-                          other than params
-            @param updts dictionary of list of theano updates to be applied after every evaluation
-                         of the loss function
-            @param grads gradients of the loss function. If not provided, will be computed here
+            @param params theano shared variables representing the parameters
+                          to be optimized
+            @param inputs theano variables representing the inputs required to
+                          compute the loss, other than params
+            @param updts dictionary of list of theano updates to be applied
+                         after every evaluation of the loss function
+            @param grads gradients of the loss function. If not provided, will
+                         be computed here
         '''
         if inputs is None:
             inputs = []
@@ -67,8 +72,9 @@ class ScipyOptimizer(object):
 
         utils.print_with_stamp('Compiling function for loss', self.name)
         self.loss_fn = theano.function(inputs, loss, updates=updts)
-        utils.print_with_stamp('Compiling function for loss+gradients', self.name)
-        self.grads_fn = theano.function(inputs, [loss,]+grads, updates=updts)
+        utils.print_with_stamp('Compiling function for loss+gradients',
+                               self.name)
+        self.grads_fn = theano.function(inputs, [loss, ]+grads, updates=updts)
 
         self.n_evals = 0
         self.start_time = 0

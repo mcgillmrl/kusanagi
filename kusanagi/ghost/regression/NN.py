@@ -3,12 +3,11 @@ import theano
 import theano.tensor as tt
 import lasagne
 import numpy as np
-import time
 import kusanagi
-from collections import OrderedDict
 from kusanagi import utils
 from kusanagi.ghost.optimizers import SGDOptimizer
 from kusanagi.ghost.regression import BaseRegressor
+
 
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
@@ -22,8 +21,8 @@ class BNN(BaseRegressor):
         self.should_recompile = False
         self.trained = False
 
-        self.logsn = theano.shared((np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX),
-                                   name='%s_logsn'%(self.name))
+        logsn = (np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX)
+        self.logsn = theano.shared(logsn, name='%s_logsn' % (self.name))
 
         self.network = None
         self.network_spec = None
@@ -31,25 +30,29 @@ class BNN(BaseRegressor):
         self.sample_network_fn = None
         self.predict_fn = None
         self.prediction_updates = None
-        self.dropout_samples = theano.shared(np.array(dropout_samples).astype('int32'),
-                                             name="%s>dropout_samples"%(self.name))
+        samples = np.array(dropout_samples).astype('int32')
+        samples_name = "%s>dropout_samples" % (self.name)
+        self.dropout_samples = theano.shared(samples, name=samples_name)
         seed = lasagne.random.get_rng().randint(1, 2147462579)
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(seed)
 
-        self.X = None; self.Y = None
-        self.Xm = None; self.Xs = None
-        self.Ym = None; self.Ys = None
+        self.X = None
+        self.Y = None
+        self.Xm = None
+        self.Xs = None
+        self.Ym = None
+        self.Ys = None
 
         self.profile = profile
-        self.compile_mode = theano.compile.get_default_mode()#.excluding('scanOp_pushout_seqs_ops')
+        self.compile_mode = theano.compile.get_default_mode()
 
         self.learn_noise = learn_noise
         self.heteroscedastic = heteroscedastic
 
         # filename for saving
-        fname = '%s_%d_%d_%s_%s'%(self.name, self.D, self.E,
-                                  theano.config.device,
-                                  theano.config.floatX)
+        fname = '%s_%d_%d_%s_%s' % (self.name, self.D, self.E,
+                                    theano.config.device,
+                                    theano.config.floatX)
         self.filename = fname if filename is None else filename
         BaseRegressor.__init__(self, name=name, filename=self.filename)
         if filename is not None:
@@ -62,80 +65,100 @@ class BNN(BaseRegressor):
         self.optimizer = SGDOptimizer(min_method, max_evals,
                                       conv_thr, name=self.name+'_opt')
 
-        # register theanno functions and shared variables for saving
-        #self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
+        # register theano shared variables for saving
         self.register_types([tt.sharedvar.SharedVariable])
         self.register(['logsn', 'network_params', 'network_spec'])
 
-    def load(self, output_folder=None,output_filename=None):
+    def load(self, output_folder=None, output_filename=None):
         dropout_samples = self.dropout_samples.get_value()
-        super(BNN,self).load(output_folder,output_filename)
+        super(BNN, self).load(output_folder, output_filename)
         self.dropout_samples.set_value(dropout_samples)
 
         if self.network_params is None:
             self.network_params = {}
 
         if self.network_spec is not None:
-            self.network = self.build_network( self.network_spec, params=self.network_params, name=self.name)
+            self.network = self.build_network(self.network_spec,
+                                              params=self.network_params,
+                                              name=self.name)
 
-    def save(self, output_folder=None,output_filename=None):
-        # store references to the network shared variables, so we can save and load them correctly
+    def save(self, output_folder=None, output_filename=None):
+        # store references to the network shared variables, so we can save
+        # and load them correctly
         self.network_params = []
         for layer in lasagne.layers.get_all_layers(self.network):
-            layer_params = dict([(p.name.split('>')[-1],p) for p in layer.get_params()])
-            self.network_params.append((layer.name,layer_params))
+            layer_params = dict([(p.name.split('>')[-1], p)
+                                 for p in layer.get_params()])
+            self.network_params.append((layer.name, layer_params))
         self.network_params = dict(self.network_params)
-        super(BNN,self).save(output_folder,output_filename)
+        super(BNN, self).save(output_folder, output_filename)
 
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
-            v = [(attr_name,self.__dict__[attr_name]) for attr_name in list(self.__dict__.keys()) if isinstance(self.__dict__[attr_name],tt.sharedvar.SharedVariable)]
-            v += [(p.name,p) for p in lasagne.layers.get_all_params(self.network, unwrap_shared=True) ]
+            v = [(attr_name, self.__dict__[attr_name])
+                 for attr_name in list(self.__dict__.keys())
+                 if isinstance(self.__dict__[attr_name],
+                               tt.sharedvar.SharedVariable)]
+            v += [(p.name, p)
+                  for p in lasagne.layers.get_all_params(self.network,
+                                                         unwrap_shared=True)]
             return dict(v)
         else:
-            v = [attr for attr in list(self.__dict__.values()) if isinstance(attr,tt.sharedvar.SharedVariable)]
-            v += lasagne.layers.get_all_params(self.network, unwrap_shared=True)
+            v = [attr
+                 for attr in list(self.__dict__.values())
+                 if isinstance(attr, tt.sharedvar.SharedVariable)]
+            v += lasagne.layers.get_all_params(self.network,
+                                               unwrap_shared=True)
             return v
     
-    def set_dataset(self,X_dataset,Y_dataset, **kwargs):
+    def set_dataset(self, X_dataset, Y_dataset, **kwargs):
         # set dataset
-        super(BNN,self).set_dataset(X_dataset.astype(theano.config.floatX),Y_dataset.astype(theano.config.floatX))
+        super(BNN, self).set_dataset(X_dataset.astype(theano.config.floatX),
+                                     Y_dataset.astype(theano.config.floatX))
 
         # extra operations when setting the dataset (specific to this class)
-        self.update_dataset_statistics(X_dataset,Y_dataset)
+        self.update_dataset_statistics(X_dataset, Y_dataset)
         
         if self.learn_noise:
-            # default log of measurement noise variance is set to 10% of dataset variation
-            self.logsn.set_value(np.log((0.05*Y_dataset.std(0)).astype(theano.config.floatX)))
+            # default log of measurement noise variance is set to 10% of
+            # dataset variation
+            logs = np.log((0.05*Y_dataset.std(0)).astype(theano.config.floatX))
+            self.logsn.set_value(logs)
 
-    def append_dataset(self,X_dataset,Y_dataset):
+    def append_dataset(self, X_dataset, Y_dataset):
         # set dataset
-        super(BNN,self).append_dataset(X_dataset.astype(theano.config.floatX),Y_dataset.astype(theano.config.floatX))
+        super(BNN, self).append_dataset(X_dataset.astype(theano.config.floatX),
+                                        Y_dataset.astype(theano.config.floatX))
 
         # extra operations when setting the dataset (specific to this class)
-        self.update_dataset_statistics(X_dataset,Y_dataset)
+        self.update_dataset_statistics(X_dataset, Y_dataset)
 
-    def update_dataset_statistics(self,X_dataset,Y_dataset):
+    def update_dataset_statistics(self, X_dataset, Y_dataset):
         if self.Xm is None:
-            self.Xm = theano.shared(X_dataset.mean(0).astype(theano.config.floatX),name='%s>Xm'%(self.name),borrow=True)
-            self.Xs = theano.shared(X_dataset.std(0).astype(theano.config.floatX),name='%s>Xs'%(self.name),borrow=True)
+            Xm = X_dataset.mean(0).astype(theano.config.floatX)
+            self.Xm = theano.shared(Xm, name='%s>Xm' % (self.name))
+            Xs = X_dataset.std(0).astype(theano.config.floatX)
+            self.Xs = theano.shared(Xs, name='%s>Xs' % (self.name))
         else:
-            self.Xm.set_value(X_dataset.mean(0).astype(theano.config.floatX),borrow=True)
-            self.Xs.set_value(X_dataset.std(0).astype(theano.config.floatX),borrow=True)
+            self.Xm.set_value(X_dataset.mean(0).astype(theano.config.floatX))
+            self.Xs.set_value(X_dataset.std(0).astype(theano.config.floatX))
 
         if self.Ym is None:
-            self.Ym = theano.shared(Y_dataset.mean(0).astype(theano.config.floatX),name='%s>Ym'%(self.name),borrow=True)
-            self.Ys = theano.shared(Y_dataset.std(0).astype(theano.config.floatX),name='%s>Ys'%(self.name),borrow=True)
+            Ym = Y_dataset.mean(0).astype(theano.config.floatX)
+            self.Ym = theano.shared(Ym, name='%s>Ym' % (self.name))
+            Ys = Y_dataset.std(0).astype(theano.config.floatX)
+            self.Ys = theano.shared(Ys, name='%s>Ys' % (self.name))
         else:
-            self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX),borrow=True)
-            self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX),borrow=True)
+            self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX))
+            self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX))
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
-                                 output_dims=None, hidden_dims=[200,200,200,200],
+                                 output_dims=None,
+                                 hidden_dims=[200, 200, 200, 200],
                                  p=0.05, p_input=0.0,
-                                 nonlinearities=lasagne.nonlinearities.tanh,
+                                 nonlinearities=lasagne.nonlinearities.elu,
                                  name=None):
-        from lasagne.layers import InputLayer, DenseLayer, GRULayer, ReshapeLayer
+        from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
         from lasagne.nonlinearities import linear
         if name is None:
@@ -166,12 +189,12 @@ class BNN(BaseRegressor):
             network_spec.append((DenseLayer,
                                  dict(num_units=hidden_dims[i],
                                       nonlinearity=nonlinearities[i],
-                                      name=name+'_fc%d'%(i))))
+                                      name=name+'_fc%d' % (i))))
             if p[i] > 0:
                 network_spec.append((DropoutLayer,
                                      dict(p=p[i],
                                           rescale=False,
-                                          name=name+'_drop%d'%(i),
+                                          name=name+'_drop%d' % (i),
                                           dropout_samples=n_samples)))
         # output layer
         network_spec.append((DenseLayer,
@@ -181,23 +204,30 @@ class BNN(BaseRegressor):
 
         return network_spec
 
-    def build_network(self, network_spec=None, input_shape=None, params={}, name=None):
-        ''' Builds a network according to the specification in the network_spec argument.
-        network_spec should be a list containing tuples where the first element is a class in lasagne.layers
-        and the second element is a dictionary with jeyword arguments for the class constructor;
-        i.e. [(layer_class_1, constructor_argss_1), ... , (layer_class_N, constructor_argss_N),  ].
-        Optionally, you can also pass a dictionary of parameters where the keys are 'layer_name' and the values 
-        are dictionaries with the trainable parameters indexed by names (e.g. W or b). The trainable parameter
-        values should be numpy arrays, theano shared variables, or theano expressions to set the trainable
-        parameters of the lasagne layers. e.g params = {'layer_name_1': {'W': theano_shared_1, 'b': some_np_array}}, would
-        set the weights of layer 1 to be the shared variable theano_shared_1 and the biases to be initialized with the values of 
+    def build_network(self, network_spec=None, input_shape=None,
+                      params={}, name=None):
+        ''' Builds a network according to the specification in the
+        network_spec argument. network_spec should be a list containing
+        tuples where the first element is a class in lasagne.layers and the
+        second element is a dictionary with jeyword arguments for the class
+        constructor; i.e. [(layer_class_1, constructor_argss_1), ... ,
+        (layer_class_N, constructor_argss_N)].
+        Optionally, you can also pass a dictionary of parameters where the
+        keys are 'layer_name' and the values are dictionaries with the
+        trainable parameters indexed by names (e.g. W or b). The trainable
+        parameter values should be numpy arrays, theano shared variables, or
+        theano expressions to set the trainable parameters of the lasagne
+        layers. e.g params = {'layer_name_1': {'W': theano_shared_1,
+                                               'b': some_np_array}}
+        would set the weights of layer 1 to be the shared variable
+        theano_shared_1 and the biases to be initialized with the values of
         some_np_array.'''
         # set default values
         if name is None:
             name = self.name
         if network_spec is None:
             network_spec = self.get_default_network_spec()
-        utils.print_with_stamp('Building network',self.name)
+        utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
         
         # create input layer 

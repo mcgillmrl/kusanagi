@@ -3,6 +3,7 @@ Example of how to use the library for learning using the PILCO learner on the ca
 '''
 # pylint: disable=C0103
 import os
+import sys
 import numpy as np
 
 from kusanagi.ghost import control
@@ -14,7 +15,7 @@ from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 from kusanagi import utils
 from functools import partial
 
-#np.random.seed(1337)
+# np.random.seed(1337)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
@@ -61,8 +62,10 @@ if __name__ == '__main__':
         env.render()
 
     def polopt_cb(*args, **kwargs):
-        if hasattr(dyn, 'update'): dyn.update()
-        if hasattr(pol, 'update'): pol.update()
+        if hasattr(dyn, 'update'):
+            dyn.update()
+        if hasattr(pol, 'update'):
+            pol.update()
 
     # function to execute before applying policy
     def gTrig(state):
@@ -79,23 +82,24 @@ if __name__ == '__main__':
     for i in range(n_opt):
         total_exp = sum([len(st) for st in exp.states])
         msg = '==== Iteration [%d], experience: [%d steps] ===='
-        utils.print_with_stamp(msg%(i+1, total_exp))
+        utils.print_with_stamp(msg % (i+1, total_exp))
 
         # train dynamics model
-        train_dynamics(dyn, exp, angle_dims=angle_dims, init_episode=max(0,i-10))
+        train_dynamics(dyn, exp, angle_dims=angle_dims,
+                       init_episode=max(0, i-10))
 
         # initial state distribution
         x0 = np.array([st[0] for st in exp.states])
         m0 = x0.mean(0)
         S0 = np.cov(x0, rowvar=False, ddof=1) +\
-             1e-7*np.eye(x0.shape[1]) if len(x0) > 2 else p0.cov
+            1e-7*np.eye(x0.shape[1]) if len(x0) > 2 else p0.cov
 
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             import theano
             lr = theano.tensor.scalar('lr')
             loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D,
-                                                   angle_dims, n_samples=100,
+                                                   angle_dims, n_samples=50,
                                                    resample_particles=True,
                                                    truncate_gradient=-1)
             polopt.set_objective(loss, pol.get_params(symbolic=True),
