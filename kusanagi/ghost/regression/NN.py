@@ -57,7 +57,7 @@ class BNN(BaseRegressor):
         BaseRegressor.__init__(self, name=name, filename=self.filename)
         if filename is not None:
             self.load()
-        
+
         # optimizer options
         max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
@@ -110,7 +110,7 @@ class BNN(BaseRegressor):
             v += lasagne.layers.get_all_params(self.network,
                                                unwrap_shared=True)
             return v
-    
+
     def set_dataset(self, X_dataset, Y_dataset, **kwargs):
         # set dataset
         super(BNN, self).set_dataset(X_dataset.astype(theano.config.floatX),
@@ -118,7 +118,7 @@ class BNN(BaseRegressor):
 
         # extra operations when setting the dataset (specific to this class)
         self.update_dataset_statistics(X_dataset, Y_dataset)
-        
+
         if self.learn_noise:
             # default log of measurement noise variance is set to 10% of
             # dataset variation
@@ -154,8 +154,8 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
-                                 hidden_dims=[200, 200, 200, 200],
-                                 p=0.05, p_input=0.0,
+                                 hidden_dims=[500, 500, 500],
+                                 p=0.1, p_input=0.0,
                                  nonlinearities=lasagne.nonlinearities.elu,
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
@@ -198,7 +198,7 @@ class BNN(BaseRegressor):
                                           dropout_samples=n_samples)))
         # output layer
         network_spec.append((DenseLayer,
-                             dict(num_units=output_dims, 
+                             dict(num_units=output_dims,
                                   nonlinearity=linear,
                                   name=name+'_output')))
 
@@ -229,9 +229,10 @@ class BNN(BaseRegressor):
             network_spec = self.get_default_network_spec()
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
-        
-        # create input layer 
-        assert network_spec[0][0] is lasagne.layers.InputLayer or input_shape is not None
+
+        # create input layer
+        assert network_spec[0][0] is lasagne.layers.InputLayer\
+            or input_shape is not None
         if network_spec[0][0] is lasagne.layers.InputLayer:
             if input_shape is not None:
                 # change the input shape
@@ -241,40 +242,46 @@ class BNN(BaseRegressor):
             network = layer_class(**layer_args)
             network_spec = network_spec[1:]
         else:
-            network = lasagne.layers.InputLayer(input_shape, name=name+'_input')
-        
+            network = lasagne.layers.InputLayer(input_shape,
+                                                name=name+'_input')
+
         # create hidden layers
         for layer_class, layer_args in network_spec:
             layer_name = layer_args['name']
-            
+
             if layer_name in params:
                 layer_args.update(params[layer_name])
             print(layer_class.__name__, layer_args)
             network = layer_class(network, **layer_args)
             # change the periods in variable names
             for p in network.get_params():
-                p.name = p.name.replace('.','>')
+                p.name = p.name.replace('.', '>')
 
-        # force rebuilding the prediction functions, as they will be out of date
+        # force rebuilding the prediction functions, as they will be
+        # out of date
         self.predict_fn = None
         self.predict_ic_fn = None
 
         return network
-    
+
     def get_loss(self):
         ''' initializes the loss function for training '''
         # build the network
         if self.network is None:
-            params = self.network_params if self.network_params is not None else {}
-            self.network = self.build_network( self.network_spec, params=params, name=self.name)
+            params = self.network_params\
+                     if self.network_params is not None\
+                     else {}
+            self.network = self.build_network(self.network_spec,
+                                              params=params,
+                                              name=self.name)
 
-        utils.print_with_stamp('Initialising loss function',self.name)
+        utils.print_with_stamp('Initialising loss function', self.name)
 
         # Input variables
-        input_lengthscale = tt.scalar('%s>input_lengthscale'%(self.name))
-        hidden_lengthscale = tt.scalar('%s>hidden_lengthscale'%(self.name))
-        train_inputs = tt.matrix('%s>train_inputs'%(self.name))
-        train_targets = tt.matrix('%s>train_targets'%(self.name))
+        input_lengthscale = tt.scalar('%s>input_lengthscale' % (self.name))
+        hidden_lengthscale = tt.scalar('%s>hidden_lengthscale' % (self.name))
+        train_inputs = tt.matrix('%s>train_inputs' % (self.name))
+        train_targets = tt.matrix('%s>train_targets' % (self.name))
 
         # standardize network inputs and outputs
         train_inputs_std = (train_inputs - self.Xm)/self.Xs
@@ -283,28 +290,34 @@ class BNN(BaseRegressor):
         # evaluate nework output for batch
         if self.heteroscedastic:
             # this assumes that self.logsn is obtained from the network output
-            train_predictions, logsn = lasagne.layers.get_output([self.network,self.logsn], train_inputs_std, deterministic=False)
+            train_predictions, logsn = lasagne.layers.get_output(
+                [self.network, self.logsn], train_inputs_std,
+                deterministic=False)
         else:
-            train_predictions = lasagne.layers.get_output(self.network, train_inputs_std, deterministic=False)
+            train_predictions = lasagne.layers.get_output(
+                self.network, train_inputs_std, deterministic=False)
             logsn = self.logsn
 
         # scale logsn since output network output is standardized
         logsn_std = logsn - tt.log(self.Ys)
 
         # build the dropout loss function ( See Gal and Ghahramani 2015)
-        delta_y = train_predictions-train_targets_std
+        deltay = train_predictions-train_targets_std
         N, E = train_targets.shape
         N = N.astype(theano.config.floatX)
         E = E.astype(theano.config.floatX)
 
         # compute negative log likelihood
-        nlml = tt.square(delta_y*tt.exp(-logsn_std)).sum(-1) + logsn_std.sum(-1) # note that if we have logsn_std be a 1xD vector, broadcasting rules apply
+        # note that if we have logsn_std be a 1xD vector, broadcasting
+        # rules apply
+        nlml = tt.square(deltay*tt.exp(-logsn_std)).sum(-1) + logsn_std.sum(-1)
         loss = 0.5*nlml.mean()
 
         # compute regularization term
-        loss += self.get_regularization_term(input_lengthscale, hidden_lengthscale)/N
+        loss += self.get_regularization_term(input_lengthscale,
+                                             hidden_lengthscale)/N
 
-        inputs = [train_inputs, train_targets, 
+        inputs = [train_inputs, train_targets,
                   input_lengthscale, hidden_lengthscale]
         updates = {}
 
@@ -319,110 +332,132 @@ class BNN(BaseRegressor):
     def get_regularization_term(self, input_lengthscale, hidden_lengthscale):
         reg = 0
         layers = lasagne.layers.get_all_layers(self.network)
-        
-        for i in range(1,len(layers)):
+
+        for i in range(1, len(layers)):
             reg_weight = 1/2.0
-            # apply different regularization weigths to the input, and the hidden dimension
-            ind = i if not (i >1 and isinstance(layers[i-1],lasagne.layers.DropoutLayer)) else i-1
-            if hasattr(layers[ind],'input_layer') and isinstance(layers[ind].input_layer,lasagne.layers.InputLayer):
+            # apply different regularization weigths to the input,
+            # and the hidden dimension
+            is_dropout = isinstance(layers[i-1],
+                                    lasagne.layers.DropoutLayer)
+            ind = i if not (i > 1 and is_dropout) else i-1
+
+            is_input = isinstance(layers[ind].input_layer,
+                                  lasagne.layers.InputLayer)
+
+            if hasattr(layers[ind], 'input_layer') and is_input:
                 reg_weight *= input_lengthscale**2
             else:
                 reg_weight *= hidden_lengthscale**2
 
-            # if this layer has a weight layer and the previous layer is a DropoutLayer
-            if hasattr(layers[i],'W'):
-                if i >1 and isinstance(layers[i-1],lasagne.layers.DropoutLayer):
+            # if this layer has a weight layer and the previous layer
+            # is a DropoutLayer
+            if hasattr(layers[i], 'W'):
+                if i > 1 and is_dropout:
                     p = layers[i-1].p
-                    if p>0:
+                    if p > 0:
                         reg_weight *= (1-p)
                 reg += reg_weight*lasagne.regularization.l2(layers[i].W)
 
-            if hasattr(layers[i],'b'):
+            if hasattr(layers[i], 'b'):
                 reg += reg_weight*lasagne.regularization.l2(layers[i].b)
 
         return reg
 
-    def get_updates(self,network=None):
-        ''' returns a dictionary where the keys are lasagne layer instances and the values are their corresponding dropout masks'''
+    def get_updates(self, network=None):
+        ''' returns a dictionary where the keys are lasagne layer instances
+            and the values are their corresponding dropout masks'''
         if network is None:
             network = self.network
         mask_updates = []
         for l in lasagne.layers.get_all_layers(network):
-            if isinstance(l,kusanagi.ghost.regression.layers.DropoutLayer) and l.mask_updates is not None:
-                mask_updates.append((l.mask,l.mask_updates))
+            if isinstance(l, kusanagi.ghost.regression.layers.DropoutLayer)\
+               and l.mask_updates is not None:
+                mask_updates.append((l.mask, l.mask_updates))
 
         return mask_updates
 
-    def predict_symbolic(self,mx,Sx=None, deterministic=False, iid_per_eval=False, return_samples=False, with_measurement_noise=True):
-        ''' returns symbolic expressions for the evaluations of this objects neural network. If Sx is specified, the
-        output will correspond to the mean, covariance and input-output covariance of the network predictions'''
+    def predict_symbolic(self, mx, Sx=None, deterministic=False,
+                         iid_per_eval=False, return_samples=False,
+                         with_measurement_noise=True):
+        ''' returns symbolic expressions for the evaluations of this objects
+        neural network. If Sx is specified, the output will correspond to the
+        mean, covariance and input-output covariance of the network
+        predictions'''
         if Sx is not None:
-            # generate random samples from input (assuming gaussian distributed inputs)
+            # generate random samples from input (assuming gaussian
+            # distributed inputs)
             # standard uniform samples (one sample per network sample)
-            z_std = self.m_rng.normal((self.dropout_samples,self.D))
+            z_std = self.m_rng.normal((self.dropout_samples, self.D))
 
             # scale and center particles
             Lx = tt.slinalg.cholesky(Sx)
             x = mx + z_std.dot(Lx.T)
         else:
-            x = mx[None,:] if mx.ndim == 1 else mx
+            x = mx[None, :] if mx.ndim == 1 else mx
 
-        if hasattr(self,'Xm') and self.Xm is not None:
+        if hasattr(self, 'Xm') and self.Xm is not None:
             # standardize inputs
             x = (x - self.Xm)/self.Xs
-        # unless we set the shared_axes parameter on the droput layers, the dropout masks should be different per sample
-        y = lasagne.layers.get_output(self.network, x, deterministic=deterministic, fixed_dropout_masks=not iid_per_eval)
+        # unless we set the shared_axes parameter on the droput layers,
+        # the dropout masks should be different per sample
+        y = lasagne.layers.get_output(self.network, x,
+                                      deterministic=deterministic,
+                                      fixed_dropout_masks=not iid_per_eval)
 
-        if hasattr(self,'Ym') and self.Ym is not None:
+        if hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
             y = y*self.Ys + self.Ym
-        y.name='%s>output_samples'%(self.name)
+        y.name = '%s>output_samples' % (self.name)
         if return_samples:
             # nothing else to do!
             return y
-        
+
         n = tt.cast(y.shape[0], dtype=theano.config.floatX)
         # empirical mean
         M = y.mean(axis=0)
-        # empirical covariance TODO emprical mean of logsn for heteroscedastic noise
-        S = y.T.dot(y)/n - tt.outer(M,M)
+        # empirical covariance TODO emprical mean of logsn for heteroscedastic
+        # noise
+        S = y.T.dot(y)/n - tt.outer(M, M)
         if with_measurement_noise:
             S += tt.diag(tt.exp(2*self.logsn))
 
         # empirical input output covariance
         if Sx is not None:
-            C = x.T.dot(y)/n - tt.outer(mx,M)
+            C = x.T.dot(y)/n - tt.outer(mx, M)
         else:
-            C = tt.zeros((self.D,self.E))
-            
-        return [M,S,C]
+            C = tt.zeros((self.D, self.E))
+
+        return [M, S, C]
 
     def update(self, n_samples=None):
         ''' Updates the dropout masks'''
         if n_samples is not None:
             if isinstance(n_samples, tt.sharedvar.SharedVariable):
                 self.dropout_samples = n_samples
-                update_fn = None
+                self.update_fn = None
             else:
                 self.dropout_samples.set_value(n_samples)
 
             # increase the size of the masks
             updts = self.get_updates()
-            for mask,updt in updts:
+            for mask, updt in updts:
                 mask_shape = mask.shape.eval()
                 if mask_shape[0] != n_samples:
                     mask_shape[0] = n_samples
                     mask.set_value(np.zeros(mask_shape, dtype=mask.dtype))
 
-        if not hasattr(self,'update_fn') or self.update_fn is None:
+        if not hasattr(self, 'update_fn') or self.update_fn is None:
             # get prediction with non deterministic samples
-            mx = tt.zeros((self.dropout_samples,self.D))
-            output_vars = self.predict_symbolic(mx,iid_per_eval=False)
+            mx = tt.zeros((self.dropout_samples, self.D))
+            self.predict_symbolic(mx, iid_per_eval=False)
 
-            # create a function to update the masks manually. Here the dropout masks should be shared variables
+            # create a function to update the masks manually. Here the dropout
+            # masks should be shared variables
             updts = self.get_updates()
-            self.update_fn = theano.function([],[], updates = updts, allow_input_downcast=True)
-            
+            print('here')
+            self.update_fn = theano.function([], [], updates=updts,
+                                             allow_input_downcast=True)
+
         # draw samples from the network
         self.update_fn()
 
@@ -434,7 +469,8 @@ class BNN(BaseRegressor):
 
         if optimizer.loss_fn is None or self.should_recompile:
             loss, inps, updts = self.get_loss()
-            # we pass the learning rate as an input, and as a parameter to the updates method
+            # we pass the learning rate as an input, and as a parameter to the
+            # updates method
             learning_rate = theano.tensor.scalar('lr')
             inps.append(learning_rate)
             optimizer.set_objective(loss, self.get_params(symbolic=True),
@@ -446,7 +482,7 @@ class BNN(BaseRegressor):
 
         if hidden_ls is None:
             hidden_ls = input_ls
-        
+
         optimizer.minibatch_minimize(self.X.get_value(), self.Y.get_value(),
                                      input_ls, hidden_ls, lr,
                                      batch_size=batch_size)
