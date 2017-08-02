@@ -1,8 +1,10 @@
 '''
-Example of how to use the library for learning using the PILCO learner on the double_cartpole task
+Example of how to use the library for learning using the PILCO learner on the 
+double_cartpole task
 '''
 # pylint: disable=C0103
 import os
+import sys
 import numpy as np
 
 from kusanagi.ghost import control
@@ -14,12 +16,15 @@ from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 from kusanagi import utils
 from functools import partial
 
-#np.random.seed(1337)
+# np.random.seed(1337)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
+    use_bnn = True
+
     # setup output directory
-    utils.set_output_dir(os.path.join(utils.get_output_dir(), 'double_cartpole'))
+    utils.set_output_dir(os.path.join(utils.get_output_dir(),
+                         'double_cartpole'))
 
     params = double_cartpole.default_params()
     n_rnd = 1                           # number of random initial trials
@@ -36,13 +41,13 @@ if __name__ == '__main__':
     env = double_cartpole.DoubleCartpole(**params['plant'])
 
     # init policy
-    pol = control.RBFPolicy(**params['policy'])
-    # pol = control.NNPolicy(p0.mean, **params['policy'])
+    pol = control.NNPolicy(p0.mean, **params['policy'])\
+        if use_bnn else control.RBFPolicy(**params['policy'])
     randpol = control.RandPolicy(maxU=pol.maxU)
 
     # init dynmodel
-    # dyn = regression.SSGP_UI(**params['dynamics_model'])
-    dyn = regression.BNN(**params['dynamics_model'])
+    dyn = regression.BNN(**params['dynamics_model'])\
+        if use_bnn else regression.SSGP_UI(**params['dynamics_model'])
 
     # init cost model
     cost = partial(double_cartpole.double_cartpole_loss, **params['cost'])
@@ -51,9 +56,12 @@ if __name__ == '__main__':
     exp = ExperienceDataset()
 
     # init policy optimizer
-    params['optimizer']['min_method'] = 'adam'
-    params['optimizer']['max_evals'] = 1000
-    polopt = SGDOptimizer(**params['optimizer'])
+    if use_bnn:
+        params['optimizer']['min_method'] = 'adam'
+        params['optimizer']['max_evals'] = 1000
+        polopt = SGDOptimizer(**params['optimizer'])
+    else:
+        polopt = ScipyOptimizer(**params['optimizer'])
 
     # callback executed after every call to env.step
     def step_cb(state, action, cost, info):
@@ -94,17 +102,28 @@ if __name__ == '__main__':
 
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
-            import theano
-            lr = theano.tensor.scalar('lr')
-            loss, inps, updts = mc_pilco_.get_loss(pol, dyn, cost, D,
-                                                   angle_dims, n_samples=40,
-                                                   resample_particles=True,
-                                                   truncate_gradient=-1)
-            polopt.set_objective(loss, pol.get_params(symbolic=True),
-                                 inps+[lr], updts, clip=1.0, learning_rate=lr)
+            if use_bnn:
+                import theano
+                lr = theano.tensor.scalar('lr')
+                loss, inps, updts = mc_pilco_.get_loss(
+                    pol, dyn, cost, D, angle_dims, n_samples=40,
+                    resample_particles=True, truncate_gradient=-1)
 
-        polopt.minimize(m0, S0, H, gamma, 1e-2*(1/(1 + 0.25*i)),
-                        callback=polopt_cb)
+                polopt.set_objective(loss, pol.get_params(symbolic=True),
+                                     inps+[lr], updts, clip=1.0,
+                                     learning_rate=lr)
+            else:
+                loss, inps, updts = pilco_.get_loss(
+                    pol, dyn, cost, D, angle_dims)
+
+                polopt.set_objective(loss, pol.get_params(symbolic=True),
+                                     inps, updts)
+        if use_bnn:
+            polopt.minimize(m0, S0, H, gamma, 5e-5*(1/(1 + 0.25*i)),
+                            callback=polopt_cb)
+        else:
+            polopt.minimize(m0, S0, H, gamma,
+                            callback=polopt_cb)
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())
@@ -113,4 +132,3 @@ if __name__ == '__main__':
 
     input('Finished training')
     sys.exit(0)
-
