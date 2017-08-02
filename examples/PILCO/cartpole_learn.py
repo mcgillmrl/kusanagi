@@ -21,7 +21,8 @@ from functools import partial
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
-    use_bnn = True
+    use_bnn_dyn = True
+    use_bnn_pol = False
 
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
@@ -42,12 +43,12 @@ if __name__ == '__main__':
 
     # init policy
     pol = control.NNPolicy(p0.mean, **params['policy'])\
-        if use_bnn else control.RBFPolicy(**params['policy'])
+        if use_bnn_pol else control.RBFPolicy(**params['policy'])
     randpol = control.RandPolicy(maxU=pol.maxU)
 
     # init dynmodel
     dyn = regression.BNN(**params['dynamics_model'])\
-        if use_bnn else regression.SSGP_UI(**params['dynamics_model'])
+        if use_bnn_dyn else regression.SSGP_UI(**params['dynamics_model'])
 
     # init cost model
     cost = partial(cartpole.cartpole_loss, **params['cost'])
@@ -56,7 +57,7 @@ if __name__ == '__main__':
     exp = ExperienceDataset()
 
     # init policy optimizer
-    if use_bnn:
+    if use_bnn_dyn:
         params['optimizer']['min_method'] = 'adam'
         params['optimizer']['max_evals'] = 1000
         polopt = SGDOptimizer(**params['optimizer'])
@@ -103,7 +104,7 @@ if __name__ == '__main__':
 
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
-            if use_bnn:
+            if use_bnn_dyn:
                 import theano
                 lr = theano.tensor.scalar('lr')
                 loss, inps, updts = mc_pilco_.get_loss(
@@ -119,7 +120,7 @@ if __name__ == '__main__':
 
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
-        if use_bnn:
+        if use_bnn_dyn:
             polopt.minimize(m0, S0, H, gamma, 5e-5*(1/(1 + 0.25*i)),
                             callback=polopt_cb)
         else:
