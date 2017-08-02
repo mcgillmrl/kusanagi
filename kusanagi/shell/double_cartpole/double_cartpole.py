@@ -1,19 +1,15 @@
 # pylint: disable=C0103
 '''
-Contains the DoubleCartpole envionment, along with default parameters and a rendering class
+Contains the DoubleCartpole envionment, along with default parameters and
+a rendering class
 '''
 import numpy as np
-import theano
-import theano.tensor as tt
 
 from gym import spaces
 from matplotlib import pyplot as plt
-from functools import partial
 
 from kusanagi.shell import plant
 from kusanagi.ghost import cost
-from kusanagi.ghost import control
-from kusanagi.ghost import regression
 from kusanagi import utils
 
 
@@ -24,7 +20,8 @@ def default_params():
     S0 = np.eye(len(x0))*(0.1**2)
     p0 = utils.distributions.Gaussian(x0, S0)
     angi = [4, 5]
-    x0a, S0a = utils.gTrig2_np(x0[None, :], np.array(S0)[None, :, :], angi, len(x0))
+    x0a, S0a = utils.gTrig2_np(x0[None, :], np.array(S0)[None, :, :],
+                               angi, len(x0))
 
     # plant parameters
     plant_params = {}
@@ -37,13 +34,14 @@ def default_params():
     plant_params['friction'] = 0.1
     plant_params['gravity'] = 9.82
     plant_params['state0_dist'] = p0
-    plant_params['noise_dist'] = utils.distributions.Gaussian(np.zeros((p0.dim,)),
-                                                              np.eye(p0.dim)*0.01**2)
+    plant_params['noise_dist'] = utils.distributions.Gaussian(
+        np.zeros((p0.dim, )),
+        np.eye(p0.dim)*0.01**2)
 
     # policy parameters
     policy_params = {}
     policy_params['state0_dist'] = p0
-    policy_params['angle_dims'] = angi 
+    policy_params['angle_dims'] = angi
     policy_params['n_inducing'] = 100
     policy_params['maxU'] = [20]
 
@@ -72,9 +70,9 @@ def default_params():
     # general parameters
     params = {}
     params['state0_dist'] = p0
-    params['angle_dims'] = angi 
-    params['max_steps'] = 80              # control horizon
-    params['discount'] = 1.0              # discount factor
+    params['angle_dims'] = angi
+    params['max_steps'] = int(4.0/plant_params['dt'])  # control horizon
+    params['discount'] = 1.0                           # discount factor
     params['plant'] = plant_params
     params['policy'] = policy_params
     params['dynamics_model'] = dynmodel_params
@@ -82,6 +80,7 @@ def default_params():
     params['optimizer'] = opt_params
 
     return params
+
 
 def double_cartpole_loss(mx, Sx,
                          angle_dims=[4, 5],
@@ -93,7 +92,7 @@ def double_cartpole_loss(mx, Sx,
     target = np.array(target)
     D = target.size
 
-    #convert angle dimensions
+    # convert angle dimensions
     targeta = utils.gTrig_np(target, angle_dims).flatten()
     Da = targeta.size
     if Sx is None:
@@ -107,7 +106,7 @@ def double_cartpole_loss(mx, Sx,
             mxa = mxa.flatten()
         Sxa = None
     else:
-        # angle dimensions are removed, and their complex 
+        # angle dimensions are removed, and their complex
         # representation is appended
         mxa, Sxa = utils.gTrig2(mx, Sx, angle_dims, D)[:2]
 
@@ -115,8 +114,8 @@ def double_cartpole_loss(mx, Sx,
     Q = np.zeros((Da, Da))
     # these are the dimensions used to compute the cost
     # (x, sin(theta1), cos(theta1), sin(theta2), cos(theta2))
-    cost_dims = np.hstack([0, np.arange(Da-2*len(angle_dims),Da)])[:,None]
-    C = np.array([[1, -link1_length, 0, -link2_length, 0], 
+    cost_dims = np.hstack([0, np.arange(Da-2*len(angle_dims), Da)])[:, None]
+    C = np.array([[1, -link1_length, 0, -link2_length, 0],
                   [0, 0, link1_length, 0, link2_length]])
     Q[cost_dims, cost_dims.T] = C.T.dot(C)
 
@@ -124,9 +123,11 @@ def double_cartpole_loss(mx, Sx,
 
 
 class DoubleCartpole(plant.ODEPlant):
+
     metadata = {
         'render.modes': ['human']
     }
+
     def __init__(self,
                  link1_length=0.5, link1_mass=0.5,
                  link2_length=0.5, link2_mass=0.5,
@@ -180,8 +181,10 @@ class DoubleCartpole(plant.ODEPlant):
         f = self.u if self.u is not None else np.array([0])
         f = f.flatten()
 
-        sz4 = np.sin(z[4]); cz4 = np.cos(z[4]);
-        sz5 = np.sin(z[5]); cz5 = np.cos(z[5]);
+        sz4 = np.sin(z[4])
+        cz4 = np.cos(z[4])
+        sz5 = np.sin(z[5])
+        cz5 = np.cos(z[5])
         cz4m5 = np.cos(z[4] - z[5])
         sz4m5 = np.sin(z[4] - z[5])
         a0 = m2+2*M
@@ -189,14 +192,14 @@ class DoubleCartpole(plant.ODEPlant):
         a2 = l1*(z[2]*z[2])
         a3 = a1*(z[3]*z[3])
 
-        A = np.array([[ 2*(m1+m2+M), -a0*l1*cz4,       -a1*cz5    ],
-                      [-3*a0*cz4,     (2*a0+2*M)*l1,   3*a1*cz4m5 ],
-                      [-3*cz5,         3*l1*cz4m5,       2*l2      ]])
-        b = np.array([ 2*f[0]-2*b*z[1]-a0*a2*sz4-a3*sz5,
-                       3*a0*g*sz4 - 3*a3*sz4m5,
-                       3*a2*sz4m5 + 3*g*sz5]).flatten()
+        A = np.array([[2*(m1+m2+M), -a0*l1*cz4,     -a1*cz5],
+                      [-3*a0*cz4,    (2*a0+2*M)*l1,  3*a1*cz4m5],
+                      [-3*cz5,       3*l1*cz4m5,     2*l2]])
+        b = np.array([2*f[0]-2*b*z[1]-a0*a2*sz4-a3*sz5,
+                      3*a0*g*sz4 - 3*a3*sz4m5,
+                      3*a2*sz4m5 + 3*g*sz5]).flatten()
         
-        x = np.linalg.solve(A,b)
+        x = np.linalg.solve(A, b)
 
         dz = np.zeros((6,))
         dz[0] = z[1]
@@ -217,7 +220,7 @@ class DoubleCartpole(plant.ODEPlant):
         if self.renderer is None:
             self.renderer = DoubleCartpoleDraw(self)
             self.renderer.init_ui()
-        updts = self.renderer.update(*self.get_state(noisy=False))
+        self.renderer.update(*self.get_state(noisy=False))
 
     def _close(self):
         if self.renderer is not None:
@@ -225,19 +228,19 @@ class DoubleCartpole(plant.ODEPlant):
 
 
 class DoubleCartpoleDraw(plant.PlantDraw):
-    def __init__(self, double_cartpole_plant, refresh_period=(1.0/240), name='DoubleCartpoleDraw'):
-        super(DoubleCartpoleDraw, self).__init__(double_cartpole_plant, refresh_period, name)
+    def __init__(self, double_cartpole_plant, refresh_period=(1.0/240),
+                 name='DoubleCartpoleDraw'):
+        super(DoubleCartpoleDraw, self).__init__(double_cartpole_plant,
+                                                 refresh_period, name)
         m1 = self.plant.m1
         m2 = self.plant.m2
         M = self.plant.M
         l1 = self.plant.l1
         l2 = self.plant.l2
-        b = self.plant.b
-        g = self.plant.g
 
-        self.body_h = 0.5*np.sqrt( m1 )
-        self.mass_r1 = 0.05*np.sqrt( m2 ) # distance to corner of bounding box
-        self.mass_r2 = 0.05*np.sqrt( M ) # distance to corner of bounding box
+        self.body_h = 0.5*np.sqrt(m1)
+        self.mass_r1 = 0.05*np.sqrt(m2)  # distance to corner of bounding box
+        self.mass_r2 = 0.05*np.sqrt(M)   # distance to corner of bounding box
 
         self.center_x = 0
         self.center_y = 0
@@ -272,13 +275,14 @@ class DoubleCartpoleDraw(plant.PlantDraw):
         mass2_x = -l2*np.sin(state[5]) + mass1_x
         mass2_y = l2*np.cos(state[5]) + mass1_y
 
-        self.body_rect.set_xy((body_x-0.5*self.body_h,body_y-0.125*self.body_h))
-        self.pole_line1.set_xdata(np.array([body_x,mass1_x]))
-        self.pole_line1.set_ydata(np.array([body_y,mass1_y]))
-        self.pole_line2.set_xdata(np.array([mass1_x,mass2_x]))
-        self.pole_line2.set_ydata(np.array([mass1_y,mass2_y]))
-        self.mass_circle1.center = (mass1_x,mass1_y)
-        self.mass_circle2.center = (mass2_x,mass2_y)
+        self.body_rect.set_xy((body_x-0.5*self.body_h,
+                               body_y-0.125*self.body_h))
+        self.pole_line1.set_xdata(np.array([body_x, mass1_x]))
+        self.pole_line1.set_ydata(np.array([body_y, mass1_y]))
+        self.pole_line2.set_xdata(np.array([mass1_x, mass2_x]))
+        self.pole_line2.set_ydata(np.array([mass1_y, mass2_y]))
+        self.mass_circle1.center = (mass1_x, mass1_y)
+        self.mass_circle2.center = (mass2_x, mass2_y)
 
-        return (self.body_rect, self.pole_line1, self.mass_circle1, self.pole_line2, self.mass_circle2)
-
+        return (self.body_rect, self.pole_line1, self.mass_circle1,
+                self.pole_line2, self.mass_circle2)

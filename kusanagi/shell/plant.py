@@ -1,21 +1,20 @@
 # pylint: disable=C0103
 import gym
 import numpy as np
-import sys
 import serial
 import struct
-from enum import Enum
 
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Cursor
 from matplotlib.colors import cnames
 from scipy.integrate import ode
 from time import time, sleep
-from threading import Thread, Lock
+from threading import Thread
 from multiprocessing import Process, Pipe, Event
 from kusanagi.utils import print_with_stamp, gTrig_np
 
 color_generator = iter(cnames.items())
+
 
 class Plant(gym.Env):
     def __init__(self, dt=0.1, noise_dist=None,
@@ -56,7 +55,7 @@ class Plant(gym.Env):
 
     def stop(self):
         print_with_stamp('Stopping robot', self.name)
-        #self._close()
+        # self._close()
 
     def _step(self, action):
         msg = "You need to implement self._step in your Plant subclass."
@@ -65,6 +64,7 @@ class Plant(gym.Env):
     def _reset(self):
         msg = "You need to implement self._reset in your Plant subclass."
         raise NotImplementedError(msg)
+
 
 class ODEPlant(Plant):
     def __init__(self, name='ODEPlant', integrator='dopri5',
@@ -107,22 +107,26 @@ class ODEPlant(Plant):
         msg = "You need to implement self.dynamics in the ODEPlant subclass."
         raise NotImplementedError(msg)
 
+
 class SerialPlant(Plant):
     cmds = ['RESET_STATE', 'GET_STATE', 'APPLY_CONTROL', 'CMD_OK', 'STATE']
-    cmds = dict(list(zip(cmds,[str(i) for i in range(len(cmds))])))
+    cmds = dict(list(zip(cmds, [str(i) for i in range(len(cmds))])))
 
     def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None,
                  name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0',
-                 state_indices=None, maxU=None, angle_dims = []):
-        super(SerialPlant,self).__init__(params, x0, S0, dt, noise, name, angle_dims)
+                 state_indices=None, maxU=None, angle_dims=[]):
+        super(SerialPlant, self).__init__(params, x0, S0, dt,
+                                          noise, name, angle_dims)
         self.port = port
         self.baud_rate = baud_rate
-        self.serial = serial.Serial(self.port,self.baud_rate)
-        self.state_indices = state_indices if state_indices is not None else list(range(len(x0)))
-        self.U_scaling = 1.0/np.array(maxU);
-        self.t=-1
+        self.serial = serial.Serial(self.port, self.baud_rate)
+        self.state_indices = state_indices\
+            if state_indices is not None\
+            else list(range(len(x0)))
+        self.U_scaling = 1.0/np.array(maxU)
+        self.t = -1
 
-    def apply_control(self,u):
+    def apply_control(self, u):
         if not self.serial.isOpen():
             self.serial.open()
         self.u = np.array(u, dtype=np.float64)
@@ -131,11 +135,11 @@ class SerialPlant(Plant):
         if self.U_scaling is not None:
             self.u *= self.U_scaling
         if self.t < 0:
-            self.state,self.t= self.state_from_serial()
+            self.state, self.t = self.state_from_serial()
 
         u_array = self.u.flatten().tolist()
         u_array.append(self.t+self.dt)
-        u_string = ','.join([ str(ui) for ui in u_array ]) #TODO pack as binary
+        u_string = ','.join([str(ui) for ui in u_array])  # TODO pack as binary
         self.serial.flushInput()
         self.serial.flushOutput()
         cmd = self.cmds['APPLY_CONTROL']+','+u_string+";"
@@ -147,7 +151,7 @@ class SerialPlant(Plant):
         dt = self.dt
         t1 = self.t + dt
         while self.t < t1:
-            self.state, self.t= self.state_from_serial()
+            self.state, self.t = self.state_from_serial()
         return self.state
 
     def state_from_serial(self):
@@ -156,13 +160,13 @@ class SerialPlant(Plant):
         c = self.serial.read()
         buf = [c]
         tmp = (self.cmds['STATE']+',').encode()
-        while buf != tmp: # TODO timeout this loop
+        while buf != tmp:  # TODO timeout this loop
             c = self.serial.read()
             buf = buf[-1]+c
         buf = []
         res = []
         escaped = False
-        while True: # TODO timeout this loop
+        while True:  # TODO timeout this loop
             c = self.serial.read()
             if not escaped:
                 if c == b'/':
@@ -178,11 +182,12 @@ class SerialPlant(Plant):
                     break
             buf.append(c)
             escaped = False
-        res = np.array([struct.unpack('<d',ri) for ri in res]).flatten()
-        return res[self.state_indices],res[-1]
+        res = np.array([struct.unpack('<d', ri) for ri in res]).flatten()
+        return res[self.state_indices], res[-1]
 
     def _reset(self):
-        print_with_stamp('Please reset your plant to its initial state and hit Enter', self.name)
+        msg = 'Please reset your plant to its initial state and hit Enter'
+        print_with_stamp(msg, self.name)
         input()
         if not self.serial.isOpen():
             self.serial.open()
@@ -190,13 +195,14 @@ class SerialPlant(Plant):
         self.serial.flushOutput()
         self.serial.write((self.cmds['RESET_STATE']+";").encode())
         sleep(self.dt)
-        self.state,self.t = self.state_from_serial()
+        self.state, self.t = self.state_from_serial()
         self.t = -1
         return self.state
 
     def stop(self):
-        super(SerialPlant,self).stop()
+        super(SerialPlant, self).stop()
         self.serial.close()
+
 
 class PlantDraw(object):
     def __init__(self, plant, refresh_period=(1.0/240),
@@ -209,7 +215,7 @@ class PlantDraw(object):
 
         self.dt = refresh_period
         self.exec_time = time()
-        self.scale = 150 # pixels per meter
+        self.scale = 150  # pixels per meter
 
         self.center_x = 0
         self.center_y = 0
@@ -218,7 +224,7 @@ class PlantDraw(object):
         self.polling_pipe, self.drawing_pipe = Pipe()
 
     def init_ui(self):
-        self.fig = plt.figure(self.name)#,figsize=(16,10))
+        self.fig = plt.figure(self.name)
         plt.xlim([-1.5, 1.5])
         plt.ylim([-1.5, 1.5])
         self.ax = plt.gca()
@@ -265,11 +271,13 @@ class PlantDraw(object):
         self.update_canvas(updts)
 
     def _update(self, *args, **kwargs):
-        msg = "You need to implement the self._update() method in your PlantDraw class."
+        msg = "You need to implement the self._update() method in your\
+ PlantDraw class."
         raise NotImplementedError(msg)
 
     def init_artists(self, *args, **kwargs):
-        msg = "You need to implement the self.init_artists() method in your PlantDraw class."
+        msg = "You need to implement the self.init_artists() method in your\
+ PlantDraw class."
         raise NotImplementedError(msg)
 
     def update_canvas(self, updts):
@@ -298,11 +306,13 @@ class PlantDraw(object):
 
     def start(self):
         print_with_stamp('Starting drawing loop', self.name)
-        self.drawing_thread = Process(target=self.drawing_loop, args=(self.drawing_pipe,))
+        self.drawing_thread = Process(target=self.drawing_loop,
+                                      args=(self.drawing_pipe, ))
         self.drawing_thread.daemon = True
-        self.polling_thread = Thread(target=self.polling_loop, args=(self.polling_pipe,))
+        self.polling_thread = Thread(target=self.polling_loop,
+                                     args=(self.polling_pipe, ))
         self.polling_thread.daemon = True
-        #self.drawing_thread = Process(target=self.run)
+        # self.drawing_thread = Process(target=self.run)
         self.running.set()
         self.polling_thread.start()
         self.drawing_thread.start()
@@ -320,9 +330,11 @@ class PlantDraw(object):
 
         print_with_stamp('Stopped drawing loop', self.name)
 
+
 # an example that plots lines
 class LivePlot(PlantDraw):
-    def __init__(self, plant, refresh_period=1.0, name='Serial Data', H=5.0, angi=[]):
+    def __init__(self, plant, refresh_period=1.0,
+                 name='Serial Data', H=5.0, angi=[]):
         super(LivePlot, self).__init__(plant, refresh_period, name)
         self.H = H
         self.angi = angi
@@ -337,7 +349,8 @@ class LivePlot(PlantDraw):
         self.update_period = refresh_period
 
     def init_artists(self):
-        self.lines = [plt.Line2D(self.t_labels, self.data[:, i], c=next(color_generator)[0])\
+        self.lines = [plt.Line2D(self.t_labels, self.data[:, i],
+                                 c=next(color_generator)[0])
                       for i in range(self.data.shape[1])]
         self.ax.set_aspect('auto', 'datalim')
         for line in self.lines:
@@ -351,12 +364,14 @@ class LivePlot(PlantDraw):
                 self.t_labels = np.array([t]*2)
 
             if len(self.angi) > 0:
-                state[self.angi] = (state[self.angi]+np.pi)%(2*np.pi) - np.pi
+                state[self.angi] = (state[self.angi]+np.pi) % (2*np.pi) - np.pi
 
             self.current_t = t
-            # only keep enough data points to fill the window to avoid using up too much memory
+            # only keep enough data points to fill the window to avoid using
+            # up too much memory
             curr_time = time()
-            self.update_period = 0.95*self.update_period+0.05*(curr_time-self.previous_update_time)
+            self.update_period = 0.95*self.update_period + \
+                0.05*(curr_time - self.previous_update_time)
             self.previous_update_time = curr_time
             history_size = int(1.5*self.H/self.update_period)
             self.data = np.vstack((self.data, state))[-history_size:, :]
