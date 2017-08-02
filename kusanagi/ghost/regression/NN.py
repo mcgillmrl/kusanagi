@@ -454,7 +454,6 @@ class BNN(BaseRegressor):
             # create a function to update the masks manually. Here the dropout
             # masks should be shared variables
             updts = self.get_updates()
-            print('here')
             self.update_fn = theano.function([], [], updates=updts,
                                              allow_input_downcast=True)
 
