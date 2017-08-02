@@ -28,7 +28,7 @@ if __name__ == '__main__':
                          'double_cartpole'))
 
     params = double_cartpole.default_params()
-    n_rnd = 1                           # number of random initial trials
+    n_rnd = 2                           # number of random initial trials
     n_opt = 100                         # learning iterations
     H = params['max_steps']
     gamma = params['discount']
