@@ -80,7 +80,7 @@ class SGDOptimizer(object):
 
         utils.print_with_stamp('Compiling function for loss', self.name)
         # converts inputs to shared variables to avoid repeated gpu transfers
-        self.shared_inpts = [theano.shared(np.empty([1]*inp.ndim, 
+        self.shared_inpts = [theano.shared(np.empty([1]*inp.ndim,
                                            dtype=inp.dtype),
                                            name=inp.name) for inp in inputs]
 
@@ -114,10 +114,11 @@ class SGDOptimizer(object):
         # set values for shared inputs
         self.shared_inpts[0].set_value(X[-batch_size:])
         self.shared_inpts[1].set_value(Y[-batch_size:])
-        for s,i in zip(self.shared_inpts[2:], inputs):
+        for s, i in zip(self.shared_inpts[2:], inputs):
             s.set_value(np.array(i).astype(s.dtype))
 
         # set initial loss and parameters
+        ret = self.update_params_fn()
         loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value() for p in self.params]
@@ -131,7 +132,7 @@ class SGDOptimizer(object):
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
                 # get previous params
-                p = [p.get_value(return_internal_type=True, borrow=False)\
+                p = [p.get_value(return_internal_type=True, borrow=False)
                      for p in self.params]
 
                 # mini batch update
@@ -147,7 +148,7 @@ class SGDOptimizer(object):
                     self.best_p = [loss, p, self.n_evals]
                 if callable(callback):
                     callback(p, loss, dloss)
-                
+
                 self.n_evals += 1
                 if self.n_evals > self.max_evals:
                     should_exit = True
@@ -174,7 +175,7 @@ class SGDOptimizer(object):
         self.n_evals = 0
         utils.print_with_stamp('Optimizing parameters', self.name)
         # set values for shared inputs
-        for s,i in zip(self.shared_inpts, inputs):
+        for s, i in zip(self.shared_inpts, inputs):
             s.set_value(np.array(i).astype(s.dtype))
 
         # set initial loss and parameters
@@ -206,9 +207,10 @@ class SGDOptimizer(object):
             str_params = (loss, self.n_evals, self.iter_time)
             utils.print_with_stamp(out_str % str_params, self.name, True)
 
-        print('') 
+        print('')
         v, p, i = self.best_p
         for sp_i, p_i in zip(self.params, p):
             sp_i.set_value(p_i)
         v = self.loss_fn()
-        utils.print_with_stamp('Done training. New loss [%f] iter: [%d]' % (v, i), self.name)
+        msg = 'Done training. New loss [%f] iter: [%d]'
+        utils.print_with_stamp(msg % (v, i), self.name)

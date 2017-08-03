@@ -21,7 +21,7 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     use_bnn_dyn = True
-    use_bnn_pol = False
+    use_bnn_pol = True
 
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(),
@@ -120,7 +120,7 @@ if __name__ == '__main__':
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
         if use_bnn_dyn:
-            polopt.minimize(m0, S0, H, gamma, 5e-5*(1/(1 + 0.25*i)),
+            polopt.minimize(m0, S0, H, gamma, 2e-4*(1/(1 + 0.25*i)),
                             callback=polopt_cb)
         else:
             polopt.minimize(m0, S0, H, gamma,

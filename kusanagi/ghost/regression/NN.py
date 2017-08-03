@@ -120,7 +120,7 @@ class BNN(BaseRegressor):
         self.update_dataset_statistics(X_dataset, Y_dataset)
 
         if self.learn_noise:
-            # default log of measurement noise variance is set to 10% of
+            # default log of measurement noise variance is set to 2.5% of
             # dataset variation
             logs = np.log((0.05*Y_dataset.std(0)).astype(theano.config.floatX))
             self.logsn.set_value(logs)
@@ -477,7 +477,7 @@ class BNN(BaseRegressor):
         if input_ls is None:
             # set to some proportion of the standard deviation
             # (inputs are scaled and centered to N(0,1) )
-            input_ls = 0.1
+            input_ls = 0.05
 
         if hidden_ls is None:
             hidden_ls = input_ls
