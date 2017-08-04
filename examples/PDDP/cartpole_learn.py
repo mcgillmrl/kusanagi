@@ -1,65 +1,130 @@
-import atexit, os, sys
+'''
+Example of how to use the library for learning using the PILCO learner 
+on the cartpole task
+'''
+# pylint: disable=C0103
+import os
+import sys
 import numpy as np
-from kusanagi.ghost.regression import GP, GP_UI, SSGP, SSGP_UI, BNN
-from kusanagi.ghost.algorithms.PDDP import PDDP
-from kusanagi.ghost.cost import quadratic_loss
-from kusanagi.ghost.control import LocalLinearPolicy
-from kusanagi.shell.cartpole import default_params ,CartpoleDraw
+
+from kusanagi.ghost import control
+from kusanagi.ghost import regression
+from kusanagi.shell import cartpole
+from kusanagi.ghost.algorithms import pddp_
+from kusanagi.ghost.optimizers import ScipyOptimizer, SGDOptimizer
+from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 from kusanagi import utils
-#np.random.seed(31347)
+from functools import partial
+# import theano.d3viz as d3v
+
+# np.random.seed(1337)
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
+    use_bnn_dyn = True
+    use_bnn_pol = False
+
     # setup output directory
-    utils.set_output_dir(os.path.join(utils.get_output_dir(), 'pddp_cartpole'))
+    utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
-    J = 1                                              # number of random initial trials
-    N = 100                                            # learning iterations
-    learner_params = default_params()
-    learner_params['policy_class'] = LocalLinearPolicy
-    learner_params['dynmodel_class'] = SSGP_UI
-    # initialize learner
-    learner = PDDP(**learner_params)
-    try:
-        learner.load(load_compiled_fns=True)
-        save_compiled_fns = False
-    except:
-        utils.print_with_stamp('Unable to load compiled fns', 'main')
-        save_compiled_fns = True
+    params = cartpole.default_params()
+    n_rnd = 1                           # number of random initial trials
+    n_opt = 100                         # learning iterations
+    H = params['max_steps']
+    gamma = params['discount']
+    angle_dims = params['angle_dims']
 
-    atexit.register(learner.stop)
-    #draw_cp = CartpoleDraw(learner.plant)
-    #draw_cp.start()
-    #atexit.register(draw_cp.stop)
+    # initial state distribution
+    p0 = params['state0_dist']
+    D = p0.mean.size
 
-    # apply random controls to obtain initial experience
-    for i in range(J):
-        learner.policy.t = 0
-        learner.plant.reset_state()
-        learner.apply_controller(random_controls=True)
+    # init environment
+    env = cartpole.Cartpole(**params['plant'])
 
-    # learning loop
-    for i in range(N):
-        #train the dynamics models given the collected data
-        learner.train_dynamics()
+    # init policy
+    pol = control.NNPolicy(p0.mean, **params['policy'])\
+        if use_bnn_pol else control.RBFPolicy(**params['policy'])
+    randpol = control.RandPolicy(maxU=pol.maxU)
+
+    # init dynmodel
+    dyn = regression.BNN(**params['dynamics_model'])\
+        if use_bnn_dyn else regression.SSGP_UI(**params['dynamics_model'])
+
+    # init cost model
+    cost = partial(cartpole.cartpole_loss, **params['cost'])
+
+    # create experience dataset
+    exp = ExperienceDataset()
+
+   
+
+    # callback executed after every call to env.step
+    def step_cb(state, action, cost, info):
+        exp.add_sample(state, action, cost, info)
+        env.render()
+
+    def polopt_cb(*args, **kwargs):
+        if hasattr(dyn, 'update'):
+            dyn.update()
+        if hasattr(pol, 'update'):
+            pol.update()
+
+    # function to execute before applying policy
+    def gTrig(state):
+        return utils.gTrig_np(state, angle_dims).flatten()
+
+    # during first n_rnd trials, apply randomized controls
+    for i in range(n_rnd):
+        exp.new_episode()
+        apply_controller(env, randpol, H,
+                         preprocess=gTrig,
+                         callback=step_cb)
+
+    # PILCO loop
+    for i in range(n_opt):
+        total_exp = sum([len(st) for st in exp.states])
+        msg = '==== Iteration [%d], experience: [%d steps] ===='
+        utils.print_with_stamp(msg % (i+1, total_exp))
+
+        # train dynamics model
+        train_dynamics(dyn, exp, angle_dims=angle_dims,
+                       init_episode=max(0, i-10))
+
+        # initial state distribution
+        x0 = np.array([st[0] for st in exp.states])
+        m0 = x0.mean(0)
+        S0 = np.cov(x0, rowvar=False, ddof=1) +\
+            1e-7*np.eye(x0.shape[1]) if len(x0) > 2 else p0.cov
 
         # train policy
-        learner.train_policy()
+        if polopt.loss_fn is None or dyn.should_recompile:
+            if use_bnn_dyn:
+                import theano
+                lr = theano.tensor.scalar('lr')
+                loss, inps, updts = mc_pilco_.get_loss(
+                    pol, dyn, cost, D, angle_dims, n_samples=40,
+                    resample_particles=True, truncate_gradient=-1)
 
-        # execute it on the robot
-        # once to obtain a new nominal trajectory
-        learner.policy.t = 0
-        learner.policy.noise = 0
-        learner.plant.reset_state()
-        learner.apply_controller()
-        # J-1 times to obtain randomized data
-        for i in range(J-1):
-            learner.policy.t = 0
-            learner.policy.noise = 1e-1*np.array(learner.policy.maxU)
-            learner.plant.reset_state()
-            learner.apply_controller()
+                polopt.set_objective(loss, pol.get_params(symbolic=True),
+                                     inps+[lr], updts, clip=1.0,
+                                     learning_rate=lr)
+            else:
+                loss, inps, updts = pilco_.get_loss(
+                    pol, dyn, cost, D, angle_dims)
 
-        # save latest state of the learner
-        #learner.save()
+                polopt.set_objective(loss, pol.get_params(symbolic=True),
+                                     inps, updts)
+        if use_bnn_dyn:
+            polopt.minimize(m0, S0, H, gamma, 5e-5*(1/(1 + 0.25*i)),
+                            callback=polopt_cb)
+        else:
+            polopt.minimize(m0, S0, H, gamma,
+                            callback=polopt_cb)
 
+        # apply controller
+        exp.new_episode(policy_params=pol.get_params())
+        apply_controller(env, pol, H,
+                         preprocess=gTrig, callback=step_cb)
+
+    input('Finished training')
     sys.exit(0)
