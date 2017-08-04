@@ -1,10 +1,23 @@
-from .GP import *
+
 import numpy as np
+import theano
+import theano.tensor as tt
+
+from theano import shared as S
+from theano.tensor.nlinalg import matrix_dot
+from theano.tensor.slinalg import (solve_lower_triangular,
+                                   solve_upper_triangular,
+                                   Cholesky)
+
+from kusanagi import utils
+from kusanagi.ghost.regression.GP import GP, GP_UI
 
 
 class SSGP(GP):
-    ''' Sparse Spectrum Gaussian Process Regression Lazaro-Gredilla et al 2010'''
-    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_inducing=100, **kwargs):
+    ''' Sparse Spectrum Gaussian Process Regression Lazaro-Gredilla
+    et al 2010'''
+    def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None,
+                 odims=None, profile=False, n_inducing=100, **kwargs):
         self.w = None
         self.sr = None
         self.Lmm = None
@@ -16,13 +29,13 @@ class SSGP(GP):
         GP.__init__(self, X_dataset, Y_dataset,
                     name=name, idims=idims, odims=odims,
                     profile=profile, **kwargs)
-            
+  
     def init_params(self):
         super(SSGP, self).init_params()
         # sample initial unscaled spectrum points
         self.set_ss_samples()
 
-    def set_ss_samples(self,w=None):
+    def set_ss_samples(self, w=None):
         idims = self.D
         odims = self.E
         if w is None:
@@ -31,52 +44,50 @@ class SSGP(GP):
             w = w.reshape((self.n_inducing, odims, idims))
         self.set_params({'w': w})
         if self.sr is None:
-            self.sr = (self.w*tt.exp(-self.loghyp[:,:idims])).transpose(1,0,2)
+            self.sr = (self.w*tt.exp(-self.loghyp[:, :idims])).transpose(1, 0, 2)
 
     def get_loss(self, cache_intermediate=True):
         utils.print_with_stamp('Building Sparse Spectrum loss',self.name)
         idims = self.D
-        odims = self.E
- 
-        if self.sr is None:
-            self.sr = (self.w*tt.exp(-self.loghyp[:, :idims])).transpose(1,  0,2)
 
-        #init variables
+        if self.sr is None:
+            self.sr = (self.w*tt.exp(-self.loghyp[:, :idims])).transpose(1, 0, 2)
+
+        # init variables
         N = self.X.shape[0].astype(theano.config.floatX)
         M = self.sr.shape[1].astype(theano.config.floatX)
         Mi = 2*self.sr.shape[1]
-        sf2 = tt.exp(2*self.loghyp[:,idims])
+        sf2 = tt.exp(2*self.loghyp[:, idims])
         sf2M = sf2/M
-        sn2 = tt.exp(2*self.loghyp[:,idims+1])
+        sn2 = tt.exp(2*self.loghyp[:, idims+1])
         srdotX = self.sr.dot(self.X.T)
-        phi_f = tt.concatenate( [tt.sin(srdotX), tt.cos(srdotX)], axis=1 ) # E x 2*n_inducing x N
-        
+        phi_f = tt.concatenate([tt.sin(srdotX), tt.cos(srdotX)], axis=1)
+
         # TODO vectorize these ops
         def nlml(sf2M, sn2, phi_f, Y, EyeM):
             ridge = 1e-6
             A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM + ridge*EyeM
             Lmm = Cholesky()(A)
-            iA = solve_upper_triangular(Lmm.T, solve_lower_triangular(Lmm,EyeM))
-            Yc = solve_lower_triangular(Lmm,(phi_f.dot(Y)))
-            beta_ss = sf2M*solve_upper_triangular(Lmm.T,Yc)
+            iA = solve_upper_triangular(
+                Lmm.T, solve_lower_triangular(Lmm, EyeM))
+            Yc = solve_lower_triangular(Lmm, (phi_f.dot(Y)))
+            beta_ss = sf2M*solve_upper_triangular(Lmm.T, Yc)
 
-            loss_ss = 0.5*( Y.dot(Y) - sf2M*Yc.dot(Yc) )/sn2 + tt.sum(tt.log(tt.diag(Lmm))) + (0.5*N - M)*tt.log(sn2) + 0.5*N*np.log(2*np.pi) 
-            
-            return loss_ss,iA,Lmm,beta_ss
-        
-        (loss_ss, iA, Lmm, beta_ss), updts = theano.scan(fn=nlml,
-                                                         sequences=[sf2M, sn2, phi_f, self.Y.T],
-                                                         non_sequences=[tt.eye(Mi)],
-                                                         allow_gc=False,
-                                                         name='%s>logL_ss'%(self.name))
-        
-        iA = tt.unbroadcast(iA,0) if iA.broadcastable[0] else iA
-        Lmm = tt.unbroadcast(Lmm,0) if Lmm.broadcastable[0] else Lmm
-        beta_ss = tt.unbroadcast(beta_ss,0) if beta_ss.broadcastable[0] else beta_ss
+            loss_ss = 0.5*(Y.dot(Y) - sf2M*Yc.dot(Yc))/sn2
+            loss_ss += tt.sum(tt.log(tt.diag(Lmm)))
+            loss_ss += (0.5*N - M)*tt.log(sn2) + 0.5*N*np.log(2*np.pi)
+
+            return loss_ss, iA, Lmm, beta_ss
+
+        (loss_ss, iA, Lmm, beta_ss), updts = theano.scan(
+            fn=nlml, sequences=[sf2M, sn2, phi_f, self.Y.T],
+            non_sequences=[tt.eye(Mi)], allow_gc=False, return_list=True,
+            name='%s>logL_ss' % (self.name))
 
         if cache_intermediate:
-            # we are going to save the intermediate results in the following shared variables,
-            # so we can use them during prediction without having to recompute them
+            # we are going to save the intermediate results in the following
+            # shared variables, so we can use them during prediction without
+            # having to recompute them
             kk = 2*self.n_inducing
             self.iA = S(np.tile(np.eye(kk),(self.E, 1, 1)), name="%s>iA"%(self.name))
             self.Lmm = S(np.tile(np.eye(kk),(self.E, 1, 1)), name="%s>Lmm"%(self.name))
@@ -84,7 +95,7 @@ class SSGP(GP):
             updts = [(self.iA, iA),(self.Lmm, Lmm),(self.beta_ss, beta_ss)]
         else:
             self.iA, self.Lmm, self,beta_ss = iA, Lmm, beta_ss
-            updts=None
+            updts = None
 
         # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
