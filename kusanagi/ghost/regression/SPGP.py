@@ -140,7 +140,7 @@ class SPGP(GP):
                                   'log_ls': np.log(100),
                                   'log_std': tt.log(self.X_sp.std(0)*(N/(N-1.0))),
                                   'p': 30}
-                loss_sp += self.snr_penalty(self.loghyp)
+                loss_sp += self.snr_penalty(self.loghyp, **penalty_params)
 
             inps = []
             self.state_changed = True # for saving

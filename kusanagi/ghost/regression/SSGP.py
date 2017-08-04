@@ -1,7 +1,9 @@
 from .GP import *
+import numpy as np
+
 
 class SSGP(GP):
-    ''' Sparse Spectrum Gaussian Process Regression Lazaro-GRedilla et al 2010'''
+    ''' Sparse Spectrum Gaussian Process Regression Lazaro-Gredilla et al 2010'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None, odims=None, profile=False, n_inducing=100, **kwargs):
         self.w = None
         self.sr = None
@@ -84,9 +86,13 @@ class SSGP(GP):
             self.iA, self.Lmm, self,beta_ss = iA, Lmm, beta_ss
             updts=None
 
+        # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
-            penalty_params = {'log_snr': np.log(1000), 'log_ls': np.log(100), 'log_std': tt.log(self.X.std(0)*(N/(N-1.0))), 'p': 30}
-            loss_ss += self.snr_penalty(self.loghyp)
+            penalty_params = {'log_snr': np.log(1000),
+                              'log_ls': np.log(100),
+                              'log_std': tt.log(self.X.std(0)*(N/(N-1.0))),
+                              'p': 30}
+            loss_ss += self.snr_penalty(self.loghyp, **penalty_params)
 
         # add a penalty for high frequencies
         freq_penalty = tt.square(self.w).sum(-1).mean(0)
