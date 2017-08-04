@@ -28,7 +28,7 @@ if __name__ == '__main__':
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
     params = cartpole.default_params()
-    n_rnd = 1                           # number of random initial trials
+    n_rnd = 4                           # number of random initial trials
     n_opt = 100                         # learning iterations
     H = params['max_steps']
     gamma = params['discount']
@@ -121,7 +121,7 @@ if __name__ == '__main__':
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
         if use_bnn_dyn:
-            polopt.minimize(m0, S0, H, gamma, 5e-5*(1/(1 + 0.25*i)),
+            polopt.minimize(m0, S0, H, gamma, 1e-3*(1/(1 + 0.5*i)),
                             callback=polopt_cb)
         else:
             polopt.minimize(m0, S0, H, gamma,
