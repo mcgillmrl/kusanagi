@@ -47,7 +47,7 @@ class SGDOptimizer(object):
         self.__min_method = min_method.lower()
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      clip=None, **kwargs):
+                      clip=None, monitor=False, **kwargs):
         '''
             Changes the objective function to be optimized
             @param loss theano graph representing the loss to be optimized
@@ -89,13 +89,25 @@ class SGDOptimizer(object):
                                        on_unused_input='ignore',
                                        allow_input_downcast=True,
                                        givens=givens_dict)
+        mode = None
+        if monitor:
+            def monitor_inputs_cb(i, node, fn):
+                print(i, node, end='')
+
+            def monitor_outputs_cb(i, node, fn):
+                print(i, node)
+            mode = theano.compile.MonitorMode(
+                pre_func=monitor_inputs_cb,
+                post_func=monitor_outputs_cb)
 
         utils.print_with_stamp("Compiling parameter updates", self.name)
-        self.update_params_fn = theano.function([], [loss]+grads,
-                                                updates=grad_updates+updts,
-                                                on_unused_input='ignore',
-                                                allow_input_downcast=True,
-                                                givens=givens_dict)
+        self.update_params_fn = theano.function(
+            [], [loss]+grads,
+            updates=grad_updates+updts,
+            on_unused_input='ignore',
+            allow_input_downcast=True,
+            givens=givens_dict,
+            mode=mode)
 
         self.n_evals = 0
         self.start_time = 0
