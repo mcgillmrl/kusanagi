@@ -27,7 +27,8 @@ def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
     xu = tt.concatenate([xa, u], axis=1)
 
     # predict the change in state given current state-control for each particle
-    delta_x = dyn.predict_symbolic(xu, iid_per_eval=iid_per_eval, return_samples=True)
+    delta_x = dyn.predict_symbolic(xu, iid_per_eval=iid_per_eval,
+                                   return_samples=True)
 
     # compute the successor states
     x_next = x + delta_x
@@ -45,8 +46,8 @@ def rollout(x0, H, gamma0,
     dynamics model and the discounted costs for each step in the
     trajectory.
     '''
-    utils.print_with_stamp('Building computation graph for state particles propagation',
-                           'mc_pilco.rollout')
+    msg = 'Building computation graph for state particles propagation'
+    utils.print_with_stamp(msg, 'mc_pilco.rollout')
 
     # define internal scan computations
     def step_rollout(x, gamma, *args):
@@ -70,7 +71,7 @@ def rollout(x0, H, gamma0,
         # resample if requested
         if resample:
             z = m_rng.normal(x.shape)
-            x_next = mx_next + z.dot(tt.slinalg.cholesky(Sx_next).T)
+            x_next = mx_next + z.dot(tt.slinalg.cholesky(Sx_next_noisy).T)
 
         return [gamma*mc_next, gamma*c_next, x_next, gamma*gamma0]
 
@@ -106,8 +107,8 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
              intermediate_outs=False, resample_particles=True,
              resample_dyn=False, average=True, truncate_gradient=-1):
     '''
-        Constructs the computation graph for the value function according to the
-        mcpilco algorithm:
+        Constructs the computation graph for the value function according to
+        the mc-pilco algorithm:
         1) sample x0 from initial state distribution N(mx0,Sx0)
         2) propagate the state particles forward in time
             2a) compute controls for eachc particle
@@ -121,7 +122,8 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         @param angle_dims angle dimensions that should be converted to complex
                           representation
         @return Returns a tuple of (outs, inps, updts). These correspond to the
-                output variables, input variables and updates dictionary, if any.
+                output variables, input variables and updates dictionary, if
+                any.
                 By default, the only output variable is the value.
     '''
     # make sure that the dynamics model has the same number of samples
@@ -133,7 +135,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     # initial state distribution
     mx0 = tt.vector('mx0')
     Sx0 = tt.matrix('Sx0')
-    
+
     # prediction horizon
     H = tt.iscalar('H')
     # discount factor
@@ -153,7 +155,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
                             truncate_gradient=truncate_gradient)
 
     mean_costs, costs, trajectories = r_outs
-    #mean_costs = costs.mean(0) # mean over particles
+    # mean_costs = costs.mean(0) # mean over particles
 
     # loss is E_{dyns}((1/H)*sum c(x_t))
     #          = (1/H)*sum E_{x_t}(c(x_t))
@@ -168,6 +170,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
 
 def build_rollout(*args, **kwargs):
     kwargs['intermediate_outs'] = True
-    outs, inps, updts = get_loss(*args, **kwargs)  
-    rollout_fn = theano.function(inps, outs, updates=updts, allow_input_downcast=True)
+    outs, inps, updts = get_loss(*args, **kwargs)
+    rollout_fn = theano.function(inps, outs, updates=updts,
+                                 allow_input_downcast=True)
     return rollout_fn
