@@ -5,27 +5,36 @@ from theano import function as F, shared as S
 from kusanagi.base.Loadable import Loadable
 from kusanagi import utils
 
+
 class BaseRegressor(Loadable):
-    ''' Class that implements a regression model. This base class implements the logic for getting and 
-    setting parameters (as theano shared variables)'''
-    def __init__(self, name, filename, *args,**kwargs):
+    ''' Class that implements a regression model. This base class implements
+    the logic for getting and setting parameters (as theano shared variables)
+    '''
+    def __init__(self, name, filename, *args, **kwargs):
         self.param_names = []
         self.fixed_params = []
-        Loadable.__init__(self,name=name,filename=self.filename)
+        Loadable.__init__(self, name=name, filename=self.filename)
         self.register(['param_names', 'fixed_params'])
+
+        # compiled functions
+        self.predict_fn = None
+        self.predict_d_fn = None
 
     def init_params(self, **kwargs):
         pass
 
     def set_params(self, params):
-        ''' Adds a a new parameter to the class instance. Every parameter will be stored as a Theano shared variable. 
-        This function exists so that we do not end up with different compiled functions referencing different shared variables 
-        in memory; which can be a problem when loading pickled compiled theano functions'''
+        ''' Adds a a new parameter to the class instance. Every parameter will
+        be stored as a Theano shared variable. This function exists so that we
+        do not end up with different compiled functions referencing different
+        shared variables in memory; which can be a problem when loading pickled
+        compiled theano functions
+        '''
         if isinstance(params, list):
-            params = dict(list(zip(self.param_names,params)))
+            params = dict(list(zip(self.param_names, params)))
         for pname in list(params.keys()):
             # if the parameter that was passed here is a shared variable
-            if isinstance(params[pname],tt.sharedvar.SharedVariable):
+            if isinstance(params[pname], tt.sharedvar.SharedVariable):
                 p = params[pname]
                 self.__dict__[pname] = p
                 if pname not in self.param_names:

@@ -101,17 +101,22 @@ class ScipyOptimizer(object):
         # flatten gradients
         dloss = utils.wrap_params(dloss)
 
-        # cast value and gradients as double precision floats (required by fmin_l_bfgs_b)
-        loss, dloss = (np.array(loss).astype(np.float64), np.array(dloss).astype(np.float64))
+        # cast value and gradients as double precision floats
+        # (required by fmin_l_bfgs_b)
+        loss, dloss = (np.array(loss).astype(np.float64),
+                       np.array(dloss).astype(np.float64))
 
         # update internal state variables
         self.n_evals += 1
         if loss < self.best_p[0]:
             self.best_p = [loss, p, self.n_evals]
         end_time = time.time()
-        self.iter_time += ((end_time - self.start_time) - self.iter_time)/self.n_evals
-        msg = 'Current loss: %s, Total evaluations: %d, Avg. time per call: %f   '
-        utils.print_with_stamp(msg%(str(loss), self.n_evals, self.iter_time),
+        iter_time_upt = ((end_time - self.start_time) - self.iter_time)
+        iter_time_upt /= self.n_evals
+        self.iter_time += iter_time_upt
+        msg = 'Current loss: %s, Total evaluations: %d'
+        msg += ', Avg. time per call: %f\t'
+        utils.print_with_stamp(msg % (str(loss), self.n_evals, self.iter_time),
                                self.name, True)
         self.start_time = time.time()
 
@@ -123,8 +128,8 @@ class ScipyOptimizer(object):
 
     def minimize(self, *inputs, **kwargs):
         '''
-            @param inputs python variables to pass as inputs to the compiled theano functions
-                          for the loss and gradients
+            @param inputs python variables to pass as inputs to the compiled
+                   theano functions for the loss and gradients
         '''
         self.callback = kwargs.get('callback')
         self.iter_time = 0
@@ -134,7 +139,7 @@ class ScipyOptimizer(object):
 
         # set initial loss and parameters
         loss0 = self.loss_fn(*inputs)
-        utils.print_with_stamp('Initial loss [%s]'%(loss0), self.name)
+        utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p0 = [p.get_value() for p in self.params]
         self.best_p = [loss0, p0, 0]
 
@@ -143,41 +148,46 @@ class ScipyOptimizer(object):
         mloss = utils.MemoizeJac(self.loss_wrapper,
                                  args=(p_shapes,)+inputs)
 
-        # keep on trying to optimize with all the methods, until one succeeds, or we go through
-        # all of them
+        # keep on trying to optimize with all the methods, until one succeeds,
+        # or we go through all of them
         for min_method in self.alt_min_methods:
             try:
-                utils.print_with_stamp("Using %s optimizer"%(min_method), self.name)
+                utils.print_with_stamp("Using %s optimizer" % (min_method),
+                                       self.name)
                 p0_wrapped = utils.wrap_params(p0)
                 opts = {'maxiter': self.max_evals,
                         'ftol': 1e6*np.finfo(float).eps,
                         'gtol': 1.0e-6}
                 if min_method.lower() == 'l-bfgs-b':
-                    #opts['maxfun'] = self.max_evals
-                    opts['maxcor'] = min(100,p0_wrapped.size)
+                    opts['maxfun'] = self.max_evals
+                    opts['maxcor'] = min(100, p0_wrapped.size)
                     opts['maxls'] = 30
 
                 opt_res = minimize(mloss, p0_wrapped,
                                    jac=mloss.derivative,
                                    method=min_method,
                                    tol=self.conv_thr,
-                                   options=opts
-                                  )
+                                   options=opts)
                 # set params to new values
                 popt = utils.unwrap_params(opt_res.x, p_shapes)
                 for i in range(len(self.params)):
                     self.params[i].set_value(popt[i])
                 # break the loop since we succeeded
                 break
-            except ValueError:
+            except (ValueError, np.linalg.LinAlgError):
                 print('')
                 traceback.print_exc()
                 traceback.print_stack()
-                utils.print_with_stamp("Optimization with %s failed"%(self.min_method),
+                msg = "Optimization with %s failed"
+                utils.print_with_stamp(msg % (self.min_method),
                                        self.name)
                 loss, popt = self.best_p[:2]
                 for i in range(len(self.params)):
                     self.params[i].set_value(popt[i])
-        print('') 
+        print('')
         v, p, i = self.best_p
-        utils.print_with_stamp('Done training. New value [%f] iter: [%d]'%(v, i), self.name)
+        for sp_i, p_i in zip(self.params, p):
+            sp_i.set_value(p_i)
+        v = self.loss_fn(*inputs)
+        msg = 'Done training. New loss [%f] iter: [%d]'
+        utils.print_with_stamp(msg % (v, i), self.name)

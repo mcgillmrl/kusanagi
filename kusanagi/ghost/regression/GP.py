@@ -14,6 +14,7 @@ from . import cov
 from . import SNRpenalty
 from kusanagi import utils
 from kusanagi.ghost.regression import BaseRegressor
+floatX = theano.config.floatX
 
 
 class GP(BaseRegressor):
@@ -62,19 +63,13 @@ class GP(BaseRegressor):
         self.Y_var = None
         self.X_cov = None
         self.kernel_func = None
-        self.loss_fn = None
-        self.dloss_fn = None
-
-        # compiled functions
-        self.predict_fn = None
-        self.predict_d_fn = None
 
         # name of this class for printing command line output and saving
         self.name = name
         # filename for saving
         self.filename = filename if filename else '%s_%d_%d_%s_%s' % (
             self.name, self.D, self.E, theano.config.device,
-            theano.config.floatX)
+            floatX)
         BaseRegressor.__init__(self, name=name, filename=self.filename)
         if filename is not None:
             self.load()
@@ -171,7 +166,7 @@ class GP(BaseRegressor):
         loghyp[:, :idims] = X.std(0, ddof=1)
         loghyp[:, idims] = Y.std(0, ddof=1)
         loghyp[:, idims+1] = 0.1*loghyp[:, idims]
-        loghyp = np.log(loghyp)
+        loghyp = np.log(loghyp, dtype=floatX)
 
         # set params will either create the loghyp attribute, or update
         # its value
@@ -222,11 +217,11 @@ class GP(BaseRegressor):
 
         return nigp_updts
 
-    def get_loss(self, cache_intermediate=True):
+    def get_loss(self, unroll_scan=True, cache_intermediate=True):
         msg = 'Building full GP loss'
         utils.print_with_stamp(msg, self.name)
         idims = self.D
-        N = self.X.shape[0].astype(theano.config.floatX)
+        N = self.X.shape[0].astype(floatX)
 
         def nlml(Y, loghyp, i, X, EyeN, nigp=None, y_var=None):
             # initialise the (before compilation) kernel function
@@ -263,24 +258,30 @@ class GP(BaseRegressor):
             nseq.append(self.Y_var.T)
 
         seq = [self.Y.T, self.loghyp, tt.arange(self.X.shape[0])]
-        (loss, iK, L, beta), updts = theano.scan(
-            fn=nlml, sequences=seq, non_sequences=nseq, allow_gc=False,
-            strict=True, name="%s>logL_scan" % (self.name), return_list=True)
+
+        if unroll_scan:
+            from lasagne.utils import unroll_scan
+            [loss, iK, L, beta] = unroll_scan(nlml, seq, [], nseq, self.E)
+            updts = {}
+        else:
+            (loss, iK, L, beta), updts = theano.scan(
+                fn=nlml, sequences=seq, non_sequences=nseq, allow_gc=False,
+                strict=True, return_list=True,
+                name="%s>logL_scan" % (self.name))
 
         if cache_intermediate:
             # we are going to save the intermediate results in the following
             # shared variables, so we can use them during prediction without
             # having to recompute them
             N, E = self.N, self.E
-            eyeNnp = np.eye(N, dtype=theano.config.floatX)
-            if self.iK is None:
-                self.iK = S(np.tile(eyeNnp, (E, 1, 1)),
+            if type(self.iK) is not tt.sharedvar.SharedVariable:
+                self.iK = S(np.tile(np.eye(N, dtype=floatX), (E, 1, 1)),
                             name="%s>iK" % (self.name))
-            if self.L is None:
-                self.L = S(np.tile(np.eye(N), (E, 1, 1)),
+            if type(self.L) is not tt.sharedvar.SharedVariable:
+                self.L = S(np.tile(np.eye(N, dtype=floatX), (E, 1, 1)),
                            name="%s>L" % (self.name))
-            if self.beta is None:
-                self.beta = S(np.ones((E, N), dtype=theano.config.floatX),
+            if type(self.beta) is not tt.sharedvar.SharedVariable:
+                self.beta = S(np.ones((E, N), dtype=floatX),
                               name="%s>beta" % (self.name))
             updts = [(self.iK, iK), (self.L, L), (self.beta, beta)]
         else:
@@ -290,8 +291,8 @@ class GP(BaseRegressor):
 
         # we add some penalty to avoid having parameters that are too large
         if self.snr_penalty is not None:
-            penalty_params = {'log_snr': np.log(1000),
-                              'log_ls': np.log(100),
+            penalty_params = {'log_snr': np.log(1000, dtype=floatX),
+                              'log_ls': np.log(100, dtype=floatX),
                               'log_std': tt.log(self.X.std(0)*(N/(N-1.0))),
                               'p': 30}
             loss += self.snr_penalty(self.loghyp, **penalty_params)
@@ -374,7 +375,7 @@ class GP_UI(GP):
             X_dataset, Y_dataset, name=name, idims=idims, odims=odims,
             profile=profile, **kwargs)
 
-    def predict_symbolic(self, mx, Sx):
+    def predict_symbolic(self, mx, Sx, unroll_scan=True):
         idims = self.D
         odims = self.E
 
@@ -414,8 +415,10 @@ class GP_UI(GP):
         z_ = Lambda.dot(zeta.T).transpose(0, 2, 1)
 
         M2 = tt.zeros((odims, odims))
+
         # initialize indices
-        indices = [tt.as_index_variable(idx) for idx in np.triu_indices(odims)]
+        triu_indices = np.triu_indices(odims)
+        indices = [tt.as_index_variable(idx) for idx in triu_indices]
 
         def second_moments(i, j, M2, beta, iK, sf2, R, logk_c, logk_r, z_, Sx):
             # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
@@ -436,12 +439,18 @@ class GP_UI(GP):
             return M2
 
         nseq = [self.beta, self.iK, sf2, R, logk_c, logk_r, z_, Sx]
-        M2_, updts = theano.scan(fn=second_moments,
-                                 sequences=indices,
-                                 outputs_info=[M2],
-                                 non_sequences=nseq,
-                                 allow_gc=False,
-                                 name="%s>M2_scan" % (self.name))
+        if unroll_scan:
+            from lasagne.utils import unroll_scan
+            [M2_] = unroll_scan(second_moments, indices,
+                                [M2], nseq, len(triu_indices[0]))
+            updts = {}
+        else:
+            M2_, updts = theano.scan(fn=second_moments,
+                                     sequences=indices,
+                                     outputs_info=[M2],
+                                     non_sequences=nseq,
+                                     allow_gc=False,
+                                     name="%s>M2_scan" % (self.name))
         M2 = M2_[-1]
         S = M2 - tt.outer(M, M)
 
@@ -464,7 +473,7 @@ class RBFGP(GP_UI):
         self.register(['sat_func'])
         self.register(['iK', 'beta', 'L'])
 
-    def predict_symbolic(self, mx, Sx=None):
+    def predict_symbolic(self, mx, Sx=None, unroll_scan=True):
         idims = self.D
         odims = self.E
 
@@ -486,6 +495,7 @@ class RBFGP(GP_UI):
             l = tt.exp(-0.5*tt.sum(inp**2, -1))
             lb = l*self.beta[:, :, None]  # E x N
             M = tt.sum(lb, 1).T*sf2
+
             # apply saturating function to the output if available
             if self.sat_func is not None:
                 # saturate the output
@@ -521,8 +531,10 @@ class RBFGP(GP_UI):
         z_ = Lambda.dot(zeta.T).transpose(0, 2, 1)
 
         M2 = tt.zeros((odims, odims))
+
         # initialize indices
-        indices = [tt.as_index_variable(idx) for idx in np.triu_indices(odims)]
+        triu_indices = np.triu_indices(odims)
+        indices = [tt.as_index_variable(idx) for idx in triu_indices]
 
         def second_moments(i, j, M2, beta, R, logk_c, logk_r, z_, Sx):
             # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
@@ -540,14 +552,20 @@ class RBFGP(GP_UI):
                 tt.eq(i, j), M2, tt.set_subtensor(M2[j, i], m2))
             return M2
 
-        nseqs = [self.beta, R, logk_c, logk_r, z_, Sx]
-        M2_, updts = theano.scan(fn=second_moments,
-                                 sequences=indices,
-                                 outputs_info=[M2],
-                                 non_sequences=nseqs,
-                                 allow_gc=False,
-                                 strict=True,
-                                 name="%s>M2_scan" % (self.name))
+        nseq = [self.beta, R, logk_c, logk_r, z_, Sx]
+
+        if unroll_scan:
+            from lasagne.utils import unroll_scan
+            [M2_] = unroll_scan(second_moments, indices,
+                                [M2], nseq, len(triu_indices[0]))
+            updts = {}
+        else:
+            M2_, updts = theano.scan(fn=second_moments,
+                                     sequences=indices,
+                                     outputs_info=[M2],
+                                     non_sequences=nseq,
+                                     allow_gc=False,
+                                     name="%s>M2_scan" % (self.name))
         M2 = M2_[-1]
 
         S = M2 - tt.outer(M, M)

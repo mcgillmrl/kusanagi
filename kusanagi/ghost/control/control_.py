@@ -35,15 +35,16 @@ class RBFPolicy(RBFGP):
 
         if filename is not None:
             # try loading from file
-            super(RBFPolicy, self).__init__(idims=0, odims=0, sat_func=sat_func,
-                                            max_evals=max_evals, name=self.name,
-                                            filename=filename)
-            #self.load()
+            super(RBFPolicy, self).__init__(
+                idims=0, odims=0, sat_func=sat_func, max_evals=max_evals,
+                name=self.name, filename=filename)
+            # self.load()
         else:
             idims = state0_dist.mean.size
             odims = len(self.maxU)
-            super(RBFPolicy, self).__init__(idims=idims, odims=odims, sat_func=sat_func,
-                                            max_evals=max_evals, name=self.name)
+            super(RBFPolicy, self).__init__(
+                idims=idims, odims=odims, sat_func=sat_func,
+                max_evals=max_evals, name=self.name)
             self.init_params()
 
         # make sure we always get the parameters in the same order
@@ -55,13 +56,14 @@ class RBFPolicy(RBFGP):
         super(RBFGP, self).load(output_folder, output_filename)
 
         # initialize mising variables
-        self.loghyp = tt.concatenate([self.loghyp_full[:, :-2],
-                                      theano.gradient.disconnected_grad(self.loghyp_full[:, -2:])
-                                     ],
-                                     axis=np.array(1, dtype='int64'))
+        self.loghyp = tt.concatenate(
+            [self.loghyp_full[:, :-2],
+             theano.gradient.disconnected_grad(self.loghyp_full[:, -2:])],
+            axis=np.array(1, dtype='int64'))
 
         # loghyp is no longer the trainable paramter
-        if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
+        if 'loghyp' in self.param_names:
+            self.param_names.remove('loghyp')
         self.predict_fn = None
 
     def init_params(self, compile_funcs=False):
@@ -71,7 +73,8 @@ class RBFPolicy(RBFGP):
         inputs_ = self.state0_dist.sample(self.n_inducing)
         inputs = utils.gTrig_np(inputs_, self.angle_dims)
 
-        # set the initial log hyperparameters (1 for linear dimensions, 0.7 for angular)
+        # set the initial log hyperparameters (1 for linear dimensions,
+        # 0.7 for angular)
         l0 = np.hstack([np.ones(inputs_.shape[1]-len(self.angle_dims)),
                         0.7*np.ones(2*len(self.angle_dims)), 1, 0.01])
         l0 = np.log(np.tile(l0, (self.maxU.size, 1)))
@@ -94,13 +97,14 @@ class RBFPolicy(RBFGP):
         self.set_params({'loghyp_full': l0.astype(theano.config.floatX)})
 
         # don't optimize the signal and noise variances
-        self.loghyp = tt.concatenate([self.loghyp_full[:, :-2],
-                                      theano.gradient.disconnected_grad(self.loghyp_full[:, -2:])
-                                     ],
-                                     axis=np.array(1, dtype='int64'))
+        self.loghyp = tt.concatenate(
+            [self.loghyp_full[:, :-2],
+             theano.gradient.disconnected_grad(self.loghyp_full[:, -2:])],
+            axis=np.array(1, dtype='int64'))
 
         # loghyp is no longer the trainable paramter
-        if 'loghyp' in self.param_names: self.param_names.remove('loghyp')
+        if 'loghyp' in self.param_names:
+            self.param_names.remove('loghyp')
 
         # call init loss to initialize the intermediate shared variables
         super(RBFGP, self).get_loss(cache_intermediate=False)
@@ -109,34 +113,37 @@ class RBFPolicy(RBFGP):
         self.evaluate(np.zeros((self.D, )))
 
     def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
-        D = m.shape[0]
         if symbolic:
             ret = self.predict_symbolic(m, s)
         else:
             ret = self.predict(m, s)
         return ret
 
+
 # random controller
 class RandPolicy:
     def __init__(self, maxU=[10], random_walk=False):
         self.maxU = np.array(maxU)
-        #self.last_u = np.zeros_like(np.array(maxU))
+        # self.last_u = np.zeros_like(np.array(maxU))
         self.random_walk = random_walk
 
     def evaluate(self, m, s=None, t=None, symbolic=False):
         if self.random_walk:
-            new_u = ((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+            new_u = ((2*np.random.random(self.maxU.size)-1.0))
+            new_u = new_u.reshape(self.maxU.shape)*self.maxU
             ret = self.last_u + 0.2*new_u if t is None or t != 0 else new_u
-            ret = np.min ((ret.flatten(), self.maxU.flatten()), axis=0)
-            ret = np.max ((ret.flatten(), -self.maxU.flatten()), axis=0)
+            ret = np.min((ret.flatten(), self.maxU.flatten()), axis=0)
+            ret = np.max((ret.flatten(), -self.maxU.flatten()), axis=0)
             ret = ret.reshape(self.maxU.shape)
         else:
-            ret = ((2*np.random.random(self.maxU.size)-1.0)).reshape(self.maxU.shape)*self.maxU
+            ret = ((2*np.random.random(self.maxU.size)-1.0))
+            ret = ret.reshape(self.maxU.shape)*self.maxU
 
         self.last_u = ret
         U = len(self.maxU)
         D = m.shape[0]
         return ret, np.zeros((U, U)), np.zeros((D, U))
+
 
 # linear time varying policy
 class LocalLinearPolicy(Loadable):
@@ -156,7 +163,8 @@ class LocalLinearPolicy(Loadable):
 
         Loadable.__init__(self, name=name, filename=self.filename)
         # register theano functions and shared variables for saving
-        self.register_types([tt.sharedvar.SharedVariable, theano.compile.function_module.Function])
+        self.register_types([tt.sharedvar.SharedVariable,
+                             theano.compile.function_module.Function])
 
     def init_params(self):
         H_steps = int(np.ceil(self.H/self.dt))

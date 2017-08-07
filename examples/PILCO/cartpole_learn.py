@@ -21,7 +21,7 @@ from functools import partial
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
-    use_bnn_dyn = True
+    use_bnn_dyn = False
     use_bnn_pol = False
 
     # setup output directory
@@ -108,7 +108,7 @@ if __name__ == '__main__':
                 import theano
                 lr = theano.tensor.scalar('lr')
                 loss, inps, updts = mc_pilco_.get_loss(
-                    pol, dyn, cost, D, angle_dims, n_samples=40,
+                    pol, dyn, cost, D, angle_dims, n_samples=100,
                     resample_particles=True, truncate_gradient=-1)
 
                 polopt.set_objective(loss, pol.get_params(symbolic=True),

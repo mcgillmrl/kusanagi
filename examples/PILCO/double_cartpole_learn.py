@@ -20,8 +20,8 @@ from functools import partial
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
-    use_bnn_dyn = True
-    use_bnn_pol = True
+    use_bnn_dyn = False
+    use_bnn_pol = False
 
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(),
