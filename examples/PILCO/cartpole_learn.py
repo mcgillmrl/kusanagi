@@ -10,7 +10,7 @@ import numpy as np
 from kusanagi.ghost import control
 from kusanagi.ghost import regression
 from kusanagi.shell import cartpole
-from kusanagi.ghost.algorithms import pilco_, mc_pilco_
+from kusanagi.ghost.algorithms import pilco, mc_pilco
 from kusanagi.ghost.optimizers import ScipyOptimizer, SGDOptimizer
 from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 from kusanagi import utils
