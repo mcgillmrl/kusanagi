@@ -107,7 +107,7 @@ if __name__ == '__main__':
             if use_bnn_dyn:
                 import theano
                 lr = theano.tensor.scalar('lr')
-                loss, inps, updts = mc_pilco_.get_loss(
+                loss, inps, updts = mc_pilco.get_loss(
                     pol, dyn, cost, D, angle_dims, n_samples=100,
                     resample_particles=True, truncate_gradient=-1)
 
@@ -115,7 +115,7 @@ if __name__ == '__main__':
                                      inps+[lr], updts, clip=1.0,
                                      learning_rate=lr)
             else:
-                loss, inps, updts = pilco_.get_loss(
+                loss, inps, updts = pilco.get_loss(
                     pol, dyn, cost, D, angle_dims)
 
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
