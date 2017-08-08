@@ -216,7 +216,7 @@ class GP(BaseRegressor):
 
         return nigp_updts
 
-    def get_loss(self, unroll_scan=True, cache_intermediate=True):
+    def get_loss(self, unroll_scan=False, cache_intermediate=True):
         msg = 'Building full GP loss'
         utils.print_with_stamp(msg, self.name)
         idims = self.D
@@ -376,7 +376,7 @@ class GP_UI(GP):
             X_dataset, Y_dataset, name=name, idims=idims, odims=odims,
             profile=profile, **kwargs)
 
-    def predict_symbolic(self, mx, Sx, unroll_scan=True):
+    def predict_symbolic(self, mx, Sx, unroll_scan=False):
         idims = self.D
         odims = self.E
 
@@ -472,7 +472,7 @@ class RBFGP(GP_UI):
         self.register(['sat_func'])
         self.register(['iK', 'beta', 'L'])
 
-    def predict_symbolic(self, mx, Sx=None, unroll_scan=True):
+    def predict_symbolic(self, mx, Sx=None, unroll_scan=False):
         idims = self.D
         odims = self.E
 

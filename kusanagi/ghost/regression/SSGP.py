@@ -48,7 +48,7 @@ class SSGP(GP):
             self.sr = self.w*tt.exp(-self.loghyp[:, :idims])
             self.sr = self.sr.transpose(1, 0, 2)
 
-    def get_loss(self, unroll_scan=True, cache_intermediate=True):
+    def get_loss(self, unroll_scan=False, cache_intermediate=True):
         utils.print_with_stamp('Building Sparse Spectrum loss', self.name)
         idims = self.D
 
@@ -170,7 +170,7 @@ class SSGP(GP):
             # restore full dataset for SSGP training
             utils.print_with_stamp('Restoring full dataset', self.name)
             self.set_dataset(X_full, Y_full)
-    
+
     def resample_ss(self, iters=100):
         self.set_ss_samples()
         if self.optimizer.loss_fn is not None:
@@ -233,7 +233,7 @@ class SSGP_UI(SSGP, GP_UI):
                       odims=odims, profile=profile, n_inducing=n_inducing,
                       **kwargs)
 
-    def predict_symbolic(self, mx, Sx, unroll_scan=True):
+    def predict_symbolic(self, mx, Sx, unroll_scan=False):
         idims = self.D
         odims = self.E
 
@@ -281,7 +281,7 @@ class SSGP_UI(SSGP, GP_UI):
                            sin_srdotx, cos_srdotx):
             # compute the second moments of the spectrum feature vectors
             siSxsj = srdotSx[i].dot(sr[j].T)  # Ms x Ms
-            sijSxsij = -0.5*(srdotSxdotsr_c[i] + srdotSxdotsr_r[j]) 
+            sijSxsij = -0.5*(srdotSxdotsr_c[i] + srdotSxdotsr_r[j])
             em = tt.exp(sijSxsij+siSxsj)      # MsxMs
             ep = tt.exp(sijSxsij-siSxsj)     # MsxMs
             si = sin_srdotx[i]       # Msx1
@@ -296,7 +296,7 @@ class SSGP_UI(SSGP, GP_UI):
             sp = (sicj+cisj)*ep
             cm = (sisj+cicj)*em
             cp = (cicj-sisj)*ep
-            
+
             # Populate the second moment matrix of the feature vector
             Q_up = tt.concatenate([cm-cp, sm+sp], axis=1)
             Q_lo = tt.concatenate([sp-sm, cm+cp], axis=1)
