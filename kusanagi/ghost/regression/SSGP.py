@@ -1,4 +1,3 @@
-
 import numpy as np
 import theano
 import theano.tensor as tt
@@ -72,12 +71,14 @@ class SSGP(GP):
             ridge = 1e-6
             A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM + ridge*EyeM
             Lmm = Cholesky()(A)
-            iA = solve_upper_triangular(
-                Lmm.T, solve_lower_triangular(Lmm, EyeM))
-            Yc = solve_lower_triangular(Lmm, (phi_f.dot(Y)))
-            beta_ss = sf2M*solve_upper_triangular(Lmm.T, Yc)
+            phidotY = phi_f.dot(Y)
+            rhs = tt.concatenate([EyeM, phidotY[:, None]], axis=1)
+            sol = solve_upper_triangular(
+                Lmm.T, solve_lower_triangular(Lmm, rhs))
+            iA = sol[:, :-1]
+            beta_ss = sf2M*sol[:, -1]
 
-            loss_ss = 0.5*(Y.dot(Y) - sf2M*Yc.dot(Yc))/sn2
+            loss_ss = 0.5*(Y.dot(Y) - phidotY.dot(beta_ss))/sn2
             loss_ss += tt.sum(tt.log(tt.diag(Lmm)))
             loss_ss += (0.5*N - M)*tt.log(sn2)
             loss_ss += 0.5*N*np.log(2*np.pi, dtype=floatX)
@@ -303,13 +304,14 @@ class SSGP_UI(SSGP, GP_UI):
 
             # Compute the second moment of the output
             m2 = 0.5*matrix_dot(beta[i], Q, beta[j].T)
-            
+
             m2 = theano.ifelse.ifelse(
                 tt.eq(i, j),
-                m2 + sn2[i]*(1.0 + sf2M[i]*tt.sum(self.iA[i]*Q)), m2)
+                m2 + sn2[i]*(1.0 + sf2M[i]*tt.sum(self.iA[i]*Q)) + 1e-6,
+                m2)
             M2 = tt.set_subtensor(M2[i, j], m2)
-            M2 = theano.ifelse.ifelse(
-                tt.eq(i, j), M2 + 1e-6, tt.set_subtensor(M2[j, i], m2))
+            # M2 = theano.ifelse.ifelse(
+            #    tt.eq(i, j), M2 + 1e-6, tt.set_subtensor(M2[j, i], m2))
 
             return M2
 
@@ -330,6 +332,7 @@ class SSGP_UI(SSGP, GP_UI):
                                      name="%s>M2_scan" % (self.name))
 
         M2 = M2_[-1]
+        M2 = M2 + tt.triu(M2, k=1).T
         S = M2 - tt.outer(M, M)
 
         return M, S, V

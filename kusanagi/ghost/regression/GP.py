@@ -31,7 +31,6 @@ class GP(BaseRegressor):
         self.trained = False
         self.snr_penalty = snr_penalty
         self.covs = (cov.SEard, cov.Noise)
-        self.uncertain_inputs = True
 
         # dimension related variables
         self.N = 0
@@ -237,14 +236,16 @@ class GP(BaseRegressor):
             if y_var:
                 K += tt.diag(y_var[i])
 
-            # compute chol(K) and (K^-1)dot(y)
+            # compute chol(K) 
             L = Cholesky()(K)
-            iK = solve_upper_triangular(L.T, solve_lower_triangular(L, EyeN))
-            Yc = solve_lower_triangular(L, Y)
-            beta = solve_upper_triangular(L.T, Yc)
+            # comput K^-1 and (K^-1)dot(y)
+            rhs = tt.concatenate([EyeN, Y[:, None]], axis=1)
+            sol = solve_upper_triangular(L.T, solve_lower_triangular(L, rhs))
+            iK = sol[:, :-1]
+            beta = sol[:, -1]
 
             # And finally, the negative log marginal likelihood
-            loss = Yc.T.dot(Yc)
+            loss = Y.T.dot(beta)
             loss += 2*tt.sum(tt.log(tt.ExtractDiag(view=True)(L)))
             loss += N*tt.log(2*np.pi)
             loss *= 0.5
@@ -392,8 +393,7 @@ class GP_UI(GP):
         inp = iL.dot(zeta.T).transpose(0, 2, 1)
         iLdotSx = iL.dot(Sx)
         # TODO vectorize this
-        B = tt.stack([iLdotSx[i].dot(iL[i])
-                      for i in range(odims)]) + tt.eye(idims)
+        B = (iLdotSx[:, :, None, :]*iL[:, None, :, :]).sum(-1) + tt.eye(idims)
         t = tt.stack([solve(B[i].T, inp[i].T).T for i in range(odims)])
         c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))
         l = tt.exp(-0.5*tt.sum(inp*t, 2))
@@ -434,8 +434,8 @@ class GP_UI(GP):
             m2 = theano.ifelse.ifelse(
                 tt.eq(i, j), m2 - tt.sum(iK[i]*Q) + sf2[i], m2)
             M2 = tt.set_subtensor(M2[i, j], m2)
-            M2 = theano.ifelse.ifelse(
-                tt.eq(i, j), M2, tt.set_subtensor(M2[j, i], m2))
+            #M2 = theano.ifelse.ifelse(
+            #    tt.eq(i, j), M2, tt.set_subtensor(M2[j, i], m2))
             return M2
 
         nseq = [self.beta, self.iK, sf2, R, logk_c, logk_r, z_, Sx]
@@ -452,6 +452,7 @@ class GP_UI(GP):
                                      allow_gc=False,
                                      name="%s>M2_scan" % (self.name))
         M2 = M2_[-1]
+        M2 = M2 + tt.triu(M2, k=1).T
         S = M2 - tt.outer(M, M)
 
         return M, S, V
@@ -509,8 +510,7 @@ class RBFGP(GP_UI):
         # predictive mean
         inp = iL.dot(zeta.T).transpose(0, 2, 1)
         iLdotSx = iL.dot(Sx)
-        B = tt.stack([iLdotSx[i].dot(iL[i])
-                      for i in range(odims)]) + tt.eye(idims)
+        B = (iLdotSx[:, :, None, :]*iL[:, None, :, :]).sum(-1) + tt.eye(idims)
         t = tt.stack([solve(B[i].T, inp[i].T).T for i in range(odims)])
         c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))
         l = tt.exp(-0.5*tt.sum(inp*t, 2))
@@ -548,8 +548,8 @@ class RBFGP(GP_UI):
 
             m2 = theano.ifelse.ifelse(tt.eq(i, j), m2 + 1e-6, m2)
             M2 = tt.set_subtensor(M2[i, j], m2)
-            M2 = theano.ifelse.ifelse(
-                tt.eq(i, j), M2, tt.set_subtensor(M2[j, i], m2))
+            #M2 = theano.ifelse.ifelse(
+            #    tt.eq(i, j), M2, tt.set_subtensor(M2[j, i], m2))
             return M2
 
         nseq = [self.beta, R, logk_c, logk_r, z_, Sx]
@@ -567,7 +567,7 @@ class RBFGP(GP_UI):
                                      allow_gc=False,
                                      name="%s>M2_scan" % (self.name))
         M2 = M2_[-1]
-
+        M2 = M2 + tt.triu(M2, k=1).T
         S = M2 - tt.outer(M, M)
 
         # apply saturating function to the output if available
