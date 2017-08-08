@@ -1,13 +1,11 @@
 # pylint: disable=C0103
 import os
 import sys
-import stat
 from datetime import datetime
 
 import math
 import time
 import zipfile
-import traceback
 
 import random
 import numpy as np
@@ -15,14 +13,15 @@ import csv
 import theano
 from theano import tensor as tt, ifelse
 from theano.gof import Variable
-from theano.sandbox.linalg import psd, matrix_inverse
-import matplotlib as mpl
-# This line is necessary for plot_and_save to work on server side without a GUI.
+# These lines are necessary for plot_and_save to work on server side without
+# a GUI.
+# import matplotlib as mpl
 # Needs to be set before plt is imported.
 # mpl.use('Agg')
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 from functools import reduce
+
 
 def maha(X1, X2=None, M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
@@ -37,7 +36,9 @@ def maha(X1, X2=None, M=None, all_pairs=True):
                 - 2*X1.dot(X2.T)
         else:
             X1M = X1.dot(M)
-            D = tt.sum(X1M*X1, 1).dimshuffle(0, 'x') + tt.sum(X2.dot(M)*X2, 1) - 2*X1M.dot(X2.T)
+            D = tt.sum(X1M*X1, 1).dimshuffle(0, 'x') 
+            D += tt.sum(X2.dot(M)*X2, 1) 
+            D -= 2*X1M.dot(X2.T)
     else:
         # computes the distance  x1i - x2i for each row i
         if X1 is X2:
@@ -51,6 +52,7 @@ def maha(X1, X2=None, M=None, all_pairs=True):
             deltaM = delta.dot(M)
         D = tt.sum(deltaM*delta, 1)
     return D
+
 
 def fast_jacobian(expr, wrt, chunk_size=16, func=None):
     '''
@@ -92,19 +94,21 @@ def fast_jacobian(expr, wrt, chunk_size=16, func=None):
     jac = ifelse.ifelse(tt.eq(remainder, 0), grads, grads[:expr.shape[0], :])
     return jac
 
+
 def print_with_stamp(message, name=None, same_line=False, use_log=True):
     '''
     Helper function to print with a current time stamp.
     '''
     out_str = ''
     if name is None:
-        out_str = '[%s] %s'%(str(datetime.now()), message)
+        out_str = '[%s] %s' % (str(datetime.now()), message)
     else:
-        out_str = '[%s] %s > %s'%(str(datetime.now()), name, message)
+        out_str = '[%s] %s > %s' % (str(datetime.now()), name, message)
 
     logfile = get_logfile()
-    # this will only log to a file if 1) use_log is True and 2) $KUSANAGI_LOGFILE
-    # is set ( can be set with utils.set_logfile(new_path) )
+    # this will only log to a file if 1) use_log is True and
+    # 2) $KUSANAGI_LOGFILE is set ( can be set with
+    # utils.set_logfile(new_path) )
     if not use_log or not logfile:
         if same_line:
             sys.stdout.write('\r'+'\x1b[2K'+out_str)
@@ -128,7 +132,8 @@ def print_with_stamp(message, name=None, same_line=False, use_log=True):
                     f.truncate()
                 f.write('\r')
             f.write(out_str+os.linesep)
-        os.system('chmod 666 %s'%(logfile))
+        os.system('chmod 666 %s' % (logfile))
+
 
 def kmeanspp(X, k):
     '''
@@ -143,13 +148,15 @@ def kmeanspp(X, k):
         d[i] = np.sum((X-c[i])**2, 1)
         # get minimum distances
         min_dists = d[:i+1].min(0)
-        # select next center with probability proportional to the inverse minimum distance
+        # select next center with probability proportional to the inverse
+        # minimum distance
         selection_prob = np.cumsum(min_dists/min_dists.sum())
         r = random.uniform(0, 1)
         j = np.searchsorted(selection_prob, r)
         c.append(X[j])
 
     return np.array(c)
+
 
 def gTrig(x, angi, D):
     '''
@@ -164,13 +171,14 @@ def gTrig(x, angi, D):
     xang = tt.set_subtensor(xang[:, ::2], tt.sin(xi))
     xang = tt.set_subtensor(xang[:, 1::2], tt.cos(xi))
 
-    non_angle_dims = list(set(range(D)).difference(angi))
-    if non_angle_dims:
-        xnang = x[:, non_angle_dims]
+    na_dims = list(set(range(D)).difference(angi))
+    if na_dims:
+        xnang = x[:, na_dims]
         m = tt.concatenate([xnang, xang], axis=1)
     else:
         m = xang
     return m
+
 
 def gTrig2(m, v, angi, D):
     '''
@@ -182,11 +190,11 @@ def gTrig2(m, v, angi, D):
     '''
     if len(angi) < 1:
         return m, v, None
-    
+
     # TODO make this a symbolic operation
-    non_angle_dims = list(set(range(D)).difference(angi))
+    na_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
-    Dna = len(non_angle_dims)
+    Dna = len(na_dims)
     Ma = tt.zeros((Da,))
     Va = tt.zeros((Da, Da))
     Ca = tt.zeros((D, Da))
@@ -203,7 +211,8 @@ def gTrig2(m, v, angi, D):
     # compute the entries in the augmented covariance matrix
     vii_c = vii.dimshuffle(0, 'x')
     vii_r = vii.dimshuffle('x', 0)
-    lq = -0.5*(vii_c+vii_r); q = tt.exp(lq)
+    lq = -0.5*(vii_c+vii_r)
+    q = tt.exp(lq)
     exp_lq_p_vi = tt.exp(lq+vi)
     exp_lq_m_vi = tt.exp(lq-vi)
     mi_c = mi.dimshuffle(0, 'x')
@@ -221,28 +230,31 @@ def gTrig2(m, v, angi, D):
     Va = 0.5*Va
 
     # inv times input output covariance
-    Is = 2*np.arange(len(angi)); Ic = Is +1
+    Is = 2*np.arange(len(angi))
+    Ic = Is + 1
     Ca = tt.set_subtensor(Ca[angi, Is], Ma[1::2])
     Ca = tt.set_subtensor(Ca[angi, Ic], -Ma[::2])
 
-    # construct mean vectors ( non angle dimensions come first, then angle dimensions)
-    Mna = m[non_angle_dims]
+    # construct mean vectors ( non angle dimensions come first,
+    # then angle dimensions)
+    Mna = m[na_dims]
     M = tt.concatenate([Mna, Ma])
 
     # construct the corresponding covariance matrices
-    # just the blocks for the non angle dimensions and the angle dimensions separately
+    # just the blocks for the non angle dimensions and the angle dimensions
+    # separately
     V = tt.zeros((Dna+Da, Dna+Da))
-    Vna = v[non_angle_dims, :][:, non_angle_dims]
+    Vna = v[na_dims, :][:, na_dims]
     V = tt.set_subtensor(V[:Dna, :Dna], Vna)
     V = tt.set_subtensor(V[Dna:, Dna:], Va)
 
     # fill in the cross covariances
-    q = v.dot(Ca)[non_angle_dims, :]
+    q = v.dot(Ca)[na_dims, :]
     V = tt.set_subtensor(V[:Dna, Dna:], q)
     V = tt.set_subtensor(V[Dna:, :Dna], q.T)
-    #V = tt.concatenate([tt.concatenate([Vna,q],axis=1),tt.concatenate([q.T,Va],axis=1)], axis=0)
 
     return [M, V, Ca]
+
 
 def gTrig_np(x, angi):
     '''
@@ -260,27 +272,29 @@ def gTrig_np(x, angi):
     xang[:, ::2] = np.sin(xi)
     xang[:, 1::2] = np.cos(xi)
 
-    non_angle_dims = list(set(range(D)).difference(angi))
-    xnang = x[:, non_angle_dims]
+    na_dims = list(set(range(D)).difference(angi))
+    xnang = x[:, na_dims]
     m = np.concatenate([xnang, xang], axis=1)
 
     return m
 
+
 def gTrig2_np(m, v, angi, D):
     '''
-        Replaces angle dimensions with their complex represnetations. Given an input Gaussian
-        distribution (parametrized by its mean and covariance), it computes the Gaussian distribution
-        of the complex angle representation.
+        Replaces angle dimensions with their complex represnetations. Given an
+        input Gaussian distribution (parametrized by its mean and covariance),
+        it computes the Gaussian distribution of the complex angle
+        representation.
     '''
-    non_angle_dims = list(set(range(D)).difference(angi))
+    na_dims = list(set(range(D)).difference(angi))
     Da = 2*len(angi)
-    Dna = len(non_angle_dims)
+    Dna = len(na_dims)
     n = m.shape[0]
     Ma = np.zeros((n, Da))
     Va = np.zeros((n, Da, Da))
     Ca = np.zeros((n, D, Da))
     Is = 2*np.arange(len(angi))
-    Ic = Is +1
+    Ic = Is + 1
 
     # compute the mean
     mi = m[:, angi]
@@ -292,7 +306,8 @@ def gTrig2_np(m, v, angi, D):
     Ma[:, 1::2] = exp_vii_h*np.cos(mi)
 
     # compute the entries in the augmented covariance matrix
-    lq = -0.5*(vii[:, :, None] + vii[:, None, :]); q = np.exp(lq)
+    lq = -0.5*(vii[:, :, None] + vii[:, None, :])
+    q = np.exp(lq)
     exp_lq_p_vi = np.exp(lq+vi)
     exp_lq_m_vi = np.exp(lq-vi)
     U1 = (exp_lq_p_vi - q)*(np.sin(mi[:, :, None]-mi[:, None, :]))
@@ -310,22 +325,25 @@ def gTrig2_np(m, v, angi, D):
     Ca[:, angi, Is] = Ma[:, 1::2]
     Ca[:, angi, Ic] = -Ma[:, ::2]
 
-    # construct mean vectors ( non angle dimensions come first, then angle dimensions)
-    Mna = m[:, non_angle_dims]
+    # construct mean vectors ( non angle dimensions come first,
+    # then angle dimensions)
+    Mna = m[:, na_dims]
     M = np.concatenate([Mna, Ma], axis=1)
 
     # construct the corresponding covariance matrices
-    # (ust the blocks for the non angle dimensions and the angle dimensions separately
+    # (ust the blocks for the non angle dimensions and the angle dimensions
+    # separately
     V = np.zeros((n, Dna+Da, Dna+Da))
-    Vna = v[:, non_angle_dims, :][:, :, non_angle_dims]
+    Vna = v[:, na_dims, :][:, :, na_dims]
     V[:, :Dna, :Dna] = Vna
     V[:, Dna:, Dna:] = Va
 
     # fill in the cross covariances
-    V[:, :Dna, Dna:] = (v[:, :, :, None]*Ca[:, :, None, :]).sum(1)[:, non_angle_dims, :]
+    V[:, :Dna, Dna:] = (v[:, :, :, None]*Ca[:, :, None, :]).sum(1)[:, na_dims, :]
     V[:, Dna:, :Dna] = V[:, :Dna, Dna:].transpose(0, 2, 1)
 
     return [M, V]
+
 
 def get_compiled_gTrig(angi, D, derivs=True):
     m = tt.dvector('x')      # n_samples x idims
@@ -333,6 +351,7 @@ def get_compiled_gTrig(angi, D, derivs=True):
 
     gt = gTrig2(m, v, angi, D, derivs=derivs)
     return theano.function([m, v], gt)
+
 
 def wrap_params(p_list):
     # flatten out and concatenate the parameters
@@ -347,6 +366,7 @@ def wrap_params(p_list):
     P = np.concatenate(P)
     return P
 
+
 def unwrap_params(P, parameter_shapes):
     # get the correct sizes for the parameters
     p = []
@@ -359,6 +379,7 @@ def unwrap_params(P, parameter_shapes):
         # set index to the beginning  of next parameter
         i += npi
     return p
+
 
 class MemoizeJac(object):
     def __init__(self, fun, args=()):
@@ -386,10 +407,12 @@ class MemoizeJac(object):
             self._compute(x, *args)
             return self.jac
 
+
 def integer_generator(i=0):
     while True:
         yield i
         i += 1
+
 
 def iterate_minibatches(inputs, targets, batchsize, seqsize=1, shuffle=False):
     assert len(inputs) == len(targets)
@@ -402,6 +425,7 @@ def iterate_minibatches(inputs, targets, batchsize, seqsize=1, shuffle=False):
         else:
             excerpt = slice(start_idx, start_idx + batchsize)
         yield inputs[excerpt], targets[excerpt]
+
 
 def update_errorbar(errobj, x, y, y_error):
     # from http://stackoverflow.com/questions/25210723/matplotlib-set-data-for-errorbar-plot
@@ -422,11 +446,12 @@ def update_errorbar(errobj, x, y, y_error):
     new_segments_y = [np.array([[x, yt], [x,yb]]) for x, yt, yb in zip(x_base, yerr_top, yerr_bot)]
     barsy.set_segments(new_segments_y)
 
+
 def plot_results(learner, H=None, plot_samples=True):
     '''
     Plots learning results. One plot for cost vs learning iteration,
-    one for cost vs timestep for last episode, and plots for each state dimension vs
-    time step for the last episode.
+    one for cost vs timestep for last episode, and plots for each state
+    dimension vs time step for the last episode.
     '''
     dt = learner.plant.dt
     x0 = learner.plant.state0_dist.mean
@@ -507,6 +532,7 @@ def plot_results(learner, H=None, plot_samples=True):
         plt.waitforbuttonpress(0.5)
     except:
         pass
+
 
 def plot_and_save(learner, filename, H=None,
                   target=None, output_folder=None):
@@ -595,8 +621,9 @@ def plot_and_save(learner, filename, H=None,
             plt.close()
     return output_file
 
+
 def plot_learning_results(plant, H=None):
-    ''' 
+    '''
     Generates plots of the current learning run. Uses bokeh to dislpay the plots
     One plot for cost vs learning iteration,
     one for cost vs timestep for last episode, and plots for each state dimension vs
@@ -666,6 +693,7 @@ def plot_learning_results(plant, H=None):
     plt.show(False)
     plt.waitforbuttonpress(0.05)
 
+
 def get_logfile():
     ''' Returns the path of the file where the output of print_with_stamp wil be redirected. This can be set 
     via the $KUSANAGI_LOGFILE environment variable. If not set, it will return an empty string.'''
@@ -674,6 +702,7 @@ def get_logfile():
         return os.environ['KUSANAGI_LOGFILE']
     else:
         return ''
+
 
 def get_run_output_dir():
     ''' Returns the current output folder for the last run results. This can be set via the $KUSANAGI_RUN_OUTPUT environment 
@@ -689,6 +718,7 @@ def get_run_output_dir():
         if not os.path.isdir(os.environ['KUSANAGI_RUN_OUTPUT']):
             raise
     return os.environ['KUSANAGI_RUN_OUTPUT']
+
 
 def get_output_dir():
     ''' Returns the current output folder. This can be set via the $KUSANAGI_OUTPUT environment 
@@ -706,6 +736,7 @@ def get_output_dir():
             raise
     return os.environ['KUSANAGI_OUTPUT']
 
+
 def set_logfile(new_path, base_path=None):
     ''' Sets the path of the log file. Assumes that new_path is well formed'''
     if base_path is None:
@@ -713,13 +744,16 @@ def set_logfile(new_path, base_path=None):
     else:
         os.environ['KUSANAGI_LOGFILE'] = os.path.join(base_path,new_path)
 
+
 def set_run_output_dir(new_path):
     ''' Sets the output directory for the files related to the current run. Assumes that new_path is well formed'''
     os.environ['KUSANAGI_RUN_OUTPUT'] = new_path
 
+
 def set_output_dir(new_path):
     ''' Sets the output directory temporary files. Assumes that new_path is well formed'''
     os.environ['KUSANAGI_OUTPUT'] = new_path
+
 
 def sync_output_filename(output_filename, obj_filename, suffix):
   if output_filename is None:
@@ -731,6 +765,7 @@ def sync_output_filename(output_filename, obj_filename, suffix):
     if suffix_idx >= 0:
       obj_filename = obj_filename[:suffix_idx]
   return output_filename, obj_filename
+
 
 def unzip_snapshot(zip_filepath, extract_path = ''):
   if not zip_filepath.lower().endswith('.zip'):

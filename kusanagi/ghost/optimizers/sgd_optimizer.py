@@ -191,6 +191,7 @@ class SGDOptimizer(object):
             s.set_value(np.array(i).astype(s.dtype))
 
         # set initial loss and parameters
+        ret = self.update_params_fn()
         loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value() for p in self.params]

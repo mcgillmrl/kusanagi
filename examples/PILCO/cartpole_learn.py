@@ -59,7 +59,7 @@ if __name__ == '__main__':
     # init policy optimizer
     if use_bnn_dyn:
         params['optimizer']['min_method'] = 'adam'
-        params['optimizer']['max_evals'] = 1000
+        params['optimizer']['max_evals'] = 500
         polopt = SGDOptimizer(**params['optimizer'])
     else:
         polopt = ScipyOptimizer(**params['optimizer'])
@@ -108,7 +108,7 @@ if __name__ == '__main__':
                 import theano
                 lr = theano.tensor.scalar('lr')
                 loss, inps, updts = mc_pilco.get_loss(
-                    pol, dyn, cost, D, angle_dims, n_samples=100,
+                    pol, dyn, cost, D, angle_dims, n_samples=20,
                     resample_particles=True, truncate_gradient=-1)
 
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
