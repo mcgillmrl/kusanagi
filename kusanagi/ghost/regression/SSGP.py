@@ -310,9 +310,6 @@ class SSGP_UI(SSGP, GP_UI):
                 m2 + sn2[i]*(1.0 + sf2M[i]*tt.sum(self.iA[i]*Q)) + 1e-6,
                 m2)
             M2 = tt.set_subtensor(M2[i, j], m2)
-            # M2 = theano.ifelse.ifelse(
-            #    tt.eq(i, j), M2 + 1e-6, tt.set_subtensor(M2[j, i], m2))
-
             return M2
 
         nseq = [self.beta_ss, self.iA, sn2, sf2M, self.sr, srdotSx,

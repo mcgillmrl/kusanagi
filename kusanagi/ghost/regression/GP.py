@@ -434,8 +434,6 @@ class GP_UI(GP):
             m2 = theano.ifelse.ifelse(
                 tt.eq(i, j), m2 - tt.sum(iK[i]*Q) + sf2[i], m2)
             M2 = tt.set_subtensor(M2[i, j], m2)
-            #M2 = theano.ifelse.ifelse(
-            #    tt.eq(i, j), M2, tt.set_subtensor(M2[j, i], m2))
             return M2
 
         nseq = [self.beta, self.iK, sf2, R, logk_c, logk_r, z_, Sx]
@@ -548,8 +546,6 @@ class RBFGP(GP_UI):
 
             m2 = theano.ifelse.ifelse(tt.eq(i, j), m2 + 1e-6, m2)
             M2 = tt.set_subtensor(M2[i, j], m2)
-            #M2 = theano.ifelse.ifelse(
-            #    tt.eq(i, j), M2, tt.set_subtensor(M2[j, i], m2))
             return M2
 
         nseq = [self.beta, R, logk_c, logk_r, z_, Sx]
