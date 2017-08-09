@@ -58,7 +58,7 @@ class MC_PILCO(PILCO):
 
         if u is None:
             # compute control signal (with noisy state measurement)
-            sn = tt.exp(dynmodel.logsn)
+            sn = dynmodel.sn
             Lnoise = tt.diag(np.sqrt(0.5).astype(theano.config.floatX)*sn)
             x_noisy = x + self.m_rng.normal(x.shape).dot(Lnoise)
             xa_noisy = utils.gTrig(x_noisy, self.angle_idims, D)
@@ -98,7 +98,7 @@ class MC_PILCO(PILCO):
         x_next = self.propagate_state(x, None, dynmodel, policy)
 
         # get cost
-        sn = tt.exp(dynmodel.logsn)
+        sn = dynmodel.sn
         x_next_noisy = x_next + self.m_rng.normal(x.shape).dot(tt.diag(sn))
         #c_next = cost(x_next_noisy, None)
         c_next = cost(x_next, None)

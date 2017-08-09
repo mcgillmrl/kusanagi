@@ -45,7 +45,7 @@ class SSGP(GP):
             w = w.reshape((self.n_inducing, odims, idims))
         self.set_params({'w': w})
         if self.sr is None:
-            self.sr = self.w*tt.exp(-self.loghyp[:, :idims])
+            self.sr = self.w/(self.hyp[:, :idims])
             self.sr = self.sr.transpose(1, 0, 2)
 
     def get_loss(self, unroll_scan=False, cache_intermediate=True):
@@ -53,7 +53,7 @@ class SSGP(GP):
         idims = self.D
 
         if self.sr is None:
-            self.sr = self.w*tt.exp(-self.loghyp[:, :idims])
+            self.sr = self.w/(self.hyp[:, :idims])
             self.sr = self.sr.transpose(1, 0, 2)
 
         # init variables
@@ -61,9 +61,9 @@ class SSGP(GP):
         M = self.sr.shape[1].astype(floatX)
         Mi = 2*self.sr.shape[1]
         EyeM = tt.eye(Mi)
-        sf2 = tt.exp(2*self.loghyp[:, idims])
+        sf2 = self.hyp[:, idims]**2
         sf2M = (sf2/M).dimshuffle(0, 'x', 'x')
-        sn2 = tt.exp(2*self.loghyp[:, idims+1]).dimshuffle(0, 'x', 'x')
+        sn2 = (self.hyp[:, idims+1]**2).dimshuffle(0, 'x', 'x')
         srdotX = self.sr.dot(self.X.T)
 
         phi_f = tt.concatenate([tt.sin(srdotX), tt.cos(srdotX)], axis=1)
@@ -133,7 +133,7 @@ class SSGP(GP):
                               'log_ls': np.log(100, dtype=floatX),
                               'log_std': tt.log(self.X.std(0)*(N/(N-1.0))),
                               'p': 30}
-            loss_ss += self.snr_penalty(self.loghyp, **penalty_params)
+            loss_ss += self.snr_penalty(tt.log(self.hyp), **penalty_params)
 
         # add a penalty for high frequencies
         freq_penalty = tt.square(self.w).sum(-1).mean(0)
@@ -212,8 +212,8 @@ class SSGP(GP):
         for i in range(odims):
             sr = self.sr[i]
             M = sr.shape[0].astype('float64')
-            sf2 = tt.exp(2*self.loghyp[i, idims])
-            sn2 = tt.exp(2*self.loghyp[i, idims+1])
+            sf2 = self.hyp[i, idims]**2
+            sn2 = self.hyp[i, idims+1]**2
             # sr.T.dot(x) for all sr and X. size n_inducing x N
             srdotX = sr.dot(mx)
             # convert to sin cos
@@ -247,8 +247,8 @@ class SSGP_UI(SSGP, GP_UI):
 
         # precompute some variables
         Ms = self.sr.shape[1]
-        sf2M = tt.exp(2*self.loghyp[:, idims])/tt.cast(Ms, floatX)
-        sn2 = tt.exp(2*self.loghyp[:, idims+1])
+        sf2M = (self.hyp[:, idims]**2)/tt.cast(Ms, floatX)
+        sn2 = self.hyp[:, idims+1]**2
         srdotx = self.sr.dot(mx)
         srdotSx = self.sr.dot(Sx)
         srdotSxdotsr = tt.sum(srdotSx*self.sr, 2)

@@ -60,7 +60,7 @@ def default_params():
     # optimizer params
     opt_params = {}
     opt_params['max_evals'] = 100
-    opt_params['conv_thr'] = 1e-12
+    opt_params['conv_thr'] = 1e-16
     opt_params['min_method'] = 'L-BFGS-B'
 
     # general parameters

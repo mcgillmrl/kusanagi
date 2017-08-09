@@ -1,18 +1,16 @@
 # pylint: disable=C0103
-import lasagne
 import numpy as np
 import theano
 import theano.tensor as tt
 
 from kusanagi import utils
-from kusanagi.ghost.regression import RBFGP, SSGP_UI, GP, BNN
-from kusanagi.ghost.regression import cov
+from kusanagi.ghost.regression import RBFGP, SSGP_UI
 from kusanagi.ghost.control.saturation import gSat
 
 from kusanagi.base.Loadable import Loadable
 from functools import partial
-from scipy.optimize import minimize
-from scipy.cluster.vq import kmeans2, vq
+
+floatX = theano.config.floatX
 
 
 # GP based controller
@@ -25,7 +23,8 @@ class RBFPolicy(RBFGP):
         self.angle_dims = angle_dims
         self.name = name
         if state0_dist is None:
-            self.state0_dist = utils.distributions.Gaussian(np.zeros((idims, )), 0.01*np.eye(idims))
+            self.state0_dist = utils.distributions.Gaussian(
+                np.zeros((idims, )), 0.01*np.eye(idims))
         else:
             self.state0_dist = state0_dist
 
@@ -48,22 +47,20 @@ class RBFPolicy(RBFGP):
             self.init_params()
 
         # make sure we always get the parameters in the same order
-        self.param_names = ['X', 'Y', 'loghyp_full']
+        self.param_names = ['X', 'Y', 'unconstrained_hyp']
 
     def load(self, output_folder=None, output_filename=None):
         ''' loads the state from file, and initializes additional variables'''
         # load state
         super(RBFGP, self).load(output_folder, output_filename)
 
-        # initialize mising variables
-        self.loghyp = tt.concatenate(
-            [self.loghyp_full[:, :-2],
-             theano.gradient.disconnected_grad(self.loghyp_full[:, -2:])],
+        # don't optimize the signal and noise variances
+        self.hyp = tt.concatenate(
+            [self.hyp[:, :-2],
+             theano.gradient.disconnected_grad(self.hyp[:, -2:])],
             axis=np.array(1, dtype='int64'))
 
-        # loghyp is no longer the trainable paramter
-        if 'loghyp' in self.param_names:
-            self.param_names.remove('loghyp')
+        # hyp is no longer the trainable paramter
         self.predict_fn = None
 
     def init_params(self, compile_funcs=False):
@@ -77,7 +74,9 @@ class RBFPolicy(RBFGP):
         # 0.7 for angular)
         l0 = np.hstack([np.ones(inputs_.shape[1]-len(self.angle_dims)),
                         0.7*np.ones(2*len(self.angle_dims)), 1, 0.01])
-        l0 = np.log(np.tile(l0, (self.maxU.size, 1)))
+
+        l0 = np.tile(l0, (self.maxU.size, 1)).astype(floatX)
+        l0 = np.log(np.exp(l0, dtype=floatX) - 1.0)
 
         # init policy targets close to zero
         mu = np.zeros((self.maxU.size, ))
@@ -92,19 +91,17 @@ class RBFPolicy(RBFGP):
         self.D = inputs.shape[1]
         self.E = targets.shape[1]
 
-        self.set_params({'X': inputs.astype(theano.config.floatX),
-                         'Y': targets.astype(theano.config.floatX)})
-        self.set_params({'loghyp_full': l0.astype(theano.config.floatX)})
+        self.set_params({'X': inputs.astype(floatX),
+                         'Y': targets.astype(floatX)})
+        self.set_params({'unconstrained_hyp': l0.astype(floatX)})
+        eps = np.finfo(np.__dict__[floatX]).eps
+        self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + 2*eps
 
         # don't optimize the signal and noise variances
-        self.loghyp = tt.concatenate(
-            [self.loghyp_full[:, :-2],
-             theano.gradient.disconnected_grad(self.loghyp_full[:, -2:])],
+        self.hyp = tt.concatenate(
+            [self.hyp[:, :-2],
+             theano.gradient.disconnected_grad(self.hyp[:, -2:])],
             axis=np.array(1, dtype='int64'))
-
-        # loghyp is no longer the trainable paramter
-        if 'loghyp' in self.param_names:
-            self.param_names.remove('loghyp')
 
         # call init loss to initialize the intermediate shared variables
         super(RBFGP, self).get_loss(cache_intermediate=False)
@@ -235,12 +232,14 @@ class LocalLinearPolicy(Loadable):
         return params
 
     def get_all_shared_vars(self):
-        return [attr for attr in list(self.__dict__.values())\
-               if isinstance(attr, tt.sharedvar.SharedVariable)]
+        return [attr for attr in list(self.__dict__.values())
+                if isinstance(attr, tt.sharedvar.SharedVariable)]
+
 
 class AdjustedPolicy:
-    def __init__(self, source_policy, maxU=[10], angle_dims=[], name='AdjustedPolicy',
-                 adjustment_model_class=SSGP_UI, use_control_input=True, **kwargs):
+    def __init__(self, source_policy, maxU=[10], angle_dims=[],
+                 name='AdjustedPolicy', adjustment_model_class=SSGP_UI,
+                 use_control_input=True, **kwargs):
         self.use_control_input = use_control_input
         self.angle_dims = angle_dims
         self.name = name
@@ -248,12 +247,12 @@ class AdjustedPolicy:
 
         self.source_policy = source_policy
         # TODO we may add a saturating function here
-        self.adjustment_model = adjustment_model_class(idims=self.source_policy.D,
-                                                       odims=self.source_policy.E,
-                                                       name='AdjustmentModel', **kwargs)
+        self.adjustment_model = adjustment_model_class(
+            idims=self.source_policy.D, odims=self.source_policy.E,
+            name='AdjustmentModel', **kwargs)
 
     def init_params(self):
-        #self.source_policy.init_params() TODO
+        # self.source_policy.init_params() TODO
         pass
 
     def evaluate(self, m, S=None, t=None, symbolic=False):
@@ -262,7 +261,7 @@ class AdjustedPolicy:
         # get the output of the source policy
         mu, Su, Cu = self.source_policy.evaluate(m, S, t, symbolic)
 
-        if self.adjustment_model.trained == True:
+        if self.adjustment_model.trained:
             # initialize the inputs to the policy adjustment function
             adj_input_m = m
             adj_input_S = S
@@ -273,12 +272,14 @@ class AdjustedPolicy:
                 q = adj_input_S.dot(Cu)
                 Sxu_up = tt_.concatenate([adj_input_S, q], axis=1)
                 Sxu_lo = tt_.concatenate([q.T, Su], axis=1)
-                adj_input_S = tt_.concatenate([Sxu_up, Sxu_lo], axis=0) # [D+U]x[D+U]
+                adj_input_S = tt_.concatenate([Sxu_up, Sxu_lo], axis=0)
 
             if symbolic:
-                madj, Sadj, Cadj = self.adjustment_model.predict_symbolic(adj_input_m, adj_input_S)
+                madj, Sadj, Cadj = self.adjustment_model.predict_symbolic(
+                    adj_input_m, adj_input_S)
             else:
-                madj, Sadj, Cadj = self.adjustment_model.predict(adj_input_m, adj_input_S)
+                madj, Sadj, Cadj = self.adjustment_model.predict(
+                    adj_input_m, adj_input_S)
 
             # compute the adjusted control distribution
             mu = mu + madj
@@ -287,7 +288,7 @@ class AdjustedPolicy:
             Su = Su + Sadj + Su_adj + Su_adj.T
             if S is not None:
                 if symbolic:
-                    Cu = Cu + tt_.nlinalg.matrix_inverse(S).dot(Sxu_adj[:m.size])
+                    Cu = Cu + tt_.slinalg.Solve(S, Sxu_adj[:m.size])
                 else:
                     Cu = Cu + np.linalg.pinv(S).dot(Sxu_adj[:m.size])
 
@@ -300,7 +301,8 @@ class AdjustedPolicy:
         return self.adjustment_model.set_params(params)
 
     def get_all_shared_vars(self):
-        return self.source_policy.get_all_shared_vars()+self.adjustment_model.get_all_shared_vars()
+        return (self.source_policy.get_all_shared_vars()
+                + self.adjustment_model.get_all_shared_vars())
 
     def load(self, output_folder=None, output_filename=None):
         self.adjustment_model.load(output_folder, output_filename)

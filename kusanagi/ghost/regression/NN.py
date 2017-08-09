@@ -21,8 +21,8 @@ class BNN(BaseRegressor):
         self.should_recompile = False
         self.trained = False
 
-        logsn = (np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX)
-        self.logsn = theano.shared(logsn, name='%s_logsn' % (self.name))
+        sn = (np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX)
+        self.sn = theano.shared(sn, name='%s_sn' % (self.name))
 
         self.network = None
         self.network_spec = None
@@ -67,7 +67,7 @@ class BNN(BaseRegressor):
 
         # register theano shared variables for saving
         self.register_types([tt.sharedvar.SharedVariable])
-        self.register(['logsn', 'network_params', 'network_spec'])
+        self.register(['sn', 'network_params', 'network_spec'])
 
     def load(self, output_folder=None, output_filename=None):
         dropout_samples = self.dropout_samples.get_value()
@@ -122,8 +122,8 @@ class BNN(BaseRegressor):
         if self.learn_noise:
             # default log of measurement noise variance is set to 2.5% of
             # dataset variation
-            logs = np.log((0.05*Y_dataset.std(0)).astype(theano.config.floatX))
-            self.logsn.set_value(logs)
+            logs = (0.05*Y_dataset.std(0)).astype(theano.config.floatX)
+            self.sn.set_value(logs)
 
     def append_dataset(self, X_dataset, Y_dataset):
         # set dataset

@@ -184,7 +184,7 @@ class PILCO(EpisodicLearner):
         mxa, Sxa, Ca = utils.gTrig2(mx, Sx, self.angle_idims, D)
 
         # compute distribution of control signal
-        sn2 = tt.exp(2*dynmodel.logsn)
+        sn2 = dynmodel.sn
         Sx_ = Sx + tt.diag(0.5*sn2)# noisy state measurement
         mxa_, Sxa_, Ca_ = utils.gTrig2(mx, Sx_, self.angle_idims, D)
         mu, Su, Cu = policy.evaluate(mxa_, Sxa_, symbolic=True)

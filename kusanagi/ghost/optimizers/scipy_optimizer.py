@@ -71,10 +71,12 @@ class ScipyOptimizer(object):
             grads = theano.grad(loss, params)
 
         utils.print_with_stamp('Compiling function for loss', self.name)
-        self.loss_fn = theano.function(inputs, loss, updates=updts)
+        self.loss_fn = theano.function(
+            inputs, loss, updates=updts, allow_input_downcast=True)
         utils.print_with_stamp('Compiling function for loss+gradients',
                                self.name)
-        self.grads_fn = theano.function(inputs, [loss, ]+grads, updates=updts)
+        self.grads_fn = theano.function(
+            inputs, [loss, ]+grads, updates=updts, allow_input_downcast=True)
 
         self.n_evals = 0
         self.start_time = 0
@@ -156,8 +158,8 @@ class ScipyOptimizer(object):
                                        self.name)
                 p0_wrapped = utils.wrap_params(p0)
                 opts = {'maxiter': self.max_evals,
-                        'ftol': 1e6*np.finfo(float).eps,
-                        'gtol': 1.0e-6}
+                        'ftol': 1e5*np.finfo(float).eps,
+                        'gtol': 1.0e-7}
                 if min_method.lower() == 'l-bfgs-b':
                     opts['maxfun'] = self.max_evals
                     opts['maxcor'] = min(100, p0_wrapped.size)

@@ -66,8 +66,8 @@ class PDDP(PILCO):
             Cu = tt.zeros((D, mu.size))
         else:
             # compute control signal given uncertain state
-            sn2 = tt.exp(2*dynmodel.logsn)
-            Sx_ = Sx + tt.diag(0.5*sn2)# noisy state measurement
+            sn2 = dynmodel.sn**2
+            Sx_ = Sx + tt.diag(0.5*sn2)  # noisy state measurement
             mxa_, Sxa_, Ca_ = utils.gTrig2(mx, Sx_, self.angle_idims, D)
             mu, Su, Cu = self.policy.evaluate(mxa_, Sxa_, t, symbolic=True)
 

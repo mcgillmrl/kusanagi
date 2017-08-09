@@ -89,14 +89,14 @@ class SPGP(GP):
 
             # initialize the training loss function of the sparse FITC
             # approximation
-            def nlml(Y, loghyp, X, X_sp, EyeM):
+            def nlml(Y, hyp, X, X_sp, EyeM):
                 # TODO allow for different pseudo inputs for each dimension
                 # initialise the (before compilation) kernel function
-                loghyps = [loghyp[:idims+1], loghyp[idims+1]]
-                kernel_func = partial(cov.Sum, loghyps, self.covs)
+                hyps = [hyp[:idims+1], hyp[idims+1]]
+                kernel_func = partial(cov.Sum, hyps, self.covs)
 
-                sf2 = tt.exp(2*loghyp[idims])
-                sn2 = tt.exp(2*loghyp[idims+1])
+                sf2 = tt.exp(2*hyp[idims])
+                sn2 = tt.exp(2*hyp[idims+1])
                 N = X.shape[0].astype(theano.config.floatX)
 
                 ridge = 1e-6
@@ -137,7 +137,7 @@ class SPGP(GP):
                 return loss_sp, iKmm, Lmm, Amm, iBmm, beta_sp
 
             r_outs, updts = theano.scan(
-                fn=nlml, sequences=[self.Y.T, self.loghyp],
+                fn=nlml, sequences=[self.Y.T, self.hyp],
                 non_sequences=[self.X, self.X_sp, tt.eye(self.X_sp.shape[0])],
                 allow_gc=False, return_list=True)
             (loss_sp, iKmm, Lmm, Amm, iBmm, beta_sp) = r_outs
@@ -171,7 +171,7 @@ class SPGP(GP):
                                   'log_ls': np.log(100),
                                   'log_std': tt.log(self.X_sp.std(0)*(N/(N-1.0))),
                                   'p': 30}
-                loss_sp += self.snr_penalty(self.loghyp, **penalty_params)
+                loss_sp += self.snr_penalty(self.hyp, **penalty_params)
 
             inps = []
             self.state_changed = True  # for saving
@@ -186,9 +186,9 @@ class SPGP(GP):
         odims = self.E
 
         # compute the mean and variance for each output dimension
-        def predict_odim(Lmm, Amm, beta_sp, loghyp, X_sp, mx):
-            loghyps = (loghyp[:idims+1], loghyp[idims+1])
-            kernel_func = partial(cov.Sum, loghyps, self.covs)
+        def predict_odim(Lmm, Amm, beta_sp, hyp, X_sp, mx):
+            hyps = (hyp[:idims+1], hyp[idims+1])
+            kernel_func = partial(cov.Sum, hyps, self.covs)
 
             k = kernel_func(mx[None, :], X_sp).flatten()
             mean = k.dot(beta_sp)
@@ -199,7 +199,7 @@ class SPGP(GP):
             variance = tt.largest(variance, 0.0) + 1e-3
 
             return mean, variance
-        seq = [self.Lmm, self.Amm, self.beta_sp, self.loghyp]
+        seq = [self.Lmm, self.Amm, self.beta_sp, self.hyp]
         nseq = [self.X_sp, mx]
         (M, S), updts = theano.scan(
             fn=predict_odim, sequences=seq, non_sequences=nseq,allow_gc=False)
@@ -239,9 +239,9 @@ class SPGP_UI(SPGP, GP_UI):
         zeta = self.X_sp - mx
 
         # initialize some variables
-        sf2 = tt.exp(2*self.loghyp[:, idims])
+        sf2 = tt.exp(2*self.hyp[:, idims])
         eyeE = tt.tile(tt.eye(idims), (odims, 1, 1))
-        lscales = tt.exp(self.loghyp[:, :idims])
+        lscales = tt.exp(self.hyp[:, :idims])
         iL = eyeE/lscales.dimshuffle(0, 1, 'x')
 
         # predictive mean
@@ -259,7 +259,7 @@ class SPGP_UI(SPGP, GP_UI):
         V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
 
         # predictive covariance
-        logk = 2*self.loghyp[:, None, idims] - 0.5*tt.sum(inp*inp, 2)
+        logk = 2*self.hyp[:, None, idims] - 0.5*tt.sum(inp*inp, 2)
         logk_r = logk.dimshuffle(0, 'x', 1)
         logk_c = logk.dimshuffle(0, 1, 'x')
         Lambda = tt.square(iL)

@@ -51,8 +51,8 @@ class GP(BaseRegressor):
             self.E = Y_dataset.shape[1]
 
         # symbolic varianbles
-        self.loghyp = None
-        self.logsn = None
+        self.hyp = None
+        self.sn = None
         self.X = None
         self.Y = None
         self.iK = None
@@ -105,9 +105,11 @@ class GP(BaseRegressor):
             self.D = self.X.get_value(borrow=True).shape[1]
         if hasattr(self, 'Y') and self.Y:
             self.E = self.Y.get_value(borrow=True).shape[1]
-        if hasattr(self, 'loghyp') and self.loghyp:
-            self.logsn = self.loghyp[:, -1]
-
+        if hasattr(self, 'unconstrained_hyp'):
+            eps = np.finfo(np.__dict__[floatX]).eps
+            self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + 2*eps
+            self.sn = self.hyp[:, -1]
+    
     def set_dataset(self, X_dataset, Y_dataset, X_cov=None, Y_var=None):
         # set dataset
         super(GP, self).set_dataset(X_dataset, Y_dataset)
@@ -157,22 +159,28 @@ class GP(BaseRegressor):
         utils.print_with_stamp('Initialising parameters', self.name)
         idims = self.D
         odims = self.E
-        # initialize the loghyperparameters of the gp
+        # initialize the hyperparameters of the gp
         # this code supports squared exponential only, at the moment
         X = self.X.get_value()
         Y = self.Y.get_value()
-        loghyp = np.zeros((odims, idims+2))
-        loghyp[:, :idims] = X.std(0, ddof=1)
-        loghyp[:, idims] = Y.std(0, ddof=1)
-        loghyp[:, idims+1] = 0.1*loghyp[:, idims]
-        loghyp = np.log(loghyp, dtype=floatX)
+        hyp = np.zeros((odims, idims+2))
+        hyp[:, :idims] = X.std(0, ddof=1)
+        hyp[:, idims] = Y.std(0, ddof=1)
+        hyp[:, idims+1] = 0.1*hyp[:, idims]
+        hyp = np.log(np.exp(hyp, dtype=floatX) - 1.0)
 
-        # set params will either create the loghyp attribute, or update
+        # set params will either create the hyp attribute, or update
         # its value
-        self.set_params({'loghyp': loghyp})
-        # create logsn (used in PILCO)
-        if self.logsn is None:
-            self.logsn = self.loghyp[:, -1]
+        self.set_params({'unconstrained_hyp': hyp})
+
+        if self.hyp is None:
+            # constrain hyperparameters to always be positive
+            eps = np.finfo(np.__dict__[floatX]).eps
+            self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + 2*eps
+
+        # create sn (used in PILCO)
+        if self.sn is None:
+            self.sn = self.hyp[:, -1]
 
     def get_all_shared_vars(self, as_dict=False):
         if as_dict:
@@ -191,23 +199,23 @@ class GP(BaseRegressor):
 
         # we need to evaluate the derivative of the mean function at the
         # training inputs
-        def dM2_f_i(mx, beta, loghyp, X):
-            loghyps = (loghyp[:idims+1], loghyp[idims+1])
-            kernel_func = partial(cov.Sum, loghyps, self.covs)
+        def dM2_f_i(mx, beta, hyp, X):
+            hyps = (hyp[:idims+1], hyp[idims+1])
+            kernel_func = partial(cov.Sum, hyps, self.covs)
             k = kernel_func(mx[None, :], X).flatten()
             mean = k.dot(beta)
             dmean = tt.jacobian(mean.flatten(), mx)
             return tt.square(dmean.flatten())
 
-        def dM2_f(beta, loghyp, X):
+        def dM2_f(beta, hyp, X):
             # iterate over training inputs
             dM2_o, updts = theano.scan(fn=dM2_f_i, sequences=[X],
-                                       non_sequences=[beta, loghyp, X],
+                                       non_sequences=[beta, hyp, X],
                                        allow_gc=False)
             return dM2_o
 
         # iterate over output dimensions
-        dM2, updts = theano.scan(fn=dM2_f, sequences=[self.beta, self.loghyp],
+        dM2, updts = theano.scan(fn=dM2_f, sequences=[self.beta, self.hyp],
                                  non_sequences=[self.X], allow_gc=False)
 
         # update the nigp parameter using the derivative of the mean function
@@ -222,10 +230,10 @@ class GP(BaseRegressor):
         idims = self.D
         N = self.X.shape[0].astype(floatX)
 
-        def nlml(Y, loghyp, i, X, EyeN, nigp=None, y_var=None):
+        def nlml(Y, hyp, i, X, EyeN, nigp=None, y_var=None):
             # initialise the (before compilation) kernel function
-            loghyps = (loghyp[:idims+1], loghyp[idims+1])
-            kernel_func = partial(cov.Sum, loghyps, self.covs)
+            hyps = (hyp[:idims+1], hyp[idims+1])
+            kernel_func = partial(cov.Sum, hyps, self.covs)
 
             # We initialise the kernel matrices (one for each output dimension)
             K = kernel_func(X)
@@ -253,7 +261,7 @@ class GP(BaseRegressor):
         if self.Y_var:
             nseq.append(self.Y_var.T)
 
-        seq = [self.Y.T, self.loghyp, tt.arange(self.X.shape[0])]
+        seq = [self.Y.T, self.hyp, tt.arange(self.X.shape[0])]
 
         if unroll_scan:
             from lasagne.utils import unroll_scan
@@ -297,7 +305,7 @@ class GP(BaseRegressor):
                               'log_ls': np.log(100, dtype=floatX),
                               'log_std': tt.log(self.X.std(0)*(N/(N-1.0))),
                               'p': 30}
-            loss += self.snr_penalty(self.loghyp, **penalty_params)
+            loss += self.snr_penalty(tt.log(self.hyp), **penalty_params)
         inps = []
         self.state_changed = True  # for saving
         return loss.sum(), inps, updts
@@ -306,9 +314,9 @@ class GP(BaseRegressor):
         idims = self.D
 
         # compute the mean and variance for each output dimension
-        def predict_odim(L, beta, loghyp, X, mx):
-            loghyps = (loghyp[:idims+1], loghyp[idims+1])
-            kernel_func = partial(cov.Sum, loghyps, self.covs)
+        def predict_odim(L, beta, hyp, X, mx):
+            hyps = (hyp[:idims+1], hyp[idims+1])
+            kernel_func = partial(cov.Sum, hyps, self.covs)
 
             k = kernel_func(mx[None, :], X)
             mean = k.dot(beta)
@@ -318,7 +326,7 @@ class GP(BaseRegressor):
             return mean, variance
 
         (M, S), updts = theano.scan(fn=predict_odim,
-                                    sequences=[self.L, self.beta, self.loghyp],
+                                    sequences=[self.L, self.beta, self.hyp],
                                     non_sequences=[self.X, mx],
                                     allow_gc=False,
                                     name='%s>predict_scan' % (self.name))
@@ -385,9 +393,9 @@ class GP_UI(GP):
         zeta = self.X - mx
 
         # initialize some variables
-        sf2 = tt.exp(2*self.loghyp[:, idims])
+        sf2 = self.hyp[:, idims]**2
         eyeE = tt.tile(tt.eye(idims), (odims, 1, 1))
-        lscales = tt.exp(self.loghyp[:, :idims])
+        lscales = self.hyp[:, :idims]
         iL = eyeE/lscales.dimshuffle(0, 1, 'x')
 
         # predictive mean
@@ -407,7 +415,7 @@ class GP_UI(GP):
         V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
 
         # predictive covariance
-        logk = 2*self.loghyp[:, None, idims] - 0.5*tt.sum(inp*inp, 2)
+        logk = (tt.log(sf2))[:, None] - 0.5*tt.sum(inp*inp, 2)
         logk_r = logk.dimshuffle(0, 'x', 1)
         logk_c = logk.dimshuffle(0, 1, 'x')
         Lambda = tt.square(iL)
@@ -465,7 +473,6 @@ class RBFGP(GP_UI):
         self.sat_func = sat_func
         if self.sat_func is not None:
             name += '_sat'
-        self.loghyp_full = None
         super(RBFGP, self).__init__(X_dataset, Y_dataset, idims=idims,
                                     odims=odims, name=name, profile=profile,
                                     **kwargs)
@@ -479,9 +486,9 @@ class RBFGP(GP_UI):
         odims = self.E
 
         # initialize some variables
-        sf2 = tt.exp(2*self.loghyp[:, idims])
+        sf2 = self.hyp[:, idims]**2
         eyeE = tt.tile(tt.eye(idims), (odims, 1, 1))
-        lscales = tt.exp(self.loghyp[:, :idims])
+        lscales = self.hyp[:, :idims]
         iL = eyeE/lscales.dimshuffle(0, 1, 'x')
 
         if Sx is None:
@@ -522,7 +529,7 @@ class RBFGP(GP_UI):
         V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
 
         # predictive covariance
-        logk = 2*self.loghyp[:, None, idims] - 0.5*tt.sum(inp*inp, 2)
+        logk = (tt.log(sf2))[:, None] - 0.5*tt.sum(inp*inp, 2)
         logk_r = logk.dimshuffle(0, 'x', 1)
         logk_c = logk.dimshuffle(0, 1, 'x')
         Lambda = tt.square(iL)
