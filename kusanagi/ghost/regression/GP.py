@@ -266,7 +266,7 @@ class GP(BaseRegressor):
                 name="%s>logL_scan" % (self.name))
 
         # And finally, the negative log marginal likelihood
-        loss = 0.5*tt.sum(self.Y*beta, 1)
+        loss = 0.5*tt.sum(self.Y.T*beta, 1)
         idx = [theano.tensor.arange(L.shape[i]) for i in [1, 2]]
         loss += tt.sum(tt.log(L[:, idx[0], idx[1]]), 1)
         loss += 0.5*N*tt.log(2*np.pi)
