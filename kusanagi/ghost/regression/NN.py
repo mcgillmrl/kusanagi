@@ -8,6 +8,8 @@ from kusanagi import utils
 from kusanagi.ghost.optimizers import SGDOptimizer
 from kusanagi.ghost.regression import BaseRegressor
 
+floatX = theano.config.floatX
+
 
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
@@ -21,8 +23,11 @@ class BNN(BaseRegressor):
         self.should_recompile = False
         self.trained = False
 
-        sn = (np.ones((self.E,))*np.log(1e-3)).astype(theano.config.floatX)
-        self.sn = theano.shared(sn, name='%s_sn' % (self.name))
+        sn = (np.ones((self.E,))*1e-3).astype(floatX)
+        sn = np.log(np.exp(sn)-1)
+        self.unconstrained_sn = theano.shared(sn, name='%s_sn' % (self.name))
+        eps = np.finfo(np.__dict__[floatX]).eps
+        self.sn = tt.nnet.softplus(self.unconstrained_sn) + eps
 
         self.network = None
         self.network_spec = None
@@ -59,7 +64,7 @@ class BNN(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1000
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1500
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -81,6 +86,9 @@ class BNN(BaseRegressor):
             self.network = self.build_network(self.network_spec,
                                               params=self.network_params,
                                               name=self.name)
+        if hasattr(self, 'unconstrained_sn'):
+            eps = np.finfo(np.__dict__[floatX]).eps
+            self.sn = tt.nnet.softplus(self.unconstrained_sn) + eps
 
     def save(self, output_folder=None, output_filename=None):
         # store references to the network shared variables, so we can save
@@ -113,44 +121,45 @@ class BNN(BaseRegressor):
 
     def set_dataset(self, X_dataset, Y_dataset, **kwargs):
         # set dataset
-        super(BNN, self).set_dataset(X_dataset.astype(theano.config.floatX),
-                                     Y_dataset.astype(theano.config.floatX))
+        super(BNN, self).set_dataset(X_dataset.astype(floatX),
+                                     Y_dataset.astype(floatX))
 
         # extra operations when setting the dataset (specific to this class)
         self.update_dataset_statistics(X_dataset, Y_dataset)
 
-        if self.learn_noise:
+        if self.learn_noise and not self.trained:
             # default log of measurement noise variance is set to 2.5% of
             # dataset variation
-            logs = (0.05*Y_dataset.std(0)).astype(theano.config.floatX)
-            self.sn.set_value(logs)
+            s = (0.05*Y_dataset.std(0)).astype(floatX)
+            s = np.log(np.exp(s, dtype=floatX)-1.0)
+            self.unconstrained_sn.set_value(s)
 
     def append_dataset(self, X_dataset, Y_dataset):
         # set dataset
-        super(BNN, self).append_dataset(X_dataset.astype(theano.config.floatX),
-                                        Y_dataset.astype(theano.config.floatX))
+        super(BNN, self).append_dataset(X_dataset.astype(floatX),
+                                        Y_dataset.astype(floatX))
 
         # extra operations when setting the dataset (specific to this class)
         self.update_dataset_statistics(X_dataset, Y_dataset)
 
     def update_dataset_statistics(self, X_dataset, Y_dataset):
         if self.Xm is None:
-            Xm = X_dataset.mean(0).astype(theano.config.floatX)
+            Xm = X_dataset.mean(0).astype(floatX)
             self.Xm = theano.shared(Xm, name='%s>Xm' % (self.name))
-            Xs = X_dataset.std(0).astype(theano.config.floatX)
+            Xs = X_dataset.std(0).astype(floatX)
             self.Xs = theano.shared(Xs, name='%s>Xs' % (self.name))
         else:
-            self.Xm.set_value(X_dataset.mean(0).astype(theano.config.floatX))
-            self.Xs.set_value(X_dataset.std(0).astype(theano.config.floatX))
+            self.Xm.set_value(X_dataset.mean(0).astype(floatX))
+            self.Xs.set_value(X_dataset.std(0).astype(floatX))
 
         if self.Ym is None:
-            Ym = Y_dataset.mean(0).astype(theano.config.floatX)
+            Ym = Y_dataset.mean(0).astype(floatX)
             self.Ym = theano.shared(Ym, name='%s>Ym' % (self.name))
-            Ys = Y_dataset.std(0).astype(theano.config.floatX)
+            Ys = Y_dataset.std(0).astype(floatX)
             self.Ys = theano.shared(Ys, name='%s>Ys' % (self.name))
         else:
-            self.Ym.set_value(Y_dataset.mean(0).astype(theano.config.floatX))
-            self.Ys.set_value(Y_dataset.std(0).astype(theano.config.floatX))
+            self.Ym.set_value(Y_dataset.mean(0).astype(floatX))
+            self.Ys.set_value(Y_dataset.std(0).astype(floatX))
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
@@ -289,17 +298,17 @@ class BNN(BaseRegressor):
 
         # evaluate nework output for batch
         if self.heteroscedastic:
-            # this assumes that self.logsn is obtained from the network output
-            train_predictions, logsn = lasagne.layers.get_output(
-                [self.network, self.logsn], train_inputs_std,
+            # this assumes that self.sn is obtained from the network output
+            train_predictions, sn = lasagne.layers.get_output(
+                [self.network], train_inputs_std,
                 deterministic=False)
         else:
             train_predictions = lasagne.layers.get_output(
                 self.network, train_inputs_std, deterministic=False)
-            logsn = self.logsn
+            sn = self.sn
 
-        # scale logsn since output network output is standardized
-        logsn_std = logsn - tt.log(self.Ys)
+        # scale sn since output network output is standardized
+        sn_std = sn/self.Ys
 
         # build the dropout loss function ( See Gal and Ghahramani 2015)
         deltay = train_predictions-train_targets_std
@@ -308,9 +317,9 @@ class BNN(BaseRegressor):
         E = E.astype(theano.config.floatX)
 
         # compute negative log likelihood
-        # note that if we have logsn_std be a 1xD vector, broadcasting
+        # note that if we have sn_std be a 1xD vector, broadcasting
         # rules apply
-        nlml = tt.square(deltay*tt.exp(-logsn_std)).sum(-1) + logsn_std.sum(-1)
+        nlml = tt.square(deltay/sn_std).sum(-1) + tt.log(sn_std).sum(-1)
         loss = 0.5*nlml.mean()
 
         # compute regularization term
@@ -325,7 +334,7 @@ class BNN(BaseRegressor):
         params = lasagne.layers.get_all_params(self.network, trainable=True)
         # if we are learning the noise
         if self.learn_noise and not self.heteroscedastic:
-            params.append(logsn)
+            params.append(self.unconstrained_sn)
         self.set_params(dict([(p.name, p) for p in params]))
         return loss, inputs, updates
 
@@ -415,11 +424,11 @@ class BNN(BaseRegressor):
         n = tt.cast(y.shape[0], dtype=theano.config.floatX)
         # empirical mean
         M = y.mean(axis=0)
-        # empirical covariance TODO emprical mean of logsn for heteroscedastic
+        # empirical covariance TODO emprical mean of sn for heteroscedastic
         # noise
         S = y.T.dot(y)/n - tt.outer(M, M)
         if with_measurement_noise:
-            S += tt.diag(tt.exp(2*self.logsn))
+            S += tt.diag(self.sn**2)
 
         # empirical input output covariance
         if Sx is not None:
@@ -457,7 +466,7 @@ class BNN(BaseRegressor):
             self.update_fn = theano.function([], [], updates=updts,
                                              allow_input_downcast=True)
 
-        # draw samples from the network
+        # draw samples from the networks
         self.update_fn()
 
     def train(self, batch_size=100,

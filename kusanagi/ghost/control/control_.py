@@ -95,7 +95,7 @@ class RBFPolicy(RBFGP):
                          'Y': targets.astype(floatX)})
         self.set_params({'unconstrained_hyp': l0.astype(floatX)})
         eps = np.finfo(np.__dict__[floatX]).eps
-        self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + 2*eps
+        self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + eps
 
         # don't optimize the signal and noise variances
         self.hyp = tt.concatenate(

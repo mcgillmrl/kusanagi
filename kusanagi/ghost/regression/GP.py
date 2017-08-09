@@ -107,7 +107,7 @@ class GP(BaseRegressor):
             self.E = self.Y.get_value(borrow=True).shape[1]
         if hasattr(self, 'unconstrained_hyp'):
             eps = np.finfo(np.__dict__[floatX]).eps
-            self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + 2*eps
+            self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + eps
             self.sn = self.hyp[:, -1]
     
     def set_dataset(self, X_dataset, Y_dataset, X_cov=None, Y_var=None):
@@ -176,7 +176,7 @@ class GP(BaseRegressor):
         if self.hyp is None:
             # constrain hyperparameters to always be positive
             eps = np.finfo(np.__dict__[floatX]).eps
-            self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + 2*eps
+            self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + eps
 
         # create sn (used in PILCO)
         if self.sn is None:
