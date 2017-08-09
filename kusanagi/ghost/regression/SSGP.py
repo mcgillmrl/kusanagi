@@ -60,44 +60,52 @@ class SSGP(GP):
         N = self.X.shape[0].astype(floatX)
         M = self.sr.shape[1].astype(floatX)
         Mi = 2*self.sr.shape[1]
+        EyeM = tt.eye(Mi)
         sf2 = tt.exp(2*self.loghyp[:, idims])
-        sf2M = sf2/M
-        sn2 = tt.exp(2*self.loghyp[:, idims+1])
+        sf2M = (sf2/M).dimshuffle(0, 'x', 'x')
+        sn2 = tt.exp(2*self.loghyp[:, idims+1]).dimshuffle(0, 'x', 'x')
         srdotX = self.sr.dot(self.X.T)
-        phi_f = tt.concatenate([tt.sin(srdotX), tt.cos(srdotX)], axis=1)
 
-        # TODO vectorize these ops
-        def nlml(sf2M, sn2, phi_f, Y, EyeM):
-            ridge = 1e-6
-            A = sf2M*phi_f.dot(phi_f.T) + sn2*EyeM + ridge*EyeM
+        phi_f = tt.concatenate([tt.sin(srdotX), tt.cos(srdotX)], axis=1)
+        Phi_f = tt.batched_dot(phi_f, phi_f.transpose(0, 2, 1))
+        A = sf2M*Phi_f
+        A += (sn2 + 1e-6)*EyeM
+        phi_f_dotY = tt.batched_dot(phi_f, self.Y.T)
+
+        def nlml(A, phidotY, EyeM):
             Lmm = Cholesky()(A)
-            phidotY = phi_f.dot(Y)
             rhs = tt.concatenate([EyeM, phidotY[:, None]], axis=1)
             sol = solve_upper_triangular(
                 Lmm.T, solve_lower_triangular(Lmm, rhs))
             iA = sol[:, :-1]
-            beta_ss = sf2M*sol[:, -1]
+            beta_ss = sol[:, -1]
 
-            loss_ss = 0.5*(Y.dot(Y) - phidotY.dot(beta_ss))/sn2
-            loss_ss += tt.sum(tt.log(tt.diag(Lmm)))
-            loss_ss += (0.5*N - M)*tt.log(sn2)
-            loss_ss += 0.5*N*np.log(2*np.pi, dtype=floatX)
+            return iA, Lmm, beta_ss
 
-            return loss_ss, iA, Lmm, beta_ss
-
-        seq = [sf2M, sn2, phi_f, self.Y.T]
-        nseq = [tt.eye(Mi)]
+        seq = [A, phi_f_dotY]
+        nseq = [EyeM]
 
         if unroll_scan:
             from lasagne.utils import unroll_scan
-            [loss_ss, iA, Lmm, beta_ss] = unroll_scan(nlml, seq, [], nseq,
-                                                      self.E)
+            [iA, Lmm, beta_ss] = unroll_scan(nlml, seq, [], nseq, self.E)
             updts = {}
         else:
-            (loss_ss, iA, Lmm, beta_ss), updts = theano.scan(
+            (iA, Lmm, beta_ss), updts = theano.scan(
                 fn=nlml, sequences=seq, non_sequences=nseq,
                 allow_gc=False, return_list=True,
                 name='%s>logL_ss' % (self.name))
+
+        # scale beta_ss
+        beta_ss *= sf2M[:, :, 0]
+
+        # And finally, the negative log marginal likelihood
+        YdotY = tt.sum(self.Y**2, 0)
+        Ydotphidotbeta = tt.sum(phi_f_dotY*beta_ss, -1)
+        loss_ss = 0.5*(YdotY - Ydotphidotbeta)/sn2
+        idx = [theano.tensor.arange(Lmm.shape[i]) for i in [1, 2]]
+        loss_ss += tt.sum(tt.log(Lmm[:, idx[0], idx[1]]), 1)
+        loss_ss += (0.5*N - M)*tt.log(sn2)
+        loss_ss += 0.5*N*np.log(2*np.pi, dtype=floatX)
 
         if cache_intermediate:
             # we are going to save the intermediate results in the following

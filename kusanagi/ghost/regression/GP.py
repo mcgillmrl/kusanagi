@@ -236,21 +236,16 @@ class GP(BaseRegressor):
             if y_var:
                 K += tt.diag(y_var[i])
 
-            # compute chol(K) 
+            # compute chol(K)
             L = Cholesky()(K)
-            # comput K^-1 and (K^-1)dot(y)
+
+            # compute K^-1 and (K^-1)dot(y)
             rhs = tt.concatenate([EyeN, Y[:, None]], axis=1)
             sol = solve_upper_triangular(L.T, solve_lower_triangular(L, rhs))
             iK = sol[:, :-1]
             beta = sol[:, -1]
 
-            # And finally, the negative log marginal likelihood
-            loss = Y.T.dot(beta)
-            loss += 2*tt.sum(tt.log(tt.ExtractDiag(view=True)(L)))
-            loss += N*tt.log(2*np.pi)
-            loss *= 0.5
-
-            return loss, iK, L, beta
+            return iK, L, beta
 
         nseq = [self.X, tt.eye(self.X.shape[0])]
         if self.nigp:
@@ -262,13 +257,19 @@ class GP(BaseRegressor):
 
         if unroll_scan:
             from lasagne.utils import unroll_scan
-            [loss, iK, L, beta] = unroll_scan(nlml, seq, [], nseq, self.E)
+            [iK, L, beta] = unroll_scan(nlml, seq, [], nseq, self.E)
             updts = {}
         else:
-            (loss, iK, L, beta), updts = theano.scan(
+            (iK, L, beta), updts = theano.scan(
                 fn=nlml, sequences=seq, non_sequences=nseq, allow_gc=False,
                 strict=True, return_list=True,
                 name="%s>logL_scan" % (self.name))
+
+        # And finally, the negative log marginal likelihood
+        loss = 0.5*tt.sum(self.Y*beta, 1)
+        idx = [theano.tensor.arange(L.shape[i]) for i in [1, 2]]
+        loss += tt.sum(tt.log(L[:, idx[0], idx[1]]), 1)
+        loss += 0.5*N*tt.log(2*np.pi)
 
         if cache_intermediate:
             # we are going to save the intermediate results in the following
@@ -448,6 +449,7 @@ class GP_UI(GP):
                                      outputs_info=[M2],
                                      non_sequences=nseq,
                                      allow_gc=False,
+                                     strict=True,
                                      name="%s>M2_scan" % (self.name))
         M2 = M2_[-1]
         M2 = M2 + tt.triu(M2, k=1).T
@@ -561,6 +563,7 @@ class RBFGP(GP_UI):
                                      outputs_info=[M2],
                                      non_sequences=nseq,
                                      allow_gc=False,
+                                     strict=True,
                                      name="%s>M2_scan" % (self.name))
         M2 = M2_[-1]
         M2 = M2 + tt.triu(M2, k=1).T
