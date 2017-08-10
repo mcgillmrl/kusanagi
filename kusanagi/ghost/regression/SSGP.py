@@ -286,7 +286,7 @@ class SSGP_UI(SSGP, GP_UI):
 
         def second_moments(i, j, M2, beta, iA, sn2, sf2M, sr, srdotSx,
                            srdotSxdotsr_c, srdotSxdotsr_r,
-                           sin_srdotx, cos_srdotx):
+                           sin_srdotx, cos_srdotx, *args):
             # compute the second moments of the spectrum feature vectors
             siSxsj = srdotSx[i].dot(sr[j].T)  # Ms x Ms
             sijSxsij = -0.5*(srdotSxdotsr_c[i] + srdotSxdotsr_r[j])
@@ -321,7 +321,8 @@ class SSGP_UI(SSGP, GP_UI):
             return M2
 
         nseq = [self.beta_ss, self.iA, sn2, sf2M, self.sr, srdotSx,
-                srdotSxdotsr_c, srdotSxdotsr_r, sin_srdotx, cos_srdotx]
+                srdotSxdotsr_c, srdotSxdotsr_r, sin_srdotx, cos_srdotx,
+                self.Lmm]
 
         if unroll_scan:
             from lasagne.utils import unroll_scan

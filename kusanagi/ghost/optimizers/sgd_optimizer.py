@@ -1,4 +1,5 @@
 # pylint: disable=C0103
+from __future__ import print_function
 import lasagne
 import numpy as np
 import theano

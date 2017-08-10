@@ -20,10 +20,33 @@ class BaseRegressor(Loadable):
         self.predict_fn = None
         self.predict_d_fn = None
 
+    def get_all_shared_vars(self, as_dict=False):
+        '''
+            Returns all shared variables that are members of this class
+        '''
+        if as_dict:
+            return [(attr_name, self.__dict__[attr_name])
+                    for attr_name in list(self.__dict__.keys())
+                    if isinstance(self.__dict__[attr_name],
+                                  tt.sharedvar.SharedVariable)]
+        else:
+            return [attr for attr in list(self.__dict__.values())
+                    if isinstance(attr, tt.sharedvar.SharedVariable)]
+
+    def get_intermediate_outputs(self):
+        '''
+            Returns all theano variables that are members of this class
+            as they are assumed to be intermediate outputs for the loss or
+            prediction functions
+        '''
+        s = set([attr for attr in list(self.__dict__.values())
+                 if isinstance(attr, theano.gof.Variable)])
+        return list(s)
+
     def init_params(self, **kwargs):
         pass
 
-    def set_params(self, params):
+    def set_params(self, params, trainable=False):
         ''' Adds a a new parameter to the class instance. Every parameter will
         be stored as a Theano shared variable. This function exists so that we
         do not end up with different compiled functions referencing different
@@ -43,7 +66,8 @@ class BaseRegressor(Loadable):
             else:
                 # create shared variable if it doesn't exist
                 if pname not in self.__dict__ or self.__dict__[pname] is None:
-                    p = S(params[pname],name='%s>%s'%(self.name,pname),borrow=True)
+                    p = S(params[pname],
+                          name='%s>%s' % (self.name, pname))
 
                     self.__dict__[pname] = p
                     if pname not in self.param_names:
@@ -51,35 +75,42 @@ class BaseRegressor(Loadable):
                 # otherwise, update the value of the shared variable
                 else:
                     p = self.__dict__[pname]
-                    pv = params[pname].reshape(p.get_value(borrow=True).shape)
-                    p.set_value(pv,borrow=True)
+                    pv = params[pname].reshape(p.get_value().shape)
+                    p.set_value(pv)
 
     def get_params(self, symbolic=False, as_dict=False, ignore_fixed=True):
         ''' Returns the parameters of this regressor (theano shared variables).
         '''
         if ignore_fixed:
-            params = [ self.__dict__[pname] for pname in self.param_names if (pname in self.__dict__ and self.__dict__[pname] and not pname in self.fixed_params) ]
+            params = [self.__dict__[pname]
+                      for pname in self.param_names
+                      if (pname in self.__dict__ and self.__dict__[pname]
+                      and pname not in self.fixed_params)]
         else:
-            params = [ self.__dict__[pname] for pname in self.param_names if (pname in self.__dict__ and self.__dict__[pname]) ]
+            params = [self.__dict__[pname]
+                      for pname in self.param_names
+                      if (pname in self.__dict__
+                      and self.__dict__[pname])]
 
         if not symbolic:
-            params = [ p.get_value() for p in params]
+            params = [p.get_value() for p in params]
         if as_dict:
-            params = dict(list(zip(self.param_names,params)))
+            params = dict(list(zip(self.param_names, params)))
         return params
-    
-    def set_dataset(self,X_dataset,Y_dataset,**kwargs):
-        # ensure we don't change the number of input and output dimensions ( the number of samples can change)
+
+    def set_dataset(self, X_dataset, Y_dataset, **kwargs):
+        # ensure we don't change the number of input and output dimensions
+        # (the number of samples can change)
         assert X_dataset.shape[0] == Y_dataset.shape[0], "X_dataset and Y_dataset must have the same number of rows"
         if self.X is not None:
             assert self.X.get_value(borrow=True).shape[1] == X_dataset.shape[1]
         if self.Y is not None:
             assert self.Y.get_value(borrow=True).shape[1] == Y_dataset.shape[1]
-        
+
         # first, convert numpy arrays to appropriate type
-        X_dataset = X_dataset.astype( theano.config.floatX )
-        Y_dataset = Y_dataset.astype( theano.config.floatX )
-        
+        X_dataset = X_dataset.astype(theano.config.floatX)
+        Y_dataset = Y_dataset.astype(theano.config.floatX)
+
         # dims
         self.N = X_dataset.shape[0]
         self.D = X_dataset.shape[1]

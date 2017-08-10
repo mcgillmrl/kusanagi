@@ -117,15 +117,15 @@ def rollout(mx0, Sx0, H, gamma,
     # these are the shared variables that will be used in the graph.
     # we need to pass them as non_sequences here
     # (see: http://deeplearning.net/software/theano/library/scan.html)
-    shared_vars = [gamma]
-    shared_vars.extend(dynmodel.get_all_shared_vars())
-    shared_vars.extend(policy.get_all_shared_vars())
+    nseq = [gamma]
+    nseq.extend(dynmodel.get_intermediate_outputs())
+    nseq.extend(policy.get_intermediate_outputs())
 
     # create the nodes that return the result from scan
     rollout_output, updts = theano.scan(fn=step_rollout,
                                         sequences=[theano.tensor.arange(H)],
                                         outputs_info=[None, None, mx0, Sx0],
-                                        non_sequences=shared_vars,
+                                        non_sequences=nseq,
                                         strict=True,
                                         allow_gc=False,
                                         name="pilco>rollout_scan")

@@ -109,7 +109,7 @@ class GP(BaseRegressor):
             eps = np.finfo(np.__dict__[floatX]).eps
             self.hyp = tt.nnet.softplus(self.unconstrained_hyp) + eps
             self.sn = self.hyp[:, -1]
-    
+
     def set_dataset(self, X_dataset, Y_dataset, X_cov=None, Y_var=None):
         # set dataset
         super(GP, self).set_dataset(X_dataset, Y_dataset)
@@ -181,16 +181,6 @@ class GP(BaseRegressor):
         # create sn (used in PILCO)
         if self.sn is None:
             self.sn = self.hyp[:, -1]
-
-    def get_all_shared_vars(self, as_dict=False):
-        if as_dict:
-            return [(attr_name, self.__dict__[attr_name])
-                    for attr_name in list(self.__dict__.keys())
-                    if isinstance(self.__dict__[attr_name],
-                                  tt.sharedvar.SharedVariable)]
-        else:
-            return [attr for attr in list(self.__dict__.values())
-                    if isinstance(attr, tt.sharedvar.SharedVariable)]
 
     def nigp_updates(self):
         idims = self.D
@@ -429,7 +419,7 @@ class GP_UI(GP):
         triu_indices = np.triu_indices(odims)
         indices = [tt.as_index_variable(idx) for idx in triu_indices]
 
-        def second_moments(i, j, M2, beta, iK, sf2, R, logk_c, logk_r, z_, Sx):
+        def second_moments(i, j, M2, beta, iK, sf2, R, logk_c, logk_r, z_, Sx, *args):
             # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
             Rij = R[i, j]
             n2 = logk_c[i] + logk_r[j]
@@ -445,7 +435,7 @@ class GP_UI(GP):
             M2 = tt.set_subtensor(M2[i, j], m2)
             return M2
 
-        nseq = [self.beta, self.iK, sf2, R, logk_c, logk_r, z_, Sx]
+        nseq = [self.beta, self.iK, sf2, R, logk_c, logk_r, z_, Sx, self.L]
         if unroll_scan:
             from lasagne.utils import unroll_scan
             [M2_] = unroll_scan(second_moments, indices,
@@ -543,7 +533,7 @@ class RBFGP(GP_UI):
         triu_indices = np.triu_indices(odims)
         indices = [tt.as_index_variable(idx) for idx in triu_indices]
 
-        def second_moments(i, j, M2, beta, R, logk_c, logk_r, z_, Sx):
+        def second_moments(i, j, M2, beta, R, logk_c, logk_r, z_, Sx, *args):
             # This comes from Deisenroth's thesis ( Eqs 2.51- 2.54 )
             Rij = R[i, j]
             n2 = logk_c[i] + logk_r[j]
@@ -557,7 +547,7 @@ class RBFGP(GP_UI):
             M2 = tt.set_subtensor(M2[i, j], m2)
             return M2
 
-        nseq = [self.beta, R, logk_c, logk_r, z_, Sx]
+        nseq = [self.beta, R, logk_c, logk_r, z_, Sx, self.iK, self.L]
 
         if unroll_scan:
             from lasagne.utils import unroll_scan

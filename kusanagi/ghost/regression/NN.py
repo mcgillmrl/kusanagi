@@ -64,7 +64,7 @@ class BNN(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1500
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -101,23 +101,10 @@ class BNN(BaseRegressor):
         self.network_params = dict(self.network_params)
         super(BNN, self).save(output_folder, output_filename)
 
-    def get_all_shared_vars(self, as_dict=False):
-        if as_dict:
-            v = [(attr_name, self.__dict__[attr_name])
-                 for attr_name in list(self.__dict__.keys())
-                 if isinstance(self.__dict__[attr_name],
-                               tt.sharedvar.SharedVariable)]
-            v += [(p.name, p)
-                  for p in lasagne.layers.get_all_params(self.network,
-                                                         unwrap_shared=True)]
-            return dict(v)
-        else:
-            v = [attr
-                 for attr in list(self.__dict__.values())
-                 if isinstance(attr, tt.sharedvar.SharedVariable)]
-            v += lasagne.layers.get_all_params(self.network,
-                                               unwrap_shared=True)
-            return v
+    def get_intermediate_outputs(self):
+        ret = super(BNN, self).get_intermediate_outputs()
+        ret += lasagne.layers.get_all_params(self.network, unwrap_shared=True)
+        return list(set(ret))
 
     def set_dataset(self, X_dataset, Y_dataset, **kwargs):
         # set dataset

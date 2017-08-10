@@ -21,14 +21,14 @@ from functools import partial
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
-    use_bnn_dyn = False
+    use_bnn_dyn = True
     use_bnn_pol = False
 
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
     params = cartpole.default_params()
-    n_rnd = 4                           # number of random initial trials
+    n_rnd = 1                           # number of random initial trials
     n_opt = 100                         # learning iterations
     H = params['max_steps']
     gamma = params['discount']
@@ -59,7 +59,7 @@ if __name__ == '__main__':
     # init policy optimizer
     if use_bnn_dyn:
         params['optimizer']['min_method'] = 'adam'
-        params['optimizer']['max_evals'] = 500
+        params['optimizer']['max_evals'] = 1000
         polopt = SGDOptimizer(**params['optimizer'])
     else:
         polopt = ScipyOptimizer(**params['optimizer'])
@@ -108,11 +108,11 @@ if __name__ == '__main__':
                 import theano
                 lr = theano.tensor.scalar('lr')
                 loss, inps, updts = mc_pilco.get_loss(
-                    pol, dyn, cost, D, angle_dims, n_samples=20,
+                    pol, dyn, cost, D, angle_dims, n_samples=10,
                     resample_particles=True, truncate_gradient=-1)
 
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
-                                     inps+[lr], updts, clip=1.0,
+                                     inps+[lr], updts, clip=10.0,
                                      learning_rate=lr)
             else:
                 loss, inps, updts = pilco.get_loss(
@@ -121,7 +121,7 @@ if __name__ == '__main__':
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
         if use_bnn_dyn:
-            polopt.minimize(m0, S0, H, gamma, 1e-3*(1/(1 + 0.5*i)),
+            polopt.minimize(m0, S0, H, gamma, 1e-2*(1/(1 + 0.5*i)),
                             callback=polopt_cb)
         else:
             polopt.minimize(m0, S0, H, gamma,

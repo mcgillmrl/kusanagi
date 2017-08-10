@@ -78,14 +78,14 @@ def rollout(x0, H, gamma0,
     # these are the shared variables that will be used in the scan graph.
     # we need to pass them as non_sequences here
     # see: http://deeplearning.net/software/theano/library/scan.html
-    shared_vars = []
-    shared_vars.extend(dyn.get_all_shared_vars())
-    shared_vars.extend(pol.get_all_shared_vars())
+    nseq = [gamma0]
+    nseq.extend(dyn.get_intermediate_outputs())
+    nseq.extend(pol.get_intermediate_outputs())
 
     # loop over the planning horizon
     output = theano.scan(fn=step_rollout,
                          outputs_info=[None, None, x0, gamma0],
-                         non_sequences=[gamma0]+shared_vars,
+                         non_sequences=nseq,
                          n_steps=H,
                          strict=True,
                          allow_gc=False,

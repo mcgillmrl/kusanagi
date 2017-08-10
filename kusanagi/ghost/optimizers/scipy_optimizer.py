@@ -134,9 +134,6 @@ class ScipyOptimizer(object):
                    theano functions for the loss and gradients
         '''
         self.callback = kwargs.get('callback')
-        self.iter_time = 0
-        self.start_time = time.time()
-        self.n_evals = 0
         utils.print_with_stamp('Optimizing parameters', self.name)
 
         # set initial loss and parameters
@@ -152,6 +149,9 @@ class ScipyOptimizer(object):
 
         # keep on trying to optimize with all the methods, until one succeeds,
         # or we go through all of them
+        self.iter_time = 0
+        self.start_time = time.time()
+        self.n_evals = 0
         for min_method in self.alt_min_methods:
             try:
                 utils.print_with_stamp("Using %s optimizer" % (min_method),
