@@ -18,7 +18,7 @@ class BaseRegressor(Loadable):
 
         # compiled functions
         self.predict_fn = None
-        self.predict_d_fn = None
+        self.predict_ic_fn = None
 
     def get_all_shared_vars(self, as_dict=False):
         '''
@@ -162,8 +162,6 @@ class BaseRegressor(Loadable):
         predict_fn = theano.function(input_vars,prediction,
                                      on_unused_input='ignore',
                                      name=fn_name,
-                                     profile=self.profile,
-                                     mode=self.compile_mode,
                                      allow_input_downcast=True)
 
         utils.print_with_stamp('Done compiling',self.name)

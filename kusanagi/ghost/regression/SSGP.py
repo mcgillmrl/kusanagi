@@ -17,7 +17,7 @@ class SSGP(GP):
     ''' Sparse Spectrum Gaussian Process Regression Lazaro-Gredilla
     et al 2010'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP', idims=None,
-                 odims=None, profile=False, n_inducing=100, **kwargs):
+                 odims=None, n_inducing=100, **kwargs):
         self.w = None
         self.sr = None
         self.Lmm = None
@@ -28,7 +28,7 @@ class SSGP(GP):
         self.n_inducing = n_inducing
         GP.__init__(self, X_dataset, Y_dataset,
                     name=name, idims=idims, odims=odims,
-                    profile=profile, **kwargs)
+                    **kwargs)
 
     def init_params(self):
         super(SSGP, self).init_params()
@@ -235,10 +235,10 @@ class SSGP_UI(SSGP, GP_UI):
     ''' Sparse Spectrum Gaussian Process Regression with Uncertain Inputs.
     '''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SSGP_UI',
-                 idims=None, odims=None, profile=False, n_inducing=100,
+                 idims=None, odims=None, n_inducing=100,
                  **kwargs):
         SSGP.__init__(self, X_dataset, Y_dataset, name=name, idims=idims,
-                      odims=odims, profile=profile, n_inducing=n_inducing,
+                      odims=odims, n_inducing=n_inducing,
                       **kwargs)
 
     def predict_symbolic(self, mx, Sx, unroll_scan=False):

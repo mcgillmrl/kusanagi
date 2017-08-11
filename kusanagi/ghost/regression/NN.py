@@ -15,7 +15,7 @@ class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
      with Gaussian distributed inputs'''
     def __init__(self, idims, odims, n_samples=25, learn_noise=True,
-                 heteroscedastic=False, name='BNN', profile=False,
+                 heteroscedastic=False, name='BNN',
                  filename=None, **kwargs):
         self.D = idims
         self.E = odims
@@ -32,9 +32,7 @@ class BNN(BaseRegressor):
         self.network = None
         self.network_spec = None
         self.network_params = None
-        self.sample_network_fn = None
-        self.predict_fn = None
-        self.prediction_updates = None
+
         samples = np.array(n_samples).astype('int32')
         samples_name = "%s>n_samples" % (self.name)
         self.n_samples = theano.shared(samples, name=samples_name)
@@ -47,9 +45,6 @@ class BNN(BaseRegressor):
         self.Xs = None
         self.Ym = None
         self.Ys = None
-
-        self.profile = profile
-        self.compile_mode = theano.compile.get_default_mode()
 
         self.learn_noise = learn_noise
         self.heteroscedastic = heteroscedastic

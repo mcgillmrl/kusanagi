@@ -19,12 +19,7 @@ floatX = theano.config.floatX
 
 class GP(BaseRegressor):
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP', idims=None,
-                 odims=None, profile=theano.config.profile,
-                 snr_penalty=SNRpenalty.SEard, filename=None, **kwargs):
-        # theano options
-        self.profile = profile
-        self.compile_mode = theano.compile.get_default_mode()
-
+                 odims=None, snr_penalty=SNRpenalty.SEard, filename=None, **kwargs):
         # GP options
         self.state_changed = True
         self.should_recompile = False
@@ -341,8 +336,6 @@ class GP(BaseRegressor):
             nigp_updts = self.nigp_updates()
             self.nigp_fn = F([], [], updates=updts+nigp_updts,
                              name='%s>dM2' % (self.name),
-                             profile=self.profile,
-                             mode=self.compile_mode,
                              allow_input_downcast=True)
 
             def nigp_cb(*args, **kwargs):
@@ -370,10 +363,10 @@ class GP(BaseRegressor):
 class GP_UI(GP):
     ''' Gaussian process with uncertain inputs (Deisenroth et al  2009)'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='GP_UI',
-                 idims=None, odims=None, profile=False, **kwargs):
+                 idims=None, odims=None, **kwargs):
         super(GP_UI, self).__init__(
             X_dataset, Y_dataset, name=name, idims=idims, odims=odims,
-            profile=profile, **kwargs)
+            **kwargs)
 
     def predict_symbolic(self, mx, Sx, unroll_scan=False):
         idims = self.D
@@ -459,13 +452,12 @@ class GP_UI(GP):
 class RBFGP(GP_UI):
     ''' RBF network (GP with uncertain inputs/deterministic outputs)'''
     def __init__(self, X_dataset=None, Y_dataset=None, idims=None, odims=None,
-                 sat_func=None, name='RBFGP', profile=False, **kwargs):
+                 sat_func=None, name='RBFGP', **kwargs):
         self.sat_func = sat_func
         if self.sat_func is not None:
             name += '_sat'
         super(RBFGP, self).__init__(X_dataset, Y_dataset, idims=idims,
-                                    odims=odims, name=name, profile=profile,
-                                    **kwargs)
+                                    odims=odims, name=name, **kwargs)
 
         # register additional variables for saving
         self.register(['sat_func'])

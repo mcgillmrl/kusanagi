@@ -19,7 +19,7 @@ from scipy.cluster.vq import kmeans
 class SPGP(GP):
     '''Sparse Pseudo Input FITC approximation Snelson and Gharammani 2005'''
     def __init__(self, X_dataset=None, Y_dataset=None, name='SPGP', idims=None,
-                 odims=None, profile=False, n_inducing=100, **kwargs):
+                 odims=None, n_inducing=100, **kwargs):
         self.X_sp = None  # inducing inputs (symbolic variable)
         self.loss_sp_fn = None
         self.dloss_sp_fn = None
@@ -32,7 +32,7 @@ class SPGP(GP):
         self.n_inducing = n_inducing
         # intialize parent class params
         GP.__init__(self, X_dataset, Y_dataset, name=name, idims=idims,
-                    odims=odims, profile=profile, **kwargs)
+                    odims=odims, **kwargs)
 
     def init_params(self):
         super(SPGP, self).init_params()
@@ -221,10 +221,10 @@ class SPGP(GP):
 
 class SPGP_UI(SPGP, GP_UI):
     def __init__(self, X_dataset=None, Y_dataset=None, name='SPGP_UI',
-                 idims=None, odims=None, profile=False, n_inducing=100,
+                 idims=None, odims=None, n_inducing=100,
                  **kwargs):
         SPGP.__init__(self, X_dataset, Y_dataset, name=name, idims=idims,
-                      odims=odims, profile=profile, n_inducing=n_inducing,
+                      odims=odims, n_inducing=n_inducing,
                       **kwargs)
 
     def predict_symbolic(self, mx, Sx):
