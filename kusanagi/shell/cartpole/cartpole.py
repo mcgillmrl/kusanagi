@@ -87,7 +87,7 @@ def cartpole_loss(mx, Sx,
     target = np.array(target)
     D = target.size
 
-    #convert angle dimensions
+    # convert angle dimensions
     targeta = utils.gTrig_np(target, angle_dims).flatten()
     Da = targeta.size
     if Sx is None:

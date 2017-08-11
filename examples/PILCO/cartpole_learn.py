@@ -6,6 +6,7 @@ on the cartpole task
 import os
 import sys
 import numpy as np
+import theano
 
 from kusanagi.ghost import control
 from kusanagi.ghost import regression
@@ -15,7 +16,8 @@ from kusanagi.ghost.optimizers import ScipyOptimizer, SGDOptimizer
 from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 from kusanagi import utils
 from functools import partial
-# import theano.d3viz as d3v
+from matplotlib import pyplot as plt
+
 
 # np.random.seed(1337)
 np.set_printoptions(linewidth=500)
@@ -30,7 +32,7 @@ if __name__ == '__main__':
     params = cartpole.default_params()
     n_rnd = 1                           # number of random initial trials
     n_opt = 100                         # learning iterations
-    H = params['max_steps']
+    H = 26  # params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
 
@@ -105,23 +107,30 @@ if __name__ == '__main__':
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             if use_bnn_dyn:
-                import theano
-                lr = theano.tensor.scalar('lr')
+                # build loss function
+                n_samples = 40
                 loss, inps, updts = mc_pilco.get_loss(
-                    pol, dyn, cost, D, angle_dims, n_samples=10,
+                    pol, dyn, cost, D, angle_dims, n_samples=n_samples,
                     resample_particles=True, truncate_gradient=-1)
 
+                if hasattr(pol, 'get_regularization_term'):
+                    # this adds the KL penalty for Bayesian neura nets
+                    loss += 1e-7*pol.get_regularization_term()
+
+                # set objective of policy optimizer
+                lr = theano.tensor.scalar('lr')
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
-                                     inps+[lr], updts, clip=10.0,
-                                     learning_rate=lr)
+                                     inps+[lr], updts, learning_rate=lr)
             else:
+                # build loss function
                 loss, inps, updts = pilco.get_loss(
                     pol, dyn, cost, D, angle_dims)
 
+                # set objective of policy optimizer
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
         if use_bnn_dyn:
-            polopt.minimize(m0, S0, H, gamma, 1e-2*(1/(1 + 0.5*i)),
+            polopt.minimize(m0, S0, H, gamma, 1e-2,
                             callback=polopt_cb)
         else:
             polopt.minimize(m0, S0, H, gamma,
