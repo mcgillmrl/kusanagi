@@ -48,7 +48,7 @@ class SGDOptimizer(object):
         self.__min_method = min_method.lower()
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      clip=None, monitor=False, **kwargs):
+                      clip=None, monitor=False, trust_input=True, **kwargs):
         '''
             Changes the objective function to be optimized
             @param loss theano graph representing the loss to be optimized
@@ -90,6 +90,8 @@ class SGDOptimizer(object):
                                        on_unused_input='ignore',
                                        allow_input_downcast=True,
                                        givens=givens_dict)
+        self.loss_fn.trust_input = trust_input
+
         mode = None
         if monitor:
             def monitor_inputs_cb(i, node, fn):
@@ -109,7 +111,8 @@ class SGDOptimizer(object):
             allow_input_downcast=True,
             givens=givens_dict,
             mode=mode)
-
+        self.update_params_fn.trust_input = trust_input
+        
         self.n_evals = 0
         self.start_time = 0
         self.iter_time = 0
@@ -134,7 +137,8 @@ class SGDOptimizer(object):
         ret = self.update_params_fn()
         loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
-        p = [p.get_value() for p in self.params]
+        p = [p.get_value(return_internal_type=True, borrow=False)
+             for p in self.params]
         self.best_p = [loss0, p, 0]
 
         # go through the dataset
@@ -195,7 +199,8 @@ class SGDOptimizer(object):
         ret = self.update_params_fn()
         loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
-        p = [p.get_value() for p in self.params]
+        p = [p.get_value(return_internal_type=True, borrow=False)
+             for p in self.params]
         self.best_p = [loss0, p, 0]
 
         # training loop
@@ -207,7 +212,8 @@ class SGDOptimizer(object):
             loss, dloss = ret[0], ret[1:]
 
             if loss < self.best_p[0]:
-                p = [p.get_value() for p in self.params]
+                p = [p.get_value(return_internal_type=True, borrow=False)
+                     for p in self.params]
                 self.best_p = [loss, p, i]
             if callable(callback):
                 callback(loss, dloss)
