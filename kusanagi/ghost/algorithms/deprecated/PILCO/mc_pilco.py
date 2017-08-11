@@ -14,7 +14,7 @@ class MC_PILCO(PILCO):
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
         self.trajectory_samples = theano.shared(np.array(n_samples).astype('int32'),
                                                 name="%s>trajectory_samples"%(self.name))
-        self.dynmodel_params['dropout_samples'] = n_samples
+        self.dynmodel_params['n_samples'] = n_samples
         # draw initial set of particles
         z0 = np.random.randn(n_samples, self.mx0.get_value().size)
         Lx0 = np.linalg.cholesky(self.Sx0.get_value())

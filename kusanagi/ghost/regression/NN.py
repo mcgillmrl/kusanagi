@@ -14,7 +14,7 @@ floatX = theano.config.floatX
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
      with Gaussian distributed inputs'''
-    def __init__(self, idims, odims, dropout_samples=25, learn_noise=True,
+    def __init__(self, idims, odims, n_samples=25, learn_noise=True,
                  heteroscedastic=False, name='BNN', profile=False,
                  filename=None, **kwargs):
         self.D = idims
@@ -35,9 +35,9 @@ class BNN(BaseRegressor):
         self.sample_network_fn = None
         self.predict_fn = None
         self.prediction_updates = None
-        samples = np.array(dropout_samples).astype('int32')
-        samples_name = "%s>dropout_samples" % (self.name)
-        self.dropout_samples = theano.shared(samples, name=samples_name)
+        samples = np.array(n_samples).astype('int32')
+        samples_name = "%s>n_samples" % (self.name)
+        self.n_samples = theano.shared(samples, name=samples_name)
         seed = lasagne.random.get_rng().randint(1, 2147462579)
         self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(seed)
 
@@ -75,9 +75,9 @@ class BNN(BaseRegressor):
         self.register(['sn', 'network_params', 'network_spec'])
 
     def load(self, output_folder=None, output_filename=None):
-        dropout_samples = self.dropout_samples.get_value()
+        n_samples = self.n_samples.get_value()
         super(BNN, self).load(output_folder, output_filename)
-        self.dropout_samples.set_value(dropout_samples)
+        self.n_samples.set_value(n_samples)
 
         if self.network_params is None:
             self.network_params = {}
@@ -150,9 +150,9 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
-                                 hidden_dims=[500, 500, 500],
-                                 p=0.1, p_input=0.0,
-                                 nonlinearities=lasagne.nonlinearities.elu,
+                                 hidden_dims=[200, 200],
+                                 p=0.05, p_input=0.0,
+                                 nonlinearities=lasagne.nonlinearities.sigmoid,
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
@@ -167,7 +167,7 @@ class BNN(BaseRegressor):
             p = [p]*len(hidden_dims)
         if not isinstance(nonlinearities, list):
             nonlinearities = [nonlinearities]*len(hidden_dims)
-        n_samples = self.dropout_samples.get_value()
+        n_samples = self.n_samples.get_value()
         network_spec = []
         # input layer
         input_shape = (batchsize, input_dims)
@@ -179,7 +179,7 @@ class BNN(BaseRegressor):
                                  dict(p=p_input,
                                       rescale=False,
                                       name=name+'_drop_input',
-                                      dropout_samples=n_samples)))
+                                      n_samples=n_samples)))
         # hidden layers
         for i in range(len(hidden_dims)):
             network_spec.append((DenseLayer,
@@ -191,7 +191,7 @@ class BNN(BaseRegressor):
                                      dict(p=p[i],
                                           rescale=False,
                                           name=name+'_drop%d' % (i),
-                                          dropout_samples=n_samples)))
+                                          n_samples=n_samples)))
         # output layer
         network_spec.append((DenseLayer,
                              dict(num_units=output_dims,
@@ -325,7 +325,7 @@ class BNN(BaseRegressor):
         self.set_params(dict([(p.name, p) for p in params]))
         return loss, inputs, updates
 
-    def get_regularization_term(self, input_lengthscale, hidden_lengthscale):
+    def get_regularization_term(self, input_lengthscale=1, hidden_lengthscale=1):
         reg = 0
         layers = lasagne.layers.get_all_layers(self.network)
 
@@ -383,7 +383,7 @@ class BNN(BaseRegressor):
             # generate random samples from input (assuming gaussian
             # distributed inputs)
             # standard uniform samples (one sample per network sample)
-            z_std = self.m_rng.normal((self.dropout_samples, self.D))
+            z_std = self.m_rng.normal((self.n_samples, self.D))
 
             # scale and center particles
             Lx = tt.slinalg.cholesky(Sx)
@@ -429,10 +429,10 @@ class BNN(BaseRegressor):
         ''' Updates the dropout masks'''
         if n_samples is not None:
             if isinstance(n_samples, tt.sharedvar.SharedVariable):
-                self.dropout_samples = n_samples
+                self.n_samples = n_samples
                 self.update_fn = None
             else:
-                self.dropout_samples.set_value(n_samples)
+                self.n_samples.set_value(n_samples)
 
             # increase the size of the masks
             updts = self.get_updates()
@@ -444,7 +444,7 @@ class BNN(BaseRegressor):
 
         if not hasattr(self, 'update_fn') or self.update_fn is None:
             # get prediction with non deterministic samples
-            mx = tt.zeros((self.dropout_samples, self.D))
+            mx = tt.zeros((self.n_samples, self.D))
             self.predict_symbolic(mx, iid_per_eval=False)
 
             # create a function to update the masks manually. Here the dropout
@@ -482,3 +482,4 @@ class BNN(BaseRegressor):
                                      input_ls, hidden_ls, lr,
                                      batch_size=batch_size)
         self.trained = True
+
