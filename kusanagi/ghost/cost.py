@@ -54,27 +54,30 @@ def quadratic_loss(mx, Sx, target, Q, *args, **kwargs):
         s_cost = 2*tt.sum(SxQ.dot(SxQ)) + 4*deltaQ.dot(Sx).dot(deltaQ.T)
         return m_cost, s_cost
 
+
 def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
     '''
-        Squashing loss penalty function c(x) = ( 1 - e^(-0.5*quadratic_loss(x, target)) )
+        Squashing loss penalty function
+        c(x) = ( 1 - e^(-0.5*quadratic_loss(x, target)) )
     '''
     if Sx is None:
         if mx.ndim == 1:
             mx = mx[None, :]
-        delta = mx-target[None, :]
+        delta = mx - target[None, :]
         deltaQ = delta.dot(Q)
         cost = 1.0 - tt.exp(-0.5*tt.sum(deltaQ*delta, 1))
         return cost
     else:
         # stochastic case (moment matching)
-        delta = mx-target
+        delta = mx - target
         SxQ = Sx.dot(Q)
-        IpSxQ = tt.eye(mx.shape[0]) + SxQ
-        #S1 = Q.dot(matrix_inverse(IpSxQ))   x = Q dot I^-1; x' = I^-1' dot Q'
+        EyeM = tt.eye(mx.shape[0])
+        IpSxQ = EyeM + SxQ
+        # S1 = Q.dot(matrix_inverse(IpSxQ))   x = Q dot I^-1; x' = I^-1' dot Q'
         S1 = solve(IpSxQ.T, Q.T).T
         m_cost = -tt.exp(-0.5*delta.dot(S1).dot(delta))/tt.sqrt(det(IpSxQ))
-        Ip2SxQ = tt.eye(mx.shape[0]) + 2*SxQ
-        #S2= Q.dot(matrix_inverse(Ip2SxQ))
+        Ip2SxQ = EyeM + 2*SxQ
+        # S2= Q.dot(matrix_inverse(Ip2SxQ))
         S2 = solve(Ip2SxQ.T, Q.T).T
         s_cost = tt.exp(-delta.dot(S2).dot(delta))/tt.sqrt(det(Ip2SxQ)) - m_cost**2
 
