@@ -1,9 +1,10 @@
 import numpy as np
 import theano
 import theano.tensor as tt
-from theano import function as F, shared as S
+from theano import shared as S
 from kusanagi.base.Loadable import Loadable
 from kusanagi import utils
+floatX = theano.config.floatX
 
 
 class BaseRegressor(Loadable):
@@ -101,15 +102,16 @@ class BaseRegressor(Loadable):
     def set_dataset(self, X_dataset, Y_dataset, **kwargs):
         # ensure we don't change the number of input and output dimensions
         # (the number of samples can change)
-        assert X_dataset.shape[0] == Y_dataset.shape[0], "X_dataset and Y_dataset must have the same number of rows"
+        assert X_dataset.shape[0] == Y_dataset.shape[0],\
+               "X_dataset and Y_dataset must have the same number of rows"
         if self.X is not None:
             assert self.X.get_value(borrow=True).shape[1] == X_dataset.shape[1]
         if self.Y is not None:
             assert self.Y.get_value(borrow=True).shape[1] == Y_dataset.shape[1]
 
         # first, convert numpy arrays to appropriate type
-        X_dataset = X_dataset.astype(theano.config.floatX)
-        Y_dataset = Y_dataset.astype(theano.config.floatX)
+        X_dataset = X_dataset.astype(floatX)
+        Y_dataset = Y_dataset.astype(floatX)
 
         # dims
         self.N = X_dataset.shape[0]
@@ -118,79 +120,87 @@ class BaseRegressor(Loadable):
 
         # now we create symbolic shared variables
         if self.X is None:
-            self.X = theano.shared(X_dataset,name='%s>X'%(self.name),borrow=True)
+            self.X = theano.shared(
+                X_dataset, name='%s>X' % (self.name), borrow=True)
         else:
-            self.X.set_value(X_dataset,borrow=True)
+            self.X.set_value(X_dataset, borrow=True)
         if self.Y is None:
-            self.Y = theano.shared(Y_dataset,name='%s>Y'%(self.name),borrow=True)
+            self.Y = theano.shared(
+                Y_dataset, name='%s>Y' % (self.name), borrow=True)
         else:
-            self.Y.set_value(Y_dataset,borrow=True)
+            self.Y.set_value(Y_dataset, borrow=True)
 
-    def append_dataset(self,X_dataset,Y_dataset,**kwargs):
+    def append_dataset(self, X_dataset, Y_dataset, **kwargs):
         if self.X is None:
-            self.set_dataset(X_dataset,Y_dataset,**kwargs)
+            self.set_dataset(X_dataset, Y_dataset, **kwargs)
         else:
-            X_ = np.vstack((self.X.get_value(), X_dataset.astype(theano.config.floatX)))
-            Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(theano.config.floatX)))
-            self.set_dataset(X_,Y_,**kwargs)
+            X_ = np.vstack((self.X.get_value(), X_dataset.astype(floatX)))
+            Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(floatX)))
+            self.set_dataset(X_, Y_, **kwargs)
 
     def get_dataset(self):
         return self.X.get_value(), self.Y.get_value()
-    
-    def init_predict(self, input_covariance=False, batch_predict=False, *args, **kwargs):
-        ''' Compiles a prediction function for the operation specified in self.predict_symbolic'''
+
+    def init_predict(self, input_covariance=False, batch_predict=False,
+                     *args, **kwargs):
+        ''' Compiles a prediction function for the operation specified in
+        self.predict_symbolic'''
         # input variables
         mx = tt.vector('mx')
         Sx = tt.matrix('Sx') if input_covariance else None
-    
-        # initialize variable for input covariance 
-        input_vars = [mx] if not input_covariance else [mx,Sx]
+
+        # initialize variable for input covariance
+        input_vars = [mx] if not input_covariance else [mx, Sx]
 
         # get prediction
-        utils.print_with_stamp('Initialising expression graph for prediction',self.name)
+        utils.print_with_stamp(
+            'Initialising expression graph for prediction', self.name)
         output_vars = self.predict_symbolic(mx, Sx, *args, **kwargs)
-        
+
         # outputs
         if not any([isinstance(output_vars, cl) for cl in [tuple, list]]):
             output_vars = [output_vars]
         prediction = [o for o in output_vars if o is not None]
 
         # compile prediction
-        utils.print_with_stamp('Compiling mean and variance of prediction',self.name)
+        utils.print_with_stamp(
+            'Compiling mean and variance of prediction', self.name)
 
-        fn_name = '%s>predict_ui'%(self.name) if input_covariance else '%s>predict'%(self.name)
-        predict_fn = theano.function(input_vars,prediction,
+        fn_name = ('%s>predict_ui' % (self.name)
+                   if input_covariance else '%s>predict' % (self.name))
+        predict_fn = theano.function(input_vars, prediction,
                                      on_unused_input='ignore',
                                      name=fn_name,
                                      allow_input_downcast=True)
 
-        utils.print_with_stamp('Done compiling',self.name)
+        utils.print_with_stamp('Done compiling', self.name)
 
         return predict_fn
 
     def get_updates(self):
         return theano.updates.OrderedUpdates()
 
-    def predict(self,mx,Sx=None, *args, **kwargs):
+    def predict(self, mx, Sx=None, *args, **kwargs):
         # check if we need to compile the prediction functions
         if Sx is None:
-            if not hasattr(self,'predict_fn') or self.predict_fn is None:
-                self.predict_fn = self.init_predict(input_covariance=False, *args, **kwargs)
-                self.state_changed = True # for saving
+            if not hasattr(self, 'predict_fn') or self.predict_fn is None:
+                self.predict_fn = self.init_predict(
+                    input_covariance=False, *args, **kwargs)
+                self.state_changed = True  # for saving
             predict = self.predict_fn
         else:
-            if not hasattr(self,'predict_ic_fn') or self.predict_ic_fn is None:
-                self.predict_ic_fn = self.init_predict(input_covariance=True, *args, **kwargs)
-                self.state_changed = True # for saving
+            if not hasattr(self, 'predict_ic_fn') or self.predict_ic_fn is None:
+                self.predict_ic_fn = self.init_predict(
+                    input_covariance=True, *args, **kwargs)
+                self.state_changed = True  # for saving
             predict = self.predict_ic_fn
-        
+
         # call the predict function with appropriate inputs
-        input_vars=[mx]
+        input_vars = [mx]
         if len([p for p in predict.input_storage if p.data is None]) == 2:
             if Sx is None:
-                Sx = np.zeros((self.D,self.D))
+                Sx = np.zeros((self.D, self.D))
             input_vars.append(Sx)
-        
+
         res = predict(*input_vars)
         return res
-    
