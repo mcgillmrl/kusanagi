@@ -27,13 +27,13 @@ def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
     xu = tt.concatenate([xa, u], axis=1)
 
     # predict the change in state given current state-control for each particle
-    delta_x = dyn.predict_symbolic(xu, iid_per_eval=iid_per_eval,
-                                   return_samples=True)
+    delta_x, sn_x = dyn.predict_symbolic(xu, iid_per_eval=iid_per_eval,
+                                         return_samples=True)
 
     # compute the successor states
     x_next = x + delta_x
 
-    return x_next
+    return x_next, sn_x
 
 
 def rollout(x0, H, gamma0,
@@ -55,7 +55,7 @@ def rollout(x0, H, gamma0,
             Single step of rollout.
         '''
         # get next state distribution
-        x_next = propagate_particles(x, pol, dyn, D, angle_dims, **kwargs)
+        x_next, sn = propagate_particles(x, pol, dyn, D, angle_dims, **kwargs)
         #  get cost of applying action:
         n = x_next.shape[0]
         n = n.astype(theano.config.floatX)
@@ -63,7 +63,7 @@ def rollout(x0, H, gamma0,
         Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
 
         # with measurement noise
-        sn2 = dyn.sn
+        sn2 = sn.mean(0)**2
         Sx_next_noisy = Sx_next + tt.diag(sn2)
         mc_next = cost(mx_next, Sx_next_noisy)[0]
         c_next = cost(x_next, None)
