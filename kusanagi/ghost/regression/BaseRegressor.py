@@ -138,6 +138,29 @@ class BaseRegressor(Loadable):
             Y_ = np.vstack((self.Y.get_value(), Y_dataset.astype(floatX)))
             self.set_dataset(X_, Y_, **kwargs)
 
+    def update_dataset_statistics(self, X_dataset, Y_dataset):
+        """
+        Computes the mean and standard deviation of the regression dataset
+        inputs and outputs. Useful for standardizing the dataset.
+        """
+        if self.Xm is None:
+            Xm = X_dataset.mean(0).astype(floatX)
+            self.Xm = theano.shared(Xm, name='%s>Xm' % (self.name))
+            Xs = X_dataset.std(0).astype(floatX)
+            self.Xs = theano.shared(Xs, name='%s>Xs' % (self.name))
+        else:
+            self.Xm.set_value(X_dataset.mean(0).astype(floatX))
+            self.Xs.set_value(X_dataset.std(0).astype(floatX))
+
+        if self.Ym is None:
+            Ym = Y_dataset.mean(0).astype(floatX)
+            self.Ym = theano.shared(Ym, name='%s>Ym' % (self.name))
+            Ys = Y_dataset.std(0).astype(floatX)
+            self.Ys = theano.shared(Ys, name='%s>Ys' % (self.name))
+        else:
+            self.Ym.set_value(Y_dataset.mean(0).astype(floatX))
+            self.Ys.set_value(Y_dataset.std(0).astype(floatX))
+
     def get_dataset(self):
         return self.X.get_value(), self.Y.get_value()
 

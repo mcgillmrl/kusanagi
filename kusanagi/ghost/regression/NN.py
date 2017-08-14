@@ -491,3 +491,218 @@ class BNN(BaseRegressor):
         self.trained = True
 
 
+def build_mlp(input_dims,
+              output_dims,
+              batchsize=None,
+              hidden_dims=[200, 200],
+              nonlin=lasagne.nonlinearities.elu,
+              W_init=lasagne.init.GlorotUniform(),
+              b_init=lasagne.init.Constant(0.),
+              output_nonlin=lasagne.nonlinearities.linear,
+              name=None):
+    if name is None:
+        name = 'mlp'
+    if not isinstance(input_dims, list):
+        input_dims = [input_dims]
+    if not isinstance(nonlin, list):
+        nonlin = [nonlin]*len(hidden_dims)
+    if not isinstance(W_init, list):
+        W_init = [W_init]*(len(hidden_dims)+1)
+    if not isinstance(b_init, list):
+        b_init = [b_init]*(len(hidden_dims)+1)
+
+    # input layer
+    net = lasagne.layers.InputLayer(
+        [batchsize, *input_dims], name=name+'_input')
+
+    # hidden layers
+    for i in range(len(hidden_dims)):
+        net = lasagne.layers.DenseLayer(
+            net, hidden_dims[i], W_init[i], b_init[i], nonlin[i],
+            name=name+"_fc%d" % i)
+
+    # output layer
+    net = lasagne.layers.DenseLayer(
+        net, output_dims, W_init[-1], b_init[-1], output_nonlin,
+        name=name+"_output")
+
+    return net
+
+
+def whiten(x, mean, inv_cov):
+    '''
+        Transforms input data to have zero mean, and identity covariance.
+    '''
+    if inv_cov.ndim != 2:
+        return (x - mean)*inv_cov
+    else:
+        return (x - mean).dot(inv_cov)
+
+
+def gaussian_log_likelihood(inputs, targets, 
+                            pred_mean, pred_std=None):
+    ''' Computes the eempirical expected value of the log likelihood,
+    for a gaussian distributed predictions. This assumes diagonal covariances
+    '''
+    delta = pred_mean - targets
+    # note that if we have nois be a 1xD vector, broadcasting
+    # rules apply
+    if pred_std:
+        lml = tt.square(delta/pred_std).sum(-1) + tt.log(pred_std).sum(-1)
+    else:
+        lml = tt.square(delta).sum(-1)
+
+    E_lml = -0.5*lml.mean()
+
+    return E_lml
+
+
+class NormalInit(object):
+    def __init__(self, mean=0, std=1,
+                 init_mean=lasagne.init.GlorotUniform(),
+                 rng=RandomStreams(get_rng().randint(1, 2147462579)),
+                 name='Normal'):
+        self.mean = mean
+        self.std = std
+        self.rng = rng
+        self.init_mean = init_mean
+        self.updates = OrderedDict()
+        self.name = name
+        self.count = 0
+
+    def __call__(self, shape):
+        # create random variable
+        z = theano.shared(
+            floatX(np.random.normal(self.mean, self.std, size=shape)),
+            name='%s_z_%d' % (self.name, self.count))
+        z_updt = self.rng.normal(shape)
+        # we will use this to control exactly when we should draw new samples
+        self.updates[z] = z_updt
+
+        # create params for mean and covariance
+        # mean initialized around 0
+        W_mean = theano.shared(
+            self.init_mean(shape), name='%s_mean_%d' % (self.name, self.count))
+        # variances initialized around 1
+        W_logstd = theano.shared(
+            np.random.normal(1, 0.05, size=shape),
+            name='%s_std_%d' % (self.name, self.count))
+
+        self.count += 1
+
+        return W_mean + tt.nnet.softplus(W_logstd)*z
+
+
+class BBB_NN(BaseRegressor):
+    def __init__(self, idims, odims, network_init=build_mlp, n_samples=25,
+                 learn_noise=True, heteroscedastic=False, name='BNN',
+                 filename=None, **kwargs):
+        self.D = idims
+        self.E = odims
+        utils.print_with_stamp("Initializing network", name)
+        self.network = network_init(
+            W_init=NormalInit(name=self.name+'_W'))
+
+        # number of samples for the monte carlo integration
+        samples = np.array(n_samples).astype('int32')
+        samples_name = "%s>n_samples" % (self.name)
+        self.n_samples = theano.shared(samples, name=samples_name)
+
+        self.learn_noise = learn_noise
+        self.heteroscedastic = heteroscedastic
+        self.name = name
+        self.filename = filename
+
+        # output measurement noise
+        if not heteroscedastic:
+            sn = (np.ones((self.E,))*1e-3).astype(floatX)
+            sn = np.log(np.exp(sn)-1)
+            self.unconstrained_sn = theano.shared(
+                sn, name='%s_sn' % (self.name))
+            # contrained to positive values
+            eps = np.finfo(np.__dict__[floatX]).eps
+            self.sn = tt.nnet.softplus(self.unconstrained_sn) + eps
+
+        # random number generator
+        seed = lasagne.random.get_rng().randint(1, 2147462579)
+        self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(seed)
+
+        # filename for saving
+        fname = '%s_%d_%d_%s_%s' % (self.name, self.D, self.E,
+                                    theano.config.device,
+                                    theano.config.floatX)
+        self.filename = fname if filename is None else filename
+        BaseRegressor.__init__(self, name=name, filename=self.filename)
+        if filename is not None:
+            self.load()
+
+    def set_dataset(self, X_dataset, Y_dataset, **kwargs):
+        # set dataset
+        super(BNN, self).set_dataset(X_dataset.astype(floatX),
+                                     Y_dataset.astype(floatX))
+
+        # extra operations when setting the dataset (specific to this class)
+        self.update_dataset_statistics(X_dataset, Y_dataset)
+
+        if self.learn_noise and not self.heteroscedastic and not self.trained:
+            # default log of measurement noise std is set to 5% of
+            # dataset variation
+            s = (0.05*Y_dataset.std(0)).astype(floatX)
+            s = np.log(np.exp(s, dtype=floatX)-1.0)
+            self.unconstrained_sn.set_value(s)
+
+    def get_loss(self):
+        ''' initializes the loss function for training '''
+        # build the network
+        utils.print_with_stamp('Initialising loss function', self.name)
+
+        # Input variables
+        input_lengthscale = tt.scalar('%s>input_lengthscale' % (self.name))
+        hidden_lengthscale = tt.scalar('%s>hidden_lengthscale' % (self.name))
+        train_inputs = tt.matrix('%s>train_inputs' % (self.name))
+        train_targets = tt.matrix('%s>train_targets' % (self.name))
+
+        # standardize network inputs and outputs
+        train_inputs_std = (train_inputs - self.Xm)/self.Xs
+        train_targets_std = (train_targets - self.Ym)/self.Ys
+
+        # evaluate nework output for batch
+        if self.heteroscedastic:
+            # this assumes that self.sn is obtained from the network output
+            train_predictions, sn = lasagne.layers.get_output(
+                [self.network], train_inputs_std)
+        else:
+            train_predictions = lasagne.layers.get_output(
+                self.network, train_inputs_std, deterministic=False)
+            sn = self.sn
+
+        # scale sn since output network output is standardized
+        sn_std = sn/self.Ys
+
+        # build the dropout loss function ( See Gal and Ghahramani 2015)
+        deltay = train_predictions-train_targets_std
+        N, E = train_targets.shape
+        N = N.astype(theano.config.floatX)
+        E = E.astype(theano.config.floatX)
+
+        # compute negative log likelihood
+        # note that if we have sn_std be a 1xD vector, broadcasting
+        # rules apply
+        nlml = tt.square(deltay/sn_std).sum(-1) + tt.log(sn_std).sum(-1)
+        loss = 0.5*nlml.mean()
+
+        # compute regularization term
+        loss += self.get_regularization_term(input_lengthscale,
+                                             hidden_lengthscale)/N
+
+        inputs = [train_inputs, train_targets,
+                  input_lengthscale, hidden_lengthscale]
+        updates = {}
+
+        # get trainable network parameters
+        params = lasagne.layers.get_all_params(self.network, trainable=True)
+        # if we are learning the noise
+        if self.learn_noise and not self.heteroscedastic:
+            params.append(self.unconstrained_sn)
+        self.set_params(dict([(p.name, p) for p in params]))
+        return loss, inputs, updates

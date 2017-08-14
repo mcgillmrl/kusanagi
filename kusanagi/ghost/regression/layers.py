@@ -46,7 +46,7 @@ class DropoutLayer(lasagne.layers.noise.DropoutLayer):
             retain_prob = one - self.p
             if self.rescale:
                 input /= retain_prob
-            
+
             # use nonsymbolic shape for dropout mask if possible
             mask_shape = self.input_shape
             if any(s is None for s in mask_shape):
@@ -63,7 +63,7 @@ class DropoutLayer(lasagne.layers.noise.DropoutLayer):
             if self.shared_axes:
                 bcast = tuple(bool(s == 1) for s in mask_shape)
                 mask = tt.patternbroadcast(mask, bcast)
-            
+
             if self.mask is not None and fixed_dropout_masks:
                 # the user may update the shared mask value however they want,
                 # but here we provide an update expression. note that if the
