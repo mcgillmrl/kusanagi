@@ -504,8 +504,9 @@ def build_mlp(input_dims,
         b_init = [b_init]*(len(hidden_dims)+1)
 
     # input layer
+    input_dims = [batchsize] + input_dims
     net = lasagne.layers.InputLayer(
-        [batchsize, *input_dims], name=name+'_input')
+        input_dims, name=name+'_input')
 
     # hidden layers
     for i in range(len(hidden_dims)):
