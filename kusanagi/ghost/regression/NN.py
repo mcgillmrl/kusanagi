@@ -19,8 +19,8 @@ floatX = theano.config.floatX
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
      with Gaussian distributed inputs'''
-    def __init__(self, idims, odims, n_samples=25, learn_noise=True,
-                 heteroscedastic=False, name='BNN',
+    def __init__(self, idims, odims, n_samples=25,
+                 heteroscedastic=True, name='BNN',
                  filename=None, **kwargs):
         self.D = idims
         self.E = odims
@@ -55,7 +55,6 @@ class BNN(BaseRegressor):
         self.Ym = None
         self.Ys = None
 
-        self.learn_noise = learn_noise
         self.heteroscedastic = heteroscedastic
 
         # filename for saving
@@ -118,7 +117,7 @@ class BNN(BaseRegressor):
         # extra operations when setting the dataset (specific to this class)
         self.update_dataset_statistics(X_dataset, Y_dataset)
 
-        if self.learn_noise and not self.trained:
+        if not self.trained:
             # default log of measurement noise variance is set to 2.5% of
             # dataset variation
             s = (0.05*Y_dataset.std(0)).astype(floatX)
@@ -284,17 +283,10 @@ class BNN(BaseRegressor):
         train_targets = tt.matrix('%s>train_targets' % (self.name))
 
         # evaluate nework output for batch
-        output = self.predict_symbolic(
+        train_predictions, sn = self.predict_symbolic(
             train_inputs, None, deterministic=False,
             iid_per_eval=True, return_samples=True,
             with_measurement_noise=True)
-        if self.heteroscedastic:
-            # this assumes that self.sn is obtained from the network output
-            train_predictions = output[:, :self.E]
-            sn = output[:, self.E:]
-        else:
-            train_predictions = output
-            sn = self.sn
 
         # build the dropout loss function ( See Gal and Ghahramani 2015)
         deltay = train_predictions - train_targets
@@ -319,7 +311,7 @@ class BNN(BaseRegressor):
         # get trainable network parameters
         params = lasagne.layers.get_all_params(self.network, trainable=True)
         # if we are learning the noise
-        if self.learn_noise and not self.heteroscedastic:
+        if not self.heteroscedastic:
             params.append(self.unconstrained_sn)
         self.set_params(dict([(p.name, p) for p in params]))
         return loss, inputs, updates
@@ -402,7 +394,7 @@ class BNN(BaseRegressor):
         y = ret[:, :self.E]
         sn = (tt.nnet.softplus(ret[:, self.E:])
               if self.heteroscedastic
-              else tt.tile(self.sn, (self.E, 1, 1)))
+              else tt.tile(self.sn, (y.shape[0], 1)))
 
         if hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
@@ -413,7 +405,7 @@ class BNN(BaseRegressor):
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
             # nothing else to do!
-            return tt.concatenate([y, sn], axis=1)
+            return y, sn
 
         n = tt.cast(y.shape[0], dtype=theano.config.floatX)
         # empirical mean
@@ -464,7 +456,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-4,
+              input_ls=None, hidden_ls=None, lr=1e-3,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
@@ -595,7 +587,7 @@ class NormalInit(object):
 
 class BBB_NN(BaseRegressor):
     def __init__(self, idims, odims, network_init=build_mlp, n_samples=25,
-                 learn_noise=True, heteroscedastic=False, name='BNN',
+                 heteroscedastic=False, name='BNN',
                  filename=None, **kwargs):
         self.D = idims
         self.E = odims
@@ -608,13 +600,12 @@ class BBB_NN(BaseRegressor):
         samples_name = "%s>n_samples" % (self.name)
         self.n_samples = theano.shared(samples, name=samples_name)
 
-        self.learn_noise = learn_noise
         self.heteroscedastic = heteroscedastic
         self.name = name
         self.filename = filename
 
         # output measurement noise
-        if not heteroscedastic:
+        if not self.heteroscedastic:
             sn = (np.ones((self.E,))*1e-3).astype(floatX)
             sn = np.log(np.exp(sn)-1)
             self.unconstrained_sn = theano.shared(
@@ -644,7 +635,7 @@ class BBB_NN(BaseRegressor):
         # extra operations when setting the dataset (specific to this class)
         self.update_dataset_statistics(X_dataset, Y_dataset)
 
-        if self.learn_noise and not self.heteroscedastic and not self.trained:
+        if not self.heteroscedastic and not self.trained:
             # default log of measurement noise std is set to 5% of
             # dataset variation
             s = (0.05*Y_dataset.std(0)).astype(floatX)
@@ -702,7 +693,7 @@ class BBB_NN(BaseRegressor):
         # get trainable network parameters
         params = lasagne.layers.get_all_params(self.network, trainable=True)
         # if we are learning the noise
-        if self.learn_noise and not self.heteroscedastic:
+        if not self.heteroscedastic:
             params.append(self.unconstrained_sn)
         self.set_params(dict([(p.name, p) for p in params]))
         return loss, inputs, updates
