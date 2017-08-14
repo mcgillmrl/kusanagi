@@ -4,6 +4,11 @@ import theano.tensor as tt
 import lasagne
 import numpy as np
 import kusanagi
+
+from collections import OrderedDict
+from lasagne.random import get_rng
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
+
 from kusanagi import utils
 from kusanagi.ghost.optimizers import SGDOptimizer
 from kusanagi.ghost.regression import BaseRegressor
@@ -33,11 +38,15 @@ class BNN(BaseRegressor):
         self.network_spec = None
         self.network_params = None
 
+        sn = (np.ones((self.E,))*1e-3).astype(floatX)
+        sn = np.log(np.exp(sn)-1)
+        self.unconstrained_sn = theano.shared(sn, name='%s_sn' % (self.name))
+        eps = np.finfo(np.__dict__[floatX]).eps
+        self.sn = tt.nnet.softplus(self.unconstrained_sn) + eps
         samples = np.array(n_samples).astype('int32')
         samples_name = "%s>n_samples" % (self.name)
         self.n_samples = theano.shared(samples, name=samples_name)
-        seed = lasagne.random.get_rng().randint(1, 2147462579)
-        self.m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(seed)
+        self.m_rng = RandomStreams(get_rng().randint(1, 2147462579))
 
         self.X = None
         self.Y = None
@@ -59,7 +68,7 @@ class BNN(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1000
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 20000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -147,7 +156,7 @@ class BNN(BaseRegressor):
                                  output_dims=None,
                                  hidden_dims=[200, 200],
                                  p=0.05, p_input=0.0,
-                                 nonlinearities=lasagne.nonlinearities.sigmoid,
+                                 nonlinearities=lasagne.nonlinearities.elu,
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
@@ -157,7 +166,7 @@ class BNN(BaseRegressor):
         if input_dims is None:
             input_dims = self.D
         if output_dims is None:
-            output_dims = self.E
+            output_dims = 2*self.E if self.heteroscedastic else self.E
         if not isinstance(p, list):
             p = [p]*len(hidden_dims)
         if not isinstance(nonlinearities, list):
@@ -274,26 +283,21 @@ class BNN(BaseRegressor):
         train_inputs = tt.matrix('%s>train_inputs' % (self.name))
         train_targets = tt.matrix('%s>train_targets' % (self.name))
 
-        # standardize network inputs and outputs
-        train_inputs_std = (train_inputs - self.Xm)/self.Xs
-        train_targets_std = (train_targets - self.Ym)/self.Ys
-
         # evaluate nework output for batch
+        output = self.predict_symbolic(
+            train_inputs, None, deterministic=False,
+            iid_per_eval=True, return_samples=True,
+            with_measurement_noise=True)
         if self.heteroscedastic:
             # this assumes that self.sn is obtained from the network output
-            train_predictions, sn = lasagne.layers.get_output(
-                [self.network], train_inputs_std,
-                deterministic=False)
+            train_predictions = output[:, :self.E]
+            sn = output[:, self.E:]
         else:
-            train_predictions = lasagne.layers.get_output(
-                self.network, train_inputs_std, deterministic=False)
+            train_predictions = output
             sn = self.sn
 
-        # scale sn since output network output is standardized
-        sn_std = sn/self.Ys
-
         # build the dropout loss function ( See Gal and Ghahramani 2015)
-        deltay = train_predictions-train_targets_std
+        deltay = train_predictions - train_targets
         N, E = train_targets.shape
         N = N.astype(theano.config.floatX)
         E = E.astype(theano.config.floatX)
@@ -301,8 +305,8 @@ class BNN(BaseRegressor):
         # compute negative log likelihood
         # note that if we have sn_std be a 1xD vector, broadcasting
         # rules apply
-        nlml = tt.square(deltay/sn_std).sum(-1) + tt.log(sn_std).sum(-1)
-        loss = 0.5*nlml.mean()
+        nlml = 0.5*tt.square(deltay/sn).sum(-1) + 2*tt.log(sn).sum(-1)
+        loss = nlml.mean()
 
         # compute regularization term
         loss += self.get_regularization_term(input_lengthscale,
@@ -320,7 +324,8 @@ class BNN(BaseRegressor):
         self.set_params(dict([(p.name, p) for p in params]))
         return loss, inputs, updates
 
-    def get_regularization_term(self, input_lengthscale=1, hidden_lengthscale=1):
+    def get_regularization_term(self, input_lengthscale=1,
+                                hidden_lengthscale=1):
         reg = 0
         layers = lasagne.layers.get_all_layers(self.network)
 
@@ -391,26 +396,33 @@ class BNN(BaseRegressor):
             x = (x - self.Xm)/self.Xs
         # unless we set the shared_axes parameter on the droput layers,
         # the dropout masks should be different per sample
-        y = lasagne.layers.get_output(self.network, x,
-                                      deterministic=deterministic,
-                                      fixed_dropout_masks=not iid_per_eval)
+        ret = lasagne.layers.get_output(self.network, x,
+                                        deterministic=deterministic,
+                                        fixed_dropout_masks=not iid_per_eval)
+        y = ret[:, :self.E]
+        sn = (tt.nnet.softplus(ret[:, self.E:])
+              if self.heteroscedastic
+              else tt.tile(self.sn, (self.E, 1, 1)))
 
         if hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
             y = y*self.Ys + self.Ym
+            # rescale noise variance
+            sn = sn*self.Ys
+
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
             # nothing else to do!
-            return y
+            return tt.concatenate([y, sn], axis=1)
 
         n = tt.cast(y.shape[0], dtype=theano.config.floatX)
         # empirical mean
         M = y.mean(axis=0)
-        # empirical covariance TODO emprical mean of sn for heteroscedastic
-        # noise
+        # empirical covariance
         S = y.T.dot(y)/n - tt.outer(M, M)
+        # noise
         if with_measurement_noise:
-            S += tt.diag(self.sn**2)
+            S += tt.diag(sn.mean(axis=0)**2)
 
         # empirical input output covariance
         if Sx is not None:
@@ -452,7 +464,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-3,
+              input_ls=None, hidden_ls=None, lr=1e-4,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
@@ -477,4 +489,5 @@ class BNN(BaseRegressor):
                                      input_ls, hidden_ls, lr,
                                      batch_size=batch_size)
         self.trained = True
+
 
