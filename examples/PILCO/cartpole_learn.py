@@ -1,6 +1,6 @@
 '''
 Example of how to use the library for learning using the PILCO learner 
-on the cartpole task
+on the cartpole tas
 '''
 # pylint: disable=C0103
 import os
@@ -32,7 +32,7 @@ if __name__ == '__main__':
     params = cartpole.default_params()
     n_rnd = 2                           # number of random initial trials
     n_opt = 100                         # learning iterations
-    H = 26  # params['max_steps']
+    H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
 
@@ -108,7 +108,7 @@ if __name__ == '__main__':
         if polopt.loss_fn is None or dyn.should_recompile:
             if use_bnn_dyn:
                 # build loss function
-                n_samples = 50
+                n_samples = 40
                 loss, inps, updts = mc_pilco.get_loss(
                     pol, dyn, cost, D, angle_dims, n_samples=n_samples,
                     resample_particles=True, truncate_gradient=-1)
@@ -126,7 +126,7 @@ if __name__ == '__main__':
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
         if use_bnn_dyn:
-            polopt.minimize(m0, S0, H, gamma, 1e-3,
+            polopt.minimize(m0, S0, H, gamma, 5e-4,
                             callback=polopt_cb)
         else:
             polopt.minimize(m0, S0, H, gamma,

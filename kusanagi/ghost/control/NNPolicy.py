@@ -3,7 +3,7 @@ import numpy as np
 import theano
 
 from kusanagi.ghost.regression import BNN
-from kusanagi.ghost.control.saturation import gSat as sat
+from kusanagi.ghost.control.saturation import tanhSat as sat
 from functools import partial
 
 
@@ -39,9 +39,9 @@ class NNPolicy(BNN):
             self.network_spec = self.get_default_network_spec(
                 input_dims=self.D,
                 output_dims=self.E,
-                hidden_dims=[50]*4,
+                hidden_dims=[20]*4,
                 nonlinearities=lasagne.nonlinearities.elu,
-                p=0.1, name=self.name)
+                p=0.5, name=self.name)
 
         if self.network is None:
             params = self.network_params\

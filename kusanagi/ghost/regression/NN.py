@@ -16,6 +16,24 @@ from kusanagi.ghost.regression import BaseRegressor
 floatX = theano.config.floatX
 
 
+def gaussian_log_likelihood(inputs, targets, 
+                            pred_mean, pred_std=None):
+    ''' Computes the eempirical expected value of the log likelihood,
+    for a gaussian distributed predictions. This assumes diagonal covariances
+    '''
+    delta = pred_mean - targets
+    # note that if we have nois be a 1xD vector, broadcasting
+    # rules apply
+    if pred_std:
+        lml = tt.square(delta/pred_std).sum(-1) + tt.log(pred_std).sum(-1)
+    else:
+        lml = tt.square(delta).sum(-1)
+
+    E_lml = -0.5*lml.mean()
+
+    return E_lml
+
+
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
      with Gaussian distributed inputs'''
@@ -153,9 +171,11 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
-                                 hidden_dims=[500]*3,
-                                 p=0.1, p_input=0.0,
+                                 hidden_dims=[400]*2,
+                                 p=0.5, p_input=0.0,
                                  nonlinearities=lasagne.nonlinearities.elu,
+                                 W_init=lasagne.init.GlorotUniform(),
+                                 b_init=lasagne.init.Constant(0.),
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
@@ -170,6 +190,10 @@ class BNN(BaseRegressor):
             p = [p]*len(hidden_dims)
         if not isinstance(nonlinearities, list):
             nonlinearities = [nonlinearities]*len(hidden_dims)
+        if not isinstance(W_init, list):
+            W_init = [W_init]*(len(hidden_dims)+1)
+        if not isinstance(b_init, list):
+            b_init = [b_init]*(len(hidden_dims)+1)
         n_samples = self.n_samples.get_value()
         network_spec = []
         # input layer
@@ -188,6 +212,8 @@ class BNN(BaseRegressor):
             network_spec.append((DenseLayer,
                                  dict(num_units=hidden_dims[i],
                                       nonlinearity=nonlinearities[i],
+                                      W=W_init[i],
+                                      b=b_init[i],
                                       name=name+'_fc%d' % (i))))
             if p[i] > 0:
                 network_spec.append((DropoutLayer,
@@ -199,6 +225,8 @@ class BNN(BaseRegressor):
         network_spec.append((DenseLayer,
                              dict(num_units=output_dims,
                                   nonlinearity=linear,
+                                  W=W_init[-1],
+                                  b=b_init[-1],
                                   name=name+'_output')))
 
         return network_spec
@@ -301,8 +329,8 @@ class BNN(BaseRegressor):
         loss = nlml.mean()
 
         # compute regularization term
-        loss += self.get_regularization_term(input_lengthscale,
-                                             hidden_lengthscale)/N
+        loss += self.get_regularization_term(
+            input_lengthscale, hidden_lengthscale)/self.X.shape[0]
 
         inputs = [train_inputs, train_targets,
                   input_lengthscale, hidden_lengthscale]
@@ -322,7 +350,7 @@ class BNN(BaseRegressor):
         layers = lasagne.layers.get_all_layers(self.network)
 
         for i in range(1, len(layers)):
-            reg_weight = 1/2.0
+            reg_weight = 0.5
             # apply different regularization weigths to the input,
             # and the hidden dimension
             is_dropout = isinstance(layers[i-1],
@@ -346,7 +374,7 @@ class BNN(BaseRegressor):
                         reg_weight *= (1-p)
                 reg += reg_weight*lasagne.regularization.l2(layers[i].W)
 
-            if hasattr(layers[i], 'b'):
+            if hasattr(layers[i], 'b') and layers[i].b is not None:
                 reg += reg_weight*lasagne.regularization.l2(layers[i].b)
 
         return reg
@@ -530,24 +558,6 @@ def whiten(x, mean, inv_cov):
         return (x - mean)*inv_cov
     else:
         return (x - mean).dot(inv_cov)
-
-
-def gaussian_log_likelihood(inputs, targets, 
-                            pred_mean, pred_std=None):
-    ''' Computes the eempirical expected value of the log likelihood,
-    for a gaussian distributed predictions. This assumes diagonal covariances
-    '''
-    delta = pred_mean - targets
-    # note that if we have nois be a 1xD vector, broadcasting
-    # rules apply
-    if pred_std:
-        lml = tt.square(delta/pred_std).sum(-1) + tt.log(pred_std).sum(-1)
-    else:
-        lml = tt.square(delta).sum(-1)
-
-    E_lml = -0.5*lml.mean()
-
-    return E_lml
 
 
 class NormalInit(object):
