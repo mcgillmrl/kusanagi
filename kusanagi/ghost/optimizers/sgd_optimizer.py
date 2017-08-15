@@ -48,7 +48,8 @@ class SGDOptimizer(object):
         self.__min_method = min_method.lower()
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      clip=None, monitor=False, trust_input=True, **kwargs):
+                      polyak_averaging=0.5, clip=None, trust_input=True,
+                      **kwargs):
         '''
             Changes the objective function to be optimized
             @param loss theano graph representing the loss to be optimized
@@ -92,27 +93,34 @@ class SGDOptimizer(object):
                                        givens=givens_dict)
         self.loss_fn.trust_input = trust_input
 
-        mode = None
-        if monitor:
-            def monitor_inputs_cb(i, node, fn):
-                print(i, node, end='')
-
-            def monitor_outputs_cb(i, node, fn):
-                print(i, node)
-            mode = theano.compile.MonitorMode(
-                pre_func=monitor_inputs_cb,
-                post_func=monitor_outputs_cb)
-
         utils.print_with_stamp("Compiling parameter updates", self.name)
+
+        outputs = [loss]+grads
+        updates = grad_updates+updts
+        if polyak_averaging and polyak_averaging > 0.0:
+            params_polyak = [theano.shared(p.get_value(borrow=False),
+                                           name=p.name+'_copy')
+                             for p in params]
+            loss_polyak = theano.clone(
+                loss, replace=dict(zip(params, params_polyak)), strict=False)
+
+            for p, pp in zip(params, params_polyak):
+                updates[pp] = (pp - polyak_averaging*(pp - updates[p]))
+
+            outputs[0] = loss_polyak
+            self.params_polyak = params_polyak
+        else:
+            if hasattr(self, 'params_polyak'):
+                delattr(self, 'params_polyak')
+
         self.update_params_fn = theano.function(
-            [], [loss]+grads,
-            updates=grad_updates+updts,
+            [], outputs,
+            updates=updates,
             on_unused_input='ignore',
             allow_input_downcast=True,
-            givens=givens_dict,
-            mode=mode)
+            givens=givens_dict)
         self.update_params_fn.trust_input = trust_input
-        
+
         self.n_evals = 0
         self.start_time = 0
         self.iter_time = 0
@@ -139,6 +147,9 @@ class SGDOptimizer(object):
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value(return_internal_type=True, borrow=False)
              for p in self.params]
+        if hasattr(self, 'params_polyak'):
+            for p, pp in zip(self.params, self.params_polyak):
+                pp.set_value(p.get_value(borrow=False))
         self.best_p = [loss0, p, 0]
 
         # go through the dataset
@@ -148,9 +159,13 @@ class SGDOptimizer(object):
             should_exit = False
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
+                start_time = time.time()
                 # get previous params
+                params = (self.params
+                          if not hasattr(self, 'params_polyak')
+                          else self.params)
                 p = [p.get_value(return_internal_type=True, borrow=False)
-                     for p in self.params]
+                     for p in params]
 
                 # mini batch update
                 self.shared_inpts[0].set_value(x)
@@ -179,7 +194,13 @@ class SGDOptimizer(object):
                 utils.print_with_stamp(out_str % str_params, self.name, True)
             if should_exit:
                 break
-        print('')
+
+        v, p, i = self.best_p
+        for sp_i, p_i in zip(self.params, p):
+            sp_i.set_value(p_i)
+        v = self.loss_fn()
+        msg = 'Done training. New loss [%f] iter: [%d]'
+        utils.print_with_stamp(msg % (v, i), self.name)
 
     def minimize(self, *inputs, **kwargs):
         '''
@@ -201,19 +222,28 @@ class SGDOptimizer(object):
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value(return_internal_type=True, borrow=False)
              for p in self.params]
+        if hasattr(self, 'params_polyak'):
+            for p, pp in zip(self.params, self.params_polyak):
+                pp.set_value(p.get_value(borrow=False))
         self.best_p = [loss0, p, 0]
 
         # training loop
         for i in range(self.max_evals):
-            # evaluate current policy and update parameters
             start_time = time.time()
+
+            # get previous params
+            params = (self.params
+                      if not hasattr(self, 'params_polyak')
+                      else self.params)
+            p = [p.get_value(return_internal_type=True, borrow=False)
+                 for p in params]
+
+            # evaluate current policy and update parameters
             ret = self.update_params_fn()
             # the returned loss corresponds to the parameters BEFORE the update
             loss, dloss = ret[0], ret[1:]
 
             if loss < self.best_p[0]:
-                p = [p.get_value(return_internal_type=True, borrow=False)
-                     for p in self.params]
                 self.best_p = [loss, p, i]
             if callable(callback):
                 callback(loss, dloss)
