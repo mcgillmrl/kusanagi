@@ -55,7 +55,7 @@ class NNPolicy(BNN):
         ret = super(NNPolicy, self).predict_symbolic(mx, Sx, **kwargs)
 
         if Sx is None:
-            if isinstance(ret, list):
+            if isinstance(ret, list) or isinstance(ret, tuple):
                 ret = ret[0]
             M = ret
             if self.sat_func is not None:
@@ -79,7 +79,6 @@ class NNPolicy(BNN):
             kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
 
             ret = self.predict_symbolic(m, s, **kwargs)
-            theano.printing.Print('ret')(ret)
         else:
             ret = self.predict(m, s)
         return ret
