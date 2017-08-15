@@ -3,7 +3,7 @@ import numpy as np
 import theano
 
 from kusanagi.ghost.regression import BNN
-from kusanagi.ghost.control.saturation import tanhSat as sat
+from kusanagi.ghost.control.saturation import gSat as sat
 from functools import partial
 
 
@@ -39,7 +39,7 @@ class NNPolicy(BNN):
             self.network_spec = self.get_default_network_spec(
                 input_dims=self.D,
                 output_dims=self.E,
-                hidden_dims=[200]*2,
+                hidden_dims=[50]*4,
                 nonlinearities=lasagne.nonlinearities.elu,
                 p=0.1, name=self.name)
 
@@ -76,6 +76,8 @@ class NNPolicy(BNN):
         # by default, sample internal params (e.g. dropout masks)
         # at every evaluation
         kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
+        kwargs['return_samples'] = kwargs.get('return_samples', True)
+        kwargs['deterministic'] = kwargs.get('deterministic', False)
         if symbolic:
             ret = self.predict_symbolic(m, s, **kwargs)
         else:

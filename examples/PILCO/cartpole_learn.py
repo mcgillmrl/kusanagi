@@ -108,14 +108,10 @@ if __name__ == '__main__':
         if polopt.loss_fn is None or dyn.should_recompile:
             if use_bnn_dyn:
                 # build loss function
-                n_samples = 20
+                n_samples = 50
                 loss, inps, updts = mc_pilco.get_loss(
                     pol, dyn, cost, D, angle_dims, n_samples=n_samples,
                     resample_particles=True, truncate_gradient=-1)
-
-                #if hasattr(pol, 'get_regularization_term'):
-                    # this adds the KL penalty for Bayesian neura nets
-                    #loss += 1e-7*pol.get_regularization_term()
 
                 # set objective of policy optimizer
                 lr = theano.tensor.scalar('lr')

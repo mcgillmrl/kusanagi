@@ -6,6 +6,7 @@ double_cartpole task
 import os
 import sys
 import numpy as np
+import theano
 
 from kusanagi.ghost import control
 from kusanagi.ghost import regression
@@ -20,8 +21,8 @@ from functools import partial
 np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
-    use_bnn_dyn = False
-    use_bnn_pol = False
+    use_bnn_dyn = True
+    use_bnn_pol = True
 
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(),
@@ -93,7 +94,8 @@ if __name__ == '__main__':
         utils.print_with_stamp(msg % (i+1, total_exp))
 
         # train dynamics model
-        train_dynamics(dyn, exp, angle_dims=angle_dims)
+        train_dynamics(dyn, exp, angle_dims=angle_dims,
+                       init_episode=max(0, i-10))
 
         # initial state distribution
         x0 = np.array([st[0] for st in exp.states])
@@ -104,23 +106,26 @@ if __name__ == '__main__':
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             if use_bnn_dyn:
-                import theano
-                lr = theano.tensor.scalar('lr')
+                # build loss function
+                n_samples = 50
                 loss, inps, updts = mc_pilco.get_loss(
-                    pol, dyn, cost, D, angle_dims, n_samples=40,
+                    pol, dyn, cost, D, angle_dims, n_samples=n_samples,
                     resample_particles=True, truncate_gradient=-1)
 
+                # set objective of policy optimizer
+                lr = theano.tensor.scalar('lr')
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
-                                     inps+[lr], updts, clip=1.0,
-                                     learning_rate=lr)
+                                     inps+[lr], updts, learning_rate=lr)
             else:
+                # build loss function
                 loss, inps, updts = pilco.get_loss(
                     pol, dyn, cost, D, angle_dims)
 
+                # set objective of policy optimizer
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
         if use_bnn_dyn:
-            polopt.minimize(m0, S0, H, gamma, 2e-4*(1/(1 + 0.25*i)),
+            polopt.minimize(m0, S0, H, gamma, 1e-3,
                             callback=polopt_cb)
         else:
             polopt.minimize(m0, S0, H, gamma,
