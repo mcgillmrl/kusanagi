@@ -24,13 +24,13 @@ np.set_printoptions(linewidth=500)
 
 if __name__ == '__main__':
     use_bnn_dyn = True
-    use_bnn_pol = False
+    use_bnn_pol = True
 
     # setup output directory
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
     params = cartpole.default_params()
-    n_rnd = 1                           # number of random initial trials
+    n_rnd = 2                           # number of random initial trials
     n_opt = 100                         # learning iterations
     H = 26  # params['max_steps']
     gamma = params['discount']
@@ -108,14 +108,14 @@ if __name__ == '__main__':
         if polopt.loss_fn is None or dyn.should_recompile:
             if use_bnn_dyn:
                 # build loss function
-                n_samples = 40
+                n_samples = 20
                 loss, inps, updts = mc_pilco.get_loss(
                     pol, dyn, cost, D, angle_dims, n_samples=n_samples,
                     resample_particles=True, truncate_gradient=-1)
 
-                if hasattr(pol, 'get_regularization_term'):
+                #if hasattr(pol, 'get_regularization_term'):
                     # this adds the KL penalty for Bayesian neura nets
-                    loss += 1e-7*pol.get_regularization_term()
+                    #loss += 1e-7*pol.get_regularization_term()
 
                 # set objective of policy optimizer
                 lr = theano.tensor.scalar('lr')
@@ -130,7 +130,7 @@ if __name__ == '__main__':
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
         if use_bnn_dyn:
-            polopt.minimize(m0, S0, H, gamma, 1e-2,
+            polopt.minimize(m0, S0, H, gamma, 1e-3,
                             callback=polopt_cb)
         else:
             polopt.minimize(m0, S0, H, gamma,

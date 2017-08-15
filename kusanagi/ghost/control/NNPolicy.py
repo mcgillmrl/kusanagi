@@ -39,9 +39,9 @@ class NNPolicy(BNN):
             self.network_spec = self.get_default_network_spec(
                 input_dims=self.D,
                 output_dims=self.E,
-                hidden_dims=[200],
-                nonlinearities=lasagne.nonlinearities.sigmoid,
-                p=0.05, name=self.name)
+                hidden_dims=[200]*2,
+                nonlinearities=lasagne.nonlinearities.elu,
+                p=0.1, name=self.name)
 
         if self.network is None:
             params = self.network_params\
@@ -73,11 +73,10 @@ class NNPolicy(BNN):
             return M, S, V
 
     def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
+        # by default, sample internal params (e.g. dropout masks)
+        # at every evaluation
+        kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
         if symbolic:
-            # by default, sample internal params (e.g. dropout masks)
-            # at every evaluation
-            kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
-
             ret = self.predict_symbolic(m, s, **kwargs)
         else:
             ret = self.predict(m, s)

@@ -153,8 +153,8 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
-                                 hidden_dims=[200, 200],
-                                 p=0.05, p_input=0.0,
+                                 hidden_dims=[400, 400],
+                                 p=0.1, p_input=0.0,
                                  nonlinearities=lasagne.nonlinearities.elu,
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
