@@ -172,7 +172,7 @@ class BNN(BaseRegressor):
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
                                  hidden_dims=[400]*2,
-                                 p=0.5, p_input=0.0,
+                                 p=0.1, p_input=0.0,
                                  nonlinearities=lasagne.nonlinearities.elu,
                                  W_init=lasagne.init.GlorotUniform(),
                                  b_init=lasagne.init.Constant(0.),
@@ -318,19 +318,21 @@ class BNN(BaseRegressor):
 
         # build the dropout loss function ( See Gal and Ghahramani 2015)
         deltay = train_predictions - train_targets
-        N, E = train_targets.shape
-        N = N.astype(theano.config.floatX)
+        M, E = train_targets.shape
+        N = self.X.shape[0]
+        N = M.astype(theano.config.floatX)
+        M = M.astype(theano.config.floatX)
         E = E.astype(theano.config.floatX)
 
         # compute negative log likelihood
         # note that if we have sn_std be a 1xD vector, broadcasting
         # rules apply
-        nlml = 0.5*tt.square(deltay/sn).sum(-1) + 2*tt.log(sn).sum(-1)
-        loss = nlml.mean()
+        nlml = 0.5*tt.square(deltay/sn).sum(-1) + tt.log(sn).sum(-1)
+        loss = nlml.sum()
 
         # compute regularization term
         loss += self.get_regularization_term(
-            input_lengthscale, hidden_lengthscale)/self.X.shape[0]
+            input_lengthscale, hidden_lengthscale)*M/N
 
         inputs = [train_inputs, train_targets,
                   input_lengthscale, hidden_lengthscale]
@@ -484,7 +486,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-3,
+              input_ls=None, hidden_ls=None, lr=2e-3,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
