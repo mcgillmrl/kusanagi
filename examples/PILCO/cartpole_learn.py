@@ -30,7 +30,7 @@ if __name__ == '__main__':
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
     params = cartpole.default_params()
-    n_rnd = 2                           # number of random initial trials
+    n_rnd = 4                           # number of random initial trials
     n_opt = 100                         # learning iterations
     H = params['max_steps']
     gamma = params['discount']
@@ -108,7 +108,7 @@ if __name__ == '__main__':
         if polopt.loss_fn is None or dyn.should_recompile:
             if use_bnn_dyn:
                 # build loss function
-                n_samples = 40
+                n_samples = 50
                 loss, inps, updts = mc_pilco.get_loss(
                     pol, dyn, cost, D, angle_dims, n_samples=n_samples,
                     resample_particles=True, truncate_gradient=-1)
@@ -126,7 +126,7 @@ if __name__ == '__main__':
                 polopt.set_objective(loss, pol.get_params(symbolic=True),
                                      inps, updts)
         if use_bnn_dyn:
-            polopt.minimize(m0, S0, H, gamma, 5e-4,
+            polopt.minimize(m0, S0, H, gamma, 1e-4,
                             callback=polopt_cb)
         else:
             polopt.minimize(m0, S0, H, gamma,

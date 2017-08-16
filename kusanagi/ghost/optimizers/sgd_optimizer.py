@@ -7,6 +7,7 @@ import time
 
 from theano.updates import OrderedUpdates
 from kusanagi import utils
+floatX = theano.config.floatX
 
 LASAGNE_MIN_METHODS = {'sgd': lasagne.updates.sgd,
                        'momentum': lasagne.updates.momentum,
@@ -48,7 +49,7 @@ class SGDOptimizer(object):
         self.__min_method = min_method.lower()
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      polyak_averaging=0.5, clip=None, trust_input=True,
+                      polyak_averaging=0.9, clip=None, trust_input=True,
                       **kwargs):
         '''
             Changes the objective function to be optimized
@@ -80,6 +81,37 @@ class SGDOptimizer(object):
         min_method_updt = LASAGNE_MIN_METHODS[self.min_method]
         grad_updates = min_method_updt(grads, params, **kwargs)
 
+        outputs = [loss]+grads
+        grad_updates = grad_updates+updts
+        if polyak_averaging and polyak_averaging > 0.0:
+            # create copy of params
+            params_avg = [
+                theano.shared(p.get_value(borrow=False,
+                                          return_internal_type=True),
+                              name=p.name+'_copy')
+                for p in params]
+
+            # prepare updates for polyak averaging
+            prev_loss = theano.shared(
+                np.array(0, dtype=floatX))
+            t = theano.shared(np.array(1, dtype=floatX))
+            b = polyak_averaging
+
+            loss_avg = ((b-b**t)*prev_loss + (1-b)*loss)/(1-b**t)
+
+            grad_updates[prev_loss] = loss_avg
+            grad_updates[t] = t+1
+            for p, pp in zip(params, params_avg):
+                grad_updates[pp] = ((b-b**t)*pp
+                                    + (1-b)*grad_updates[p])/(1-b**t)
+
+            outputs[0] = loss_avg
+            self.params_avg = params_avg
+            self.prev_loss = prev_loss
+        else:
+            if hasattr(self, 'params_avg'):
+                delattr(self, 'params_avg')
+
         utils.print_with_stamp('Compiling function for loss', self.name)
         # converts inputs to shared variables to avoid repeated gpu transfers
         self.shared_inpts = [theano.shared(np.empty([1]*inp.ndim,
@@ -87,7 +119,7 @@ class SGDOptimizer(object):
                                            name=inp.name) for inp in inputs]
 
         givens_dict = dict(zip(inputs, self.shared_inpts))
-        self.loss_fn = theano.function([], loss, updates=updts,
+        self.loss_fn = theano.function([], outputs[0], updates=updts,
                                        on_unused_input='ignore',
                                        allow_input_downcast=True,
                                        givens=givens_dict)
@@ -95,27 +127,9 @@ class SGDOptimizer(object):
 
         utils.print_with_stamp("Compiling parameter updates", self.name)
 
-        outputs = [loss]+grads
-        updates = grad_updates+updts
-        if polyak_averaging and polyak_averaging > 0.0:
-            params_polyak = [theano.shared(p.get_value(borrow=False),
-                                           name=p.name+'_copy')
-                             for p in params]
-            loss_polyak = theano.clone(
-                loss, replace=dict(zip(params, params_polyak)), strict=False)
-
-            for p, pp in zip(params, params_polyak):
-                updates[pp] = (pp - polyak_averaging*(pp - updates[p]))
-
-            outputs[0] = loss_polyak
-            self.params_polyak = params_polyak
-        else:
-            if hasattr(self, 'params_polyak'):
-                delattr(self, 'params_polyak')
-
         self.update_params_fn = theano.function(
             [], outputs,
-            updates=updates,
+            updates=grad_updates,
             on_unused_input='ignore',
             allow_input_downcast=True,
             givens=givens_dict)
@@ -147,12 +161,16 @@ class SGDOptimizer(object):
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value(return_internal_type=True, borrow=False)
              for p in self.params]
-        if hasattr(self, 'params_polyak'):
-            for p, pp in zip(self.params, self.params_polyak):
+        if hasattr(self, 'params_avg'):
+            for p, pp in zip(self.params, self.params_avg):
                 pp.set_value(p.get_value(borrow=False))
+            self.prev_loss.set_value(loss0)
         self.best_p = [loss0, p, 0]
 
         # go through the dataset
+        params = (self.params
+                  if not hasattr(self, 'params_avg')
+                  else self.params)
         out_str = 'Curr loss: %E, n_evals: %d, Avg. time per updt: %f'
         while True:
             start_time = time.time()
@@ -161,9 +179,6 @@ class SGDOptimizer(object):
             for x, y in b_iter:
                 start_time = time.time()
                 # get previous params
-                params = (self.params
-                          if not hasattr(self, 'params_polyak')
-                          else self.params)
                 p = [p.get_value(return_internal_type=True, borrow=False)
                      for p in params]
 
@@ -194,9 +209,9 @@ class SGDOptimizer(object):
                 utils.print_with_stamp(out_str % str_params, self.name, True)
             if should_exit:
                 break
-
+        print('')
         v, p, i = self.best_p
-        for sp_i, p_i in zip(self.params, p):
+        for sp_i, p_i in zip(params, p):
             sp_i.set_value(p_i)
         v = self.loss_fn()
         msg = 'Done training. New loss [%f] iter: [%d]'
@@ -222,19 +237,20 @@ class SGDOptimizer(object):
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value(return_internal_type=True, borrow=False)
              for p in self.params]
-        if hasattr(self, 'params_polyak'):
-            for p, pp in zip(self.params, self.params_polyak):
+        if hasattr(self, 'params_avg'):
+            for p, pp in zip(self.params, self.params_avg):
                 pp.set_value(p.get_value(borrow=False))
+            self.prev_loss.set_value(loss0)
         self.best_p = [loss0, p, 0]
 
         # training loop
+        params = (self.params
+                  if not hasattr(self, 'params_avg')
+                  else self.params)
         for i in range(self.max_evals):
             start_time = time.time()
 
             # get previous params
-            params = (self.params
-                      if not hasattr(self, 'params_polyak')
-                      else self.params)
             p = [p.get_value(return_internal_type=True, borrow=False)
                  for p in params]
 
@@ -259,7 +275,7 @@ class SGDOptimizer(object):
 
         print('')
         v, p, i = self.best_p
-        for sp_i, p_i in zip(self.params, p):
+        for sp_i, p_i in zip(params, p):
             sp_i.set_value(p_i)
         v = self.loss_fn()
         msg = 'Done training. New loss [%f] iter: [%d]'
