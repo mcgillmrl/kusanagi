@@ -39,7 +39,7 @@ class NNPolicy(BNN):
             self.network_spec = self.get_default_network_spec(
                 input_dims=self.D,
                 output_dims=self.E,
-                hidden_dims=[50]*4,
+                hidden_dims=[50]*2,
                 nonlinearities=lasagne.nonlinearities.elu,
                 p=0.1, name=self.name)
 

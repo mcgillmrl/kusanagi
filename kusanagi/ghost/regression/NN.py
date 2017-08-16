@@ -171,10 +171,10 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
-                                 hidden_dims=[200]*4,
+                                 hidden_dims=[400]*3,
                                  p=0.1, p_input=0.0,
-                                 nonlinearities=lasagne.nonlinearities.elu,
-                                 W_init=lasagne.init.GlorotUniform(),
+                                 nonlinearities=lasagne.nonlinearities.tanh,
+                                 W_init=lasagne.init.Orthogonal(),
                                  b_init=lasagne.init.Constant(0.),
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
@@ -486,7 +486,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-4,
+              input_ls=None, hidden_ls=None, lr=1e-3,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
