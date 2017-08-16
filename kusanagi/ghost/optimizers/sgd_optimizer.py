@@ -164,11 +164,12 @@ class SGDOptimizer(object):
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value(return_internal_type=True, borrow=False)
              for p in params]
+        self.best_p = [loss0, p, 0]
+
         if hasattr(self, 'params_avg'):
             for p, pp in zip(self.params, self.params_avg):
                 pp.set_value(p.get_value(borrow=False))
             self.prev_loss.set_value(loss0)
-        self.best_p = [loss0, p, 0]
 
         # go through the dataset
         out_str = 'Curr loss: %E, n_evals: %d, Avg. time per updt: %f'
@@ -239,11 +240,12 @@ class SGDOptimizer(object):
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         p = [p.get_value(return_internal_type=True, borrow=False)
              for p in params]
+        self.best_p = [loss0, p, 0]
+
         if hasattr(self, 'params_avg'):
             for p, pp in zip(self.params, self.params_avg):
                 pp.set_value(p.get_value(borrow=False))
             self.prev_loss.set_value(loss0)
-        self.best_p = [loss0, p, 0]
 
         # training loop
         for i in range(self.max_evals):

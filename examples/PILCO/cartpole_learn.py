@@ -172,7 +172,7 @@ if __name__ == '__main__':
 
         polopt_args = [m0, S0, H, gamma]
         if use_bnn_dyn:
-            polopt_args.append(2e-4)
+            polopt_args.append(1e-4)
         polopt.minimize(*polopt_args,
                         callback=polopt_cb)
 
