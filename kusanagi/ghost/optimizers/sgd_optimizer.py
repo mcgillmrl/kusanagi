@@ -49,7 +49,7 @@ class SGDOptimizer(object):
         self.__min_method = min_method.lower()
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      polyak_averaging=0.99, clip=None, trust_input=True,
+                      polyak_averaging=0.9, clip=None, trust_input=True,
                       **kwargs):
         '''
             Changes the objective function to be optimized
@@ -143,8 +143,8 @@ class SGDOptimizer(object):
 
     def minibatch_minimize(self, X, Y, *inputs, **kwargs):
         callback = kwargs.get('callback')
+        return_best = kwargs.get('return_best', False)
         batch_size = kwargs.get('batch_size', 100)
-        
         batch_size = min(batch_size, X.shape[0])
         self.iter_time = 0
         self.start_time = time.time()
@@ -173,9 +173,10 @@ class SGDOptimizer(object):
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
                 start_time = time.time()
-                # get previous p
-                state = [s.get_value(return_internal_type=True, borrow=False)
-                         for s in self.optimizer_state]
+                if return_best:
+                    # get state before update
+                    state = [s.get_value(return_internal_type=True, borrow=False)
+                             for s in self.optimizer_state]
 
                 # mini batch update
                 self.shared_inpts[0].set_value(x)
@@ -185,8 +186,8 @@ class SGDOptimizer(object):
                 # the returned loss and gradients correspond to the parameters
                 # BEFORE the update
                 loss, dloss = ret[0], ret[1:]
-
-                if loss < self.best_p[0]:
+                
+                if return_best and loss < self.best_p[0]:
                     self.best_p = [loss, state, self.n_evals]
                 if callable(callback):
                     callback(loss, dloss)
@@ -205,11 +206,19 @@ class SGDOptimizer(object):
             if should_exit:
                 break
         print('')
-        v, s, i = self.best_p
-        '''
-        for s_i, st_i in zip(self.optimizer_state, s):
-            s_i.set_value(st_i)
-        '''
+
+        i = self.n_evals
+        if return_best:
+            v, s, i = self.best_p
+            for s_i, st_i in zip(self.optimizer_state, s):
+                s_i.set_value(st_i)
+
+        if hasattr(self, 'params_avg'):
+            # set the model parameters to be the ones found via
+            # polyak averaging
+            for p_i, pp_i in zip(self.params, self.params_avg):
+                p_i.set_value(pp_i.get_value())
+
         v = self.loss_fn()
         msg = 'Done training. New loss [%f] iter: [%d]'
         utils.print_with_stamp(msg % (v, i), self.name)
@@ -272,7 +281,7 @@ class SGDOptimizer(object):
             # polyak averaging
             for p_i, pp_i in zip(self.params, self.params_avg):
                 p_i.set_value(pp_i.get_value())
-        
+
         v = self.loss_fn()
 
         msg = 'Done training. New loss [%f] iter: [%d]'

@@ -53,6 +53,7 @@ def plot_rollout(rollout_fn, *args, **kwargs):
 
     return fig, axarr
 
+
 if __name__ == '__main__':
     use_bnn_dyn = True
     use_bnn_pol = True
@@ -157,6 +158,7 @@ if __name__ == '__main__':
                 loss_kwargs['n_samples'] = n_samples
                 loss_kwargs['resample_particles'] = True
                 obj_kwargs['learning_rate'] = lr
+                obj_kwargs['clip'] = 10.0
                 learner = mc_pilco
             else:
                 learner = pilco
@@ -177,7 +179,7 @@ if __name__ == '__main__':
 
         polopt_args = [m0, S0, H, gamma]
         if use_bnn_dyn:
-            polopt_args.append(1e-4)
+            polopt_args.append(1e-3)
         polopt.minimize(*polopt_args,
                         callback=polopt_cb)
 
