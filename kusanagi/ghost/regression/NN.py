@@ -175,7 +175,7 @@ class BNN(BaseRegressor):
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
                                  hidden_dims=[400]*3,
-                                 p=0.05, p_input=0.0,
+                                 p=0.1, p_input=0.0,
                                  nonlinearities=nonlinearities.leaky_rectify,
                                  output_nonlinearity=nonlinearities.linear,
                                  W_init=lasagne.init.Orthogonal(),
@@ -488,7 +488,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-4,
+              input_ls=None, hidden_ls=None, lr=1e-3,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
