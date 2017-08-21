@@ -161,22 +161,23 @@ class SGDOptimizer(object):
         state0 = [s.get_value(return_internal_type=True, borrow=False)
                   for s in self.optimizer_state]
         ret = self.update_params_fn()
-        loss0 = ret[0]
+        loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         self.best_p = [loss0, state0, 0]
 
         # go through the dataset
-        out_str = 'Curr loss: %E, n_evals: %d, Avg. time per updt: %f'
+        out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
         while True:
             start_time = time.time()
             should_exit = False
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
                 start_time = time.time()
-                if return_best:
-                    # get state before update
-                    state = [s.get_value(return_internal_type=True, borrow=False)
-                             for s in self.optimizer_state]
+                
+                # get state before update
+                state = [s.get_value(return_internal_type=True,
+                                     borrow=False)
+                         for s in self.optimizer_state]
 
                 # mini batch update
                 self.shared_inpts[0].set_value(x)
@@ -186,8 +187,8 @@ class SGDOptimizer(object):
                 # the returned loss and gradients correspond to the parameters
                 # BEFORE the update
                 loss, dloss = ret[0], ret[1:]
-                
-                if return_best and loss < self.best_p[0]:
+
+                if loss < self.best_p[0] or self.n_evals < 10:
                     self.best_p = [loss, state, self.n_evals]
                 if callable(callback):
                     callback(loss, dloss)
@@ -201,7 +202,8 @@ class SGDOptimizer(object):
                 dt = end_time - start_time
                 it_updt = (dt - self.iter_time)/self.n_evals
                 self.iter_time += it_updt
-                str_params = (loss, self.n_evals, self.iter_time)
+                str_params = (loss, self.best_p[2], self.best_p[0],
+                              self.n_evals, self.iter_time)
                 utils.print_with_stamp(out_str % str_params, self.name, True)
             if should_exit:
                 break
@@ -240,12 +242,13 @@ class SGDOptimizer(object):
         state0 = [s.get_value(return_internal_type=True, borrow=False)
                   for s in self.optimizer_state]
         ret = self.update_params_fn()
-        loss0 = ret[0]
+        loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         self.best_p = [loss0, state0, 0]
 
         # training loop
-        for i in range(self.max_evals):
+        out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
+        for i in range(1, self.max_evals):
             start_time = time.time()
             # get previous optimizer state
             state = [s.get_value(return_internal_type=True, borrow=False)
@@ -256,7 +259,7 @@ class SGDOptimizer(object):
             # the returned loss corresponds to the parameters BEFORE the update
             loss, dloss = ret[0], ret[1:]
 
-            if loss < self.best_p[0]:
+            if loss < self.best_p[0] or i < 10:
                 self.best_p = [loss, state, i]
             if callable(callback):
                 callback(loss, dloss)
@@ -266,8 +269,8 @@ class SGDOptimizer(object):
             dt = end_time - start_time
             it_updt = (dt - self.iter_time)/self.n_evals
             self.iter_time += it_updt
-            out_str = 'Curr loss: %E, n_evals: %d, Avg. time per updt: %f'
-            str_params = (loss, self.n_evals, self.iter_time)
+            str_params = (loss, self.best_p[2], self.best_p[0],
+                          self.n_evals, self.iter_time)
             utils.print_with_stamp(out_str % str_params, self.name, True)
 
         print('')
