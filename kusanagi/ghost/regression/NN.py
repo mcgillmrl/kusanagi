@@ -6,6 +6,7 @@ import numpy as np
 import kusanagi
 
 from collections import OrderedDict
+from lasagne import nonlinearities
 from lasagne.random import get_rng
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
@@ -175,8 +176,8 @@ class BNN(BaseRegressor):
                                  output_dims=None,
                                  hidden_dims=[400]*3,
                                  p=0.05, p_input=0.0,
-                                 nonlinearities=lasagne.nonlinearities.leaky_rectify,
-                                 output_nonlinearity=lasagne.nonlinearities.linear,
+                                 nonlinearities=nonlinearities.leaky_rectify,
+                                 output_nonlinearity=nonlinearities.linear,
                                  W_init=lasagne.init.Orthogonal(),
                                  b_init=lasagne.init.Constant(0.),
                                  name=None):
@@ -487,7 +488,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-3,
+              input_ls=None, hidden_ls=None, lr=1e-4,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer

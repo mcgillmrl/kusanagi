@@ -143,7 +143,7 @@ class SGDOptimizer(object):
 
     def minibatch_minimize(self, X, Y, *inputs, **kwargs):
         callback = kwargs.get('callback')
-        return_best = kwargs.get('return_best', False)
+        return_best = kwargs.get('return_best', True)
         batch_size = kwargs.get('batch_size', 100)
         batch_size = min(batch_size, X.shape[0])
         self.iter_time = 0
