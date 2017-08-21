@@ -138,6 +138,11 @@ if __name__ == '__main__':
         S0 = np.cov(x0, rowvar=False, ddof=1) +\
             1e-4*np.eye(x0.shape[1]) if len(x0) > 2 else p0.cov
 
+        if fig is not None:
+            # plot rollout
+            fig, axarr = plot_rollout(
+                rollout_fn, m0, S0, H, gamma, fig=fig, axarr=axarr)
+
         # train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             loss_kwargs = {}
