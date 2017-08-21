@@ -174,6 +174,7 @@ if __name__ == '__main__':
 
             # build rollout function for plotting
             if rollout_fn is None:
+                loss_kwargs['resample_particles'] = False
                 rollout_fn = learner.build_rollout(
                     pol, dyn, cost, D, angle_dims, **loss_kwargs)
 
