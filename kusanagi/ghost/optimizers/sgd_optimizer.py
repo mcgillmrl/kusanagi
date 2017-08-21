@@ -164,6 +164,8 @@ class SGDOptimizer(object):
         loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         self.best_p = [loss0, state0, 0]
+        if hasattr(self, 'params_avg'):
+            self.prev_loss.set_value(loss0)
 
         # go through the dataset
         out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
@@ -173,7 +175,7 @@ class SGDOptimizer(object):
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
                 start_time = time.time()
-                
+
                 # get state before update
                 state = [s.get_value(return_internal_type=True,
                                      borrow=False)
@@ -245,6 +247,8 @@ class SGDOptimizer(object):
         loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         self.best_p = [loss0, state0, 0]
+        if hasattr(self, 'params_avg'):
+            self.prev_loss.set_value(loss0)
 
         # training loop
         out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
