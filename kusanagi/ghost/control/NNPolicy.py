@@ -3,7 +3,7 @@ import numpy as np
 import theano
 
 from kusanagi.ghost.regression import BNN
-from kusanagi.ghost.control.saturation import gSat as sat
+from kusanagi.ghost.control.saturation import tanhSat as sat
 from functools import partial
 
 
@@ -39,8 +39,9 @@ class NNPolicy(BNN):
             self.network_spec = self.get_default_network_spec(
                 input_dims=self.D,
                 output_dims=self.E,
-                hidden_dims=[50]*2,
-                nonlinearities=lasagne.nonlinearities.elu,
+                hidden_dims=[100]*2,
+                nonlinearities=lasagne.nonlinearities.leaky_rectify,
+                output_nonlinearity=self.sat_func,
                 p=0.1, name=self.name)
 
         if self.network is None:
@@ -58,18 +59,9 @@ class NNPolicy(BNN):
             if isinstance(ret, list) or isinstance(ret, tuple):
                 ret = ret[0]
             M = ret
-            if self.sat_func is not None:
-                # saturate the output
-                M = self.sat_func(M)
             return M
         else:
             M, S, V = ret
-            # apply saturating function to the output if available
-            if self.sat_func is not None:
-                # saturate the output
-                M, S, U = self.sat_func(M, S)
-                # compute the joint input output covariance
-                V = V.dot(U)
             return M, S, V
 
     def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):

@@ -69,7 +69,7 @@ class BNN(BaseRegressor):
         self.X = None
         self.Y = None
         self.Xm = None
-        self.Xs = None
+        self.iXs = None
         self.Ym = None
         self.Ys = None
 
@@ -151,35 +151,37 @@ class BNN(BaseRegressor):
         self.update_dataset_statistics(X_dataset, Y_dataset)
 
     def update_dataset_statistics(self, X_dataset, Y_dataset):
+        Xm = X_dataset.mean(0).astype(floatX)
+        Xc = np.cov(X_dataset, rowvar=False, ddof=1).astype(floatX)
+        iXs = np.linalg.cholesky(np.linalg.inv(np.atleast_2d(Xc))).T
         if self.Xm is None:
-            Xm = X_dataset.mean(0).astype(floatX)
             self.Xm = theano.shared(Xm, name='%s>Xm' % (self.name))
-            Xs = X_dataset.std(0).astype(floatX)
-            self.Xs = theano.shared(Xs, name='%s>Xs' % (self.name))
+            self.iXs = theano.shared(iXs, name='%s>Xs' % (self.name))
         else:
-            self.Xm.set_value(X_dataset.mean(0).astype(floatX))
-            self.Xs.set_value(X_dataset.std(0).astype(floatX))
+            self.Xm.set_value(Xm)
+            self.iXs.set_value(iXs)
 
+        Ym = Y_dataset.mean(0).astype(floatX)
+        Yc = np.cov(Y_dataset, rowvar=False, ddof=1).astype(floatX)
+        Ys = np.linalg.cholesky(np.atleast_2d((Yc))).T
         if self.Ym is None:
-            Ym = Y_dataset.mean(0).astype(floatX)
             self.Ym = theano.shared(Ym, name='%s>Ym' % (self.name))
-            Ys = Y_dataset.std(0).astype(floatX)
             self.Ys = theano.shared(Ys, name='%s>Ys' % (self.name))
         else:
-            self.Ym.set_value(Y_dataset.mean(0).astype(floatX))
-            self.Ys.set_value(Y_dataset.std(0).astype(floatX))
+            self.Ym.set_value(Ym)
+            self.Ys.set_value(Ys)
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
                                  hidden_dims=[400]*3,
                                  p=0.1, p_input=0.0,
-                                 nonlinearities=lasagne.nonlinearities.tanh,
+                                 nonlinearities=lasagne.nonlinearities.leaky_rectify,
+                                 output_nonlinearity=lasagne.nonlinearities.linear,
                                  W_init=lasagne.init.Orthogonal(),
                                  b_init=lasagne.init.Constant(0.),
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
         from kusanagi.ghost.regression.layers import DropoutLayer
-        from lasagne.nonlinearities import linear
         if name is None:
             name = self.name
         if input_dims is None:
@@ -224,7 +226,7 @@ class BNN(BaseRegressor):
         # output layer
         network_spec.append((DenseLayer,
                              dict(num_units=output_dims,
-                                  nonlinearity=linear,
+                                  nonlinearity=output_nonlinearity,
                                   W=W_init[-1],
                                   b=b_init[-1],
                                   name=name+'_output')))
@@ -313,8 +315,7 @@ class BNN(BaseRegressor):
         # evaluate nework output for batch
         train_predictions, sn = self.predict_symbolic(
             train_inputs, None, deterministic=False,
-            iid_per_eval=True, return_samples=True,
-            with_measurement_noise=True)
+            iid_per_eval=True, return_samples=True)
 
         # build the dropout loss function ( See Gal and Ghahramani 2015)
         deltay = train_predictions - train_targets
@@ -396,7 +397,7 @@ class BNN(BaseRegressor):
 
     def predict_symbolic(self, mx, Sx=None, deterministic=False,
                          iid_per_eval=False, return_samples=False,
-                         with_measurement_noise=True):
+                         whiten_inputs=True, whiten_outputs=True):
         ''' returns symbolic expressions for the evaluations of this objects
         neural network. If Sx is specified, the output will correspond to the
         mean, covariance and input-output covariance of the network
@@ -413,9 +414,10 @@ class BNN(BaseRegressor):
         else:
             x = mx[None, :] if mx.ndim == 1 else mx
 
-        if hasattr(self, 'Xm') and self.Xm is not None:
+        if (whiten_inputs and hasattr(self, 'Xm') and self.Xm is not None):
             # standardize inputs
-            x = (x - self.Xm)/self.Xs
+            x = (x - self.Xm).dot(self.iXs)
+
         # unless we set the shared_axes parameter on the droput layers,
         # the dropout masks should be different per sample
         ret = lasagne.layers.get_output(self.network, x,
@@ -426,11 +428,11 @@ class BNN(BaseRegressor):
               if self.heteroscedastic
               else tt.tile(self.sn, (y.shape[0], 1)))
 
-        if hasattr(self, 'Ym') and self.Ym is not None:
+        if whiten_outputs and hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
-            y = y*self.Ys + self.Ym
+            y = y.dot(self.Ys) + self.Ym
             # rescale noise variance
-            sn = sn*self.Ys
+            # sn = sn.dot(self.Ys)
 
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
@@ -443,8 +445,7 @@ class BNN(BaseRegressor):
         # empirical covariance
         S = y.T.dot(y)/n - tt.outer(M, M)
         # noise
-        if with_measurement_noise:
-            S += tt.diag(sn.mean(axis=0)**2)
+        S += tt.diag(sn.mean(axis=0)**2)
 
         # empirical input output covariance
         if Sx is not None:
@@ -486,7 +487,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-3,
+              input_ls=None, hidden_ls=None, lr=1e-4,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
@@ -657,56 +658,4 @@ class BBB_NN(BaseRegressor):
 
     def get_loss(self):
         ''' initializes the loss function for training '''
-        # build the network
-        utils.print_with_stamp('Initialising loss function', self.name)
-
-        # Input variables
-        input_lengthscale = tt.scalar('%s>input_lengthscale' % (self.name))
-        hidden_lengthscale = tt.scalar('%s>hidden_lengthscale' % (self.name))
-        train_inputs = tt.matrix('%s>train_inputs' % (self.name))
-        train_targets = tt.matrix('%s>train_targets' % (self.name))
-
-        # standardize network inputs and outputs
-        train_inputs_std = (train_inputs - self.Xm)/self.Xs
-        train_targets_std = (train_targets - self.Ym)/self.Ys
-
-        # evaluate nework output for batch
-        if self.heteroscedastic:
-            # this assumes that self.sn is obtained from the network output
-            train_predictions, sn = lasagne.layers.get_output(
-                [self.network], train_inputs_std)
-        else:
-            train_predictions = lasagne.layers.get_output(
-                self.network, train_inputs_std, deterministic=False)
-            sn = self.sn
-
-        # scale sn since output network output is standardized
-        sn_std = sn/self.Ys
-
-        # build the dropout loss function ( See Gal and Ghahramani 2015)
-        deltay = train_predictions-train_targets_std
-        N, E = train_targets.shape
-        N = N.astype(theano.config.floatX)
-        E = E.astype(theano.config.floatX)
-
-        # compute negative log likelihood
-        # note that if we have sn_std be a 1xD vector, broadcasting
-        # rules apply
-        nlml = tt.square(deltay/sn_std).sum(-1) + tt.log(sn_std).sum(-1)
-        loss = 0.5*nlml.mean()
-
-        # compute regularization term
-        loss += self.get_regularization_term(input_lengthscale,
-                                             hidden_lengthscale)/N
-
-        inputs = [train_inputs, train_targets,
-                  input_lengthscale, hidden_lengthscale]
-        updates = {}
-
-        # get trainable network parameters
-        params = lasagne.layers.get_all_params(self.network, trainable=True)
-        # if we are learning the noise
-        if not self.heteroscedastic:
-            params.append(self.unconstrained_sn)
-        self.set_params(dict([(p.name, p) for p in params]))
-        return loss, inputs, updates
+        pass
