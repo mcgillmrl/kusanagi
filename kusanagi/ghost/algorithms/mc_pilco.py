@@ -67,6 +67,7 @@ def rollout(x0, H, gamma0,
         Sx_next_noisy = Sx_next + tt.diag(sn2)
         mc_next = cost(mx_next, Sx_next_noisy)[0]
         c_next = cost(x_next, None)
+        #mc_next = c_next.mean(0)
 
         # resample if requested
         if resample:
@@ -155,7 +156,6 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
                             truncate_gradient=truncate_gradient)
 
     mean_costs, costs, trajectories = r_outs
-    # mean_costs = costs.mean(0) # mean over particles
 
     # loss is E_{dyns}((1/H)*sum c(x_t))
     #          = (1/H)*sum E_{x_t}(c(x_t))

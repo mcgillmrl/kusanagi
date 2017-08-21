@@ -99,11 +99,11 @@ class SGDOptimizer(object):
 
             loss_avg = ((b-b**t)*prev_loss + (1-b)*loss)/(1-b**t)
 
-            grad_updates[prev_loss] = loss_avg
-            grad_updates[t] = t+1
             for p, pp in zip(params, params_avg):
                 grad_updates[pp] = ((b-b**t)*pp
                                     + (1-b)*grad_updates[p])/(1-b**t)
+            grad_updates[prev_loss] = loss_avg
+            grad_updates[t] = t+1
 
             outputs[0] = loss_avg
             self.params_avg = params_avg
@@ -139,10 +139,12 @@ class SGDOptimizer(object):
         self.start_time = 0
         self.iter_time = 0
         self.params = params
+        self.optimizer_state = [s for s in grad_updates.keys()]
 
     def minibatch_minimize(self, X, Y, *inputs, **kwargs):
         callback = kwargs.get('callback')
         batch_size = kwargs.get('batch_size', 100)
+        
         batch_size = min(batch_size, X.shape[0])
         self.iter_time = 0
         self.start_time = time.time()
@@ -156,20 +158,12 @@ class SGDOptimizer(object):
             s.set_value(np.array(i).astype(s.dtype))
 
         # set initial loss and parameters
-        params = (self.params
-                  if not hasattr(self, 'params_avg')
-                  else self.params)
+        state0 = [s.get_value(return_internal_type=True, borrow=False)
+                  for s in self.optimizer_state]
         ret = self.update_params_fn()
-        loss0 = self.loss_fn()
+        loss0 = ret[0]
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
-        p = [p.get_value(return_internal_type=True, borrow=False)
-             for p in params]
-        self.best_p = [loss0, p, 0]
-
-        if hasattr(self, 'params_avg'):
-            for p, pp in zip(self.params, self.params_avg):
-                pp.set_value(p.get_value(borrow=False))
-            self.prev_loss.set_value(loss0)
+        self.best_p = [loss0, state0, 0]
 
         # go through the dataset
         out_str = 'Curr loss: %E, n_evals: %d, Avg. time per updt: %f'
@@ -179,9 +173,9 @@ class SGDOptimizer(object):
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
                 start_time = time.time()
-                # get previous params
-                p = [p.get_value(return_internal_type=True, borrow=False)
-                     for p in params]
+                # get previous p
+                state = [s.get_value(return_internal_type=True, borrow=False)
+                         for s in self.optimizer_state]
 
                 # mini batch update
                 self.shared_inpts[0].set_value(x)
@@ -193,9 +187,9 @@ class SGDOptimizer(object):
                 loss, dloss = ret[0], ret[1:]
 
                 if loss < self.best_p[0]:
-                    self.best_p = [loss, p, self.n_evals]
+                    self.best_p = [loss, state, self.n_evals]
                 if callable(callback):
-                    callback(p, loss, dloss)
+                    callback(loss, dloss)
 
                 self.n_evals += 1
                 if self.n_evals > self.max_evals:
@@ -211,9 +205,11 @@ class SGDOptimizer(object):
             if should_exit:
                 break
         print('')
-        v, p, i = self.best_p
-        for sp_i, p_i in zip(params, p):
-            sp_i.set_value(p_i)
+        v, s, i = self.best_p
+        '''
+        for s_i, st_i in zip(self.optimizer_state, s):
+            s_i.set_value(st_i)
+        '''
         v = self.loss_fn()
         msg = 'Done training. New loss [%f] iter: [%d]'
         utils.print_with_stamp(msg % (v, i), self.name)
@@ -232,28 +228,19 @@ class SGDOptimizer(object):
         for s, i in zip(self.shared_inpts, inputs):
             s.set_value(np.array(i).astype(s.dtype))
         # set initial loss and parameters
-        params = (self.params
-                  if not hasattr(self, 'params_avg')
-                  else self.params)
+        state0 = [s.get_value(return_internal_type=True, borrow=False)
+                  for s in self.optimizer_state]
         ret = self.update_params_fn()
-        loss0 = self.loss_fn()
+        loss0 = ret[0]
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
-        p = [p.get_value(return_internal_type=True, borrow=False)
-             for p in params]
-        self.best_p = [loss0, p, 0]
-
-        if hasattr(self, 'params_avg'):
-            for p, pp in zip(self.params, self.params_avg):
-                pp.set_value(p.get_value(borrow=False))
-            self.prev_loss.set_value(loss0)
+        self.best_p = [loss0, state0, 0]
 
         # training loop
         for i in range(self.max_evals):
             start_time = time.time()
-
-            # get previous params
-            p = [p.get_value(return_internal_type=True, borrow=False)
-                 for p in params]
+            # get previous optimizer state
+            state = [s.get_value(return_internal_type=True, borrow=False)
+                     for s in self.optimizer_state]
 
             # evaluate current policy and update parameters
             ret = self.update_params_fn()
@@ -261,7 +248,7 @@ class SGDOptimizer(object):
             loss, dloss = ret[0], ret[1:]
 
             if loss < self.best_p[0]:
-                self.best_p = [loss, p, i]
+                self.best_p = [loss, state, i]
             if callable(callback):
                 callback(loss, dloss)
             self.n_evals += 1
@@ -275,9 +262,18 @@ class SGDOptimizer(object):
             utils.print_with_stamp(out_str % str_params, self.name, True)
 
         print('')
-        v, p, i = self.best_p
-        for sp_i, p_i in zip(params, p):
-            sp_i.set_value(p_i)
+        # set the optimizer state to the best found so far
+        v, s, i = self.best_p
+        for s_i, st_i in zip(self.optimizer_state, s):
+            s_i.set_value(st_i)
+
+        if hasattr(self, 'params_avg'):
+            # set the model parameters to be the ones found via
+            # polyak averaging
+            for p_i, pp_i in zip(self.params, self.params_avg):
+                p_i.set_value(pp_i.get_value())
+        
         v = self.loss_fn()
+
         msg = 'Done training. New loss [%f] iter: [%d]'
         utils.print_with_stamp(msg % (v, i), self.name)
