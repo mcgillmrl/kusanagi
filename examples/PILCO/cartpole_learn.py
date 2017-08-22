@@ -65,6 +65,8 @@ if __name__ == '__main__':
     n_rnd = 4                           # number of random initial trials
     n_opt = 100                         # learning iterations
     n_samples = 50                      # number of MC samples if bayesian nn
+    learning_rate = 5e-4
+    polyak_averaging = 0.99
     H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
@@ -159,6 +161,7 @@ if __name__ == '__main__':
                 loss_kwargs['resample_particles'] = True
                 obj_kwargs['learning_rate'] = lr
                 obj_kwargs['clip'] = 10.0
+                obj_kwargs['polyak_averaging'] = polyak_averaging
                 learner = mc_pilco
             else:
                 learner = pilco
@@ -180,7 +183,7 @@ if __name__ == '__main__':
 
         polopt_args = [m0, S0, H, gamma]
         if use_bnn_dyn:
-            polopt_args.append(1e-3)
+            polopt_args.append(learning_rate)
         polopt.minimize(*polopt_args,
                         callback=polopt_cb)
 

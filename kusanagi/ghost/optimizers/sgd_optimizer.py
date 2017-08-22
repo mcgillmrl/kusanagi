@@ -49,7 +49,7 @@ class SGDOptimizer(object):
         self.__min_method = min_method.lower()
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      polyak_averaging=0.9, clip=None, trust_input=True,
+                      polyak_averaging=None, clip=None, trust_input=True,
                       **kwargs):
         '''
             Changes the objective function to be optimized
@@ -143,7 +143,7 @@ class SGDOptimizer(object):
 
     def minibatch_minimize(self, X, Y, *inputs, **kwargs):
         callback = kwargs.get('callback')
-        return_best = kwargs.get('return_best', True)
+        return_best = kwargs.get('return_best', False)
         batch_size = kwargs.get('batch_size', 100)
         batch_size = min(batch_size, X.shape[0])
         self.iter_time = 0
@@ -233,6 +233,7 @@ class SGDOptimizer(object):
                           theano functions for the loss and gradients
         '''
         callback = kwargs.get('callback')
+        return_best = kwargs.get('return_best', False)
         self.iter_time = 0
         self.start_time = time.time()
         self.n_evals = 0
@@ -278,10 +279,11 @@ class SGDOptimizer(object):
             utils.print_with_stamp(out_str % str_params, self.name, True)
 
         print('')
-        # set the optimizer state to the best found so far
-        v, s, i = self.best_p
-        for s_i, st_i in zip(self.optimizer_state, s):
-            s_i.set_value(st_i)
+
+        if return_best:
+            v, s, i = self.best_p
+            for s_i, st_i in zip(self.optimizer_state, s):
+                s_i.set_value(st_i)
 
         if hasattr(self, 'params_avg'):
             # set the model parameters to be the ones found via
