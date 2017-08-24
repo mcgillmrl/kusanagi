@@ -5,6 +5,7 @@ import numpy as np
 import theano
 import time
 
+from collections import OrderedDict
 from theano.updates import OrderedUpdates
 from kusanagi import utils
 floatX = theano.config.floatX
@@ -88,26 +89,24 @@ class SGDOptimizer(object):
             params_avg = [
                 theano.shared(p.get_value(borrow=False,
                                           return_internal_type=True),
+                              broadcastable=p.broadcastable,
                               name=p.name+'_copy')
                 for p in params]
 
             # prepare updates for polyak averaging
-            prev_loss = theano.shared(
-                np.array(0, dtype=floatX))
             t = theano.shared(np.array(1, dtype=floatX))
             b = polyak_averaging
 
-            loss_avg = ((b-b**t)*prev_loss + (1-b)*loss)/(1-b**t)
-
+            replace_dict = OrderedDict()
             for p, pp in zip(params, params_avg):
                 grad_updates[pp] = ((b-b**t)*pp
                                     + (1-b)*grad_updates[p])/(1-b**t)
-            grad_updates[prev_loss] = loss_avg
+                replace_dict[p] = pp
             grad_updates[t] = t+1
 
-            outputs[0] = loss_avg
+            outputs[0] = theano.clone(loss, replace=replace_dict, strict=True)
             self.params_avg = params_avg
-            self.prev_loss = prev_loss
+
         else:
             if hasattr(self, 'params_avg'):
                 delattr(self, 'params_avg')
@@ -164,8 +163,6 @@ class SGDOptimizer(object):
         loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         self.best_p = [loss0, state0, 0]
-        if hasattr(self, 'params_avg'):
-            self.prev_loss.set_value(loss0)
 
         # go through the dataset
         out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
@@ -175,11 +172,6 @@ class SGDOptimizer(object):
             b_iter = utils.iterate_minibatches(X, Y, batch_size, shuffle=True)
             for x, y in b_iter:
                 start_time = time.time()
-
-                # get state before update
-                state = [s.get_value(return_internal_type=True,
-                                     borrow=False)
-                         for s in self.optimizer_state]
 
                 # mini batch update
                 self.shared_inpts[0].set_value(x)
@@ -191,12 +183,16 @@ class SGDOptimizer(object):
                 loss, dloss = ret[0], ret[1:]
 
                 if loss < self.best_p[0] or self.n_evals < 10:
+                    # get current optimizer state
+                    state = [s.get_value(return_internal_type=True,
+                                         borrow=False)
+                             for s in self.optimizer_state]
                     self.best_p = [loss, state, self.n_evals]
                 if callable(callback):
                     callback(loss, dloss)
 
                 self.n_evals += 1
-                if self.n_evals > self.max_evals:
+                if self.n_evals >= self.max_evals:
                     should_exit = True
                     break
 
@@ -248,16 +244,11 @@ class SGDOptimizer(object):
         loss0 = self.loss_fn()
         utils.print_with_stamp('Initial loss [%s]' % (loss0), self.name)
         self.best_p = [loss0, state0, 0]
-        if hasattr(self, 'params_avg'):
-            self.prev_loss.set_value(loss0)
 
         # training loop
         out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
         for i in range(1, self.max_evals):
             start_time = time.time()
-            # get previous optimizer state
-            state = [s.get_value(return_internal_type=True, borrow=False)
-                     for s in self.optimizer_state]
 
             # evaluate current policy and update parameters
             ret = self.update_params_fn()
@@ -265,6 +256,10 @@ class SGDOptimizer(object):
             loss, dloss = ret[0], ret[1:]
 
             if loss < self.best_p[0] or i < 10:
+                # get current optimizer state
+                state = [s.get_value(return_internal_type=True,
+                                     borrow=False)
+                         for s in self.optimizer_state]
                 self.best_p = [loss, state, i]
             if callable(callback):
                 callback(loss, dloss)

@@ -65,8 +65,8 @@ if __name__ == '__main__':
     n_rnd = 4                           # number of random initial trials
     n_opt = 100                         # learning iterations
     n_samples = 50                      # number of MC samples if bayesian nn
-    learning_rate = 5e-4
-    polyak_averaging = 0.99
+    learning_rate = 1e-3
+    polyak_averaging = 0.95
     H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']

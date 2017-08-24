@@ -65,9 +65,9 @@ if __name__ == '__main__':
     params = double_cartpole.default_params()
     n_rnd = 4                           # number of random initial trials
     n_opt = 100                         # learning iterations
-    n_samples = 50                      # number of MC samples if bayesian nn
-    learning_rate = 5e-4
-    polyak_averaging = 0.99
+    n_samples = 100                      # number of MC samples if bayesian nn
+    learning_rate = 1e-3
+    polyak_averaging = 0.95
     H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
@@ -186,7 +186,8 @@ if __name__ == '__main__':
         if use_bnn_dyn:
             polopt_args.append(learning_rate)
         polopt.minimize(*polopt_args,
-                        callback=polopt_cb)
+                        callback=polopt_cb,
+                        return_best=True)
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())
