@@ -49,7 +49,7 @@ class SGDOptimizer(object):
         self.__min_method = min_method.lower()
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      polyak_averaging=None, clip=None, trust_input=True,
+                      polyak_averaging=0.5, clip=None, trust_input=True,
                       **kwargs):
         '''
             Changes the objective function to be optimized

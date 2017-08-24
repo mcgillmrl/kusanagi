@@ -176,9 +176,9 @@ class BNN(BaseRegressor):
                                  output_dims=None,
                                  hidden_dims=[400]*3,
                                  p=0.1, p_input=0.0,
-                                 nonlinearities=nonlinearities.leaky_rectify,
+                                 nonlinearities=nonlinearities.rectify,
                                  output_nonlinearity=nonlinearities.linear,
-                                 W_init=lasagne.init.Orthogonal(),
+                                 W_init=lasagne.init.Orthogonal(gain='relu'),
                                  b_init=lasagne.init.Constant(0.),
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
@@ -488,7 +488,7 @@ class BNN(BaseRegressor):
         self.update_fn()
 
     def train(self, batch_size=100,
-              input_ls=None, hidden_ls=None, lr=1e-3,
+              input_ls=None, hidden_ls=None, lr=1e-4,
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
@@ -504,7 +504,7 @@ class BNN(BaseRegressor):
         if input_ls is None:
             # set to some proportion of the standard deviation
             # (inputs are scaled and centered to N(0,1) )
-            input_ls = 0.05
+            input_ls = 0.1
 
         if hidden_ls is None:
             hidden_ls = input_ls
