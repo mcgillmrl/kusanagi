@@ -22,7 +22,7 @@ floatX = theano.config.floatX
 class BNN(BaseRegressor):
     ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
      with Gaussian distributed inputs'''
-    def __init__(self, idims, odims, n_samples=25,
+    def __init__(self, idims, odims, n_samples=100,
                  heteroscedastic=True, name='BNN',
                  filename=None, **kwargs):
         self.D = idims
@@ -158,8 +158,9 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
-                                 hidden_dims=[200]*3,
-                                 p=0.5, p_input=0.01,
+                                 hidden_dims=[400]*3,
+                                 p=lasagne.init.Constant(0.01),
+                                 p_input=lasagne.init.Constant(0.0001),
                                  nonlinearities=nonlinearities.rectify,
                                  output_nonlinearity=nonlinearities.linear,
                                  W_init=lasagne.init.Orthogonal(gain='relu'),
@@ -311,7 +312,8 @@ class BNN(BaseRegressor):
         loss += objectives.dropout_gp_kl(
             self.network, input_lengthscale, hidden_lengthscale)*M/N
         # this is only for gaussian dropout layers
-        loss += objectives.gaussian_dropout_kl(self.network)*M/N
+        loss += objectives.gaussian_dropout_kl(
+            self.network, input_lengthscale, hidden_lengthscale)*M/N
 
         inputs = [train_inputs, train_targets,
                   input_lengthscale, hidden_lengthscale]

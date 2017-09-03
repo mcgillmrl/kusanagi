@@ -68,7 +68,7 @@ def dropout_gp_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
     return sum(reg)
 
 
-def gaussian_dropout_kl(output_layer):
+def gaussian_dropout_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
     '''
         KL divergence approximation from :
          "Variational Dropout Sparsifies Deep Neural Networks"
@@ -76,7 +76,8 @@ def gaussian_dropout_kl(output_layer):
     '''
     layers = lasagne.layers.get_all_layers(output_layer)
     k1, k2, k3 = 0.63576, 1.8732, 1.48695
-    C = -k1
+    C = -0.20452104900969109
+    #C= -k1
     reg = []
     sigmoid = tt.nnet.sigmoid
     for i in range(1, len(layers)):
@@ -85,7 +86,12 @@ def gaussian_dropout_kl(output_layer):
         is_dropout_b = isinstance(layers[i], DenseGaussianDropoutLayer)
         if is_dropout_a or is_dropout_b:
             log_alpha = layers[i].log_alpha
-            kl = -(k1*sigmoid(k2+k3*log_alpha) - 0.5*tt.log1p(tt.exp(-log_alpha)) + C)
-            reg.append(kl.sum())
+            kl = -(k1*sigmoid(k2+k3*log_alpha)
+                   - 0.5*tt.log1p(tt.exp(-log_alpha))
+                   + C)
+            is_input = isinstance(layers[i].input_layer,
+                                  lasagne.layers.InputLayer)
+            rw = input_lengthscale if is_input else hidden_lengthscale
+            reg.append(rw*kl.sum())
 
     return sum(reg)
