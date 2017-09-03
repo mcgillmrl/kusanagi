@@ -301,9 +301,10 @@ class DenseGaussianDropoutLayer(DenseDropoutLayer):
             else:
                 p_shape = p.shape
             p = lasagne.utils.create_param(p, p_shape, name='p')
-            p = p.get_value() + 1e-9
-            # we will constrain to positive values using the softplus function
-            alpha = np.log(np.exp(p/(1-p))-1)
+            p = p.get_value() + 1e-12
+            # we will constrain range of alpha using sigmoid
+            alpha = p/(1-p)
+            alpha = np.log(alpha/(1-alpha))
 
         # add alpha as trainable parameter
         if isinstance(alpha, Number):
@@ -317,8 +318,11 @@ class DenseGaussianDropoutLayer(DenseDropoutLayer):
 
         self.alpha = self.add_param(
             alpha, alpha_shape, name='alpha', regularizable=False)
-        
-        self.log_alpha = tt.log(tt.nnet.softplus(self.alpha))
+
+        # no matter if we are training per layer, per unit or per weight, the
+        # KL divergence is computed per weight
+        log_alpha = tt.log(tt.nnet.sigmoid(self.alpha))
+        self.log_alpha = (log_alpha*tt.ones_like(self.W.T)).T
 
     def sample_noise(self, input, mean=0, std=1):
         # get noise_shape
@@ -343,7 +347,7 @@ class DenseGaussianDropoutLayer(DenseDropoutLayer):
     def apply_noise(self, input, noise):
         # scale noise by alpha.
         # alpha is shared across mini batch samples
-        sq_alpha = tt.nnet.softplus(self.alpha)**0.5
+        sq_alpha = tt.nnet.sigmoid(self.alpha)**0.5
         return input*(1 + sq_alpha * noise)
 
     def get_updates(self):
