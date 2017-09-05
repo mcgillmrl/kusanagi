@@ -3,7 +3,8 @@ import theano
 import theano.tensor as tt
 from kusanagi.ghost.regression.layers import (GaussianDropoutLayer,
                                               DenseDropoutLayer,
-                                              DenseGaussianDropoutLayer)
+                                              DenseGaussianDropoutLayer,
+                                              DenseLogNormalDropout)
 
 
 def gaussian_log_likelihood(targets, pred_mean, pred_std=None):
@@ -39,7 +40,8 @@ def dropout_gp_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
             layers[i-1], lasagne.layers.DropoutLayer)
         is_dropout_b = isinstance(
             layers[i], DenseDropoutLayer) and\
-            not isinstance(layers[i], DenseGaussianDropoutLayer)
+            not isinstance(layers[i], DenseGaussianDropoutLayer) and\
+            not isinstance(layers[i], DenseLogNormalDropout)
 
         is_dropout = is_dropout_a or is_dropout_b
 
@@ -68,7 +70,8 @@ def dropout_gp_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
     return sum(reg)
 
 
-def gaussian_dropout_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
+def gaussian_dropout_kl(output_layer, input_lengthscale=1.0,
+                        hidden_lengthscale=1.0):
     '''
         KL divergence approximation from :
          "Variational Dropout Sparsifies Deep Neural Networks"
@@ -77,7 +80,7 @@ def gaussian_dropout_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=
     layers = lasagne.layers.get_all_layers(output_layer)
     k1, k2, k3 = 0.63576, 1.8732, 1.48695
     C = -0.20452104900969109
-    #C= -k1
+    # C= -k1
     reg = []
     sigmoid = tt.nnet.sigmoid
     for i in range(1, len(layers)):
@@ -86,6 +89,19 @@ def gaussian_dropout_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=
         is_dropout_b = isinstance(layers[i], DenseGaussianDropoutLayer)
         if is_dropout_a or is_dropout_b:
             log_alpha = layers[i].log_alpha
+            # there should be one log_alpha per weight
+            print(layers[i].name)
+            print(layers[i].W.get_value().shape)
+            print(log_alpha.shape.eval())
+            log_alpha_shape = tuple(log_alpha.shape.eval())
+            W_shape = tuple(layers[i].W.get_value().shape)
+            if log_alpha_shape != W_shape:
+                # we assume that if alpha does not have the same shape as W 
+                # (i.e. one alpha parameter per weight) there's either one per
+                # output or per layer
+                # TODO make this compatible with conv layers
+                log_alpha = (log_alpha*tt.ones_like(layers[i].W.T)).T
+            print(log_alpha.shape.eval())
             kl = -(k1*sigmoid(k2+k3*log_alpha)
                    - 0.5*tt.log1p(tt.exp(-log_alpha))
                    + C)
@@ -94,4 +110,15 @@ def gaussian_dropout_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=
             rw = input_lengthscale if is_input else hidden_lengthscale
             reg.append(rw*kl.sum())
 
+    return sum(reg)
+
+
+def soft_orthogonality_constraint(output_layer, rw=10.0):
+    layers = lasagne.layers.get_all_layers(output_layer)
+    reg = []
+    for i in range(len(layers)):
+        if hasattr(layers[i], 'W'):
+            W = layers[i].W
+            norm = lasagne.regularization.l2(W.T.dot(W) - tt.eye(W.shape[1]))
+            reg.append(rw*norm)
     return sum(reg)
