@@ -3,12 +3,9 @@ import theano
 import theano.tensor as tt
 import lasagne
 import numpy as np
-import kusanagi
 
-from collections import OrderedDict
 from lasagne import nonlinearities
 from lasagne.random import get_rng
-from numbers import Number
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from kusanagi import utils
@@ -20,8 +17,7 @@ floatX = theano.config.floatX
 
 
 class BNN(BaseRegressor):
-    ''' Inefficient implementation of the dropout idea by Gal and Gharammani,
-     with Gaussian distributed inputs'''
+    ''' Bayesian neural net regressor '''
     def __init__(self, idims, odims, n_samples=100,
                  heteroscedastic=True, name='BNN',
                  filename=None, **kwargs):
@@ -70,7 +66,7 @@ class BNN(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1000
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 2000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -137,8 +133,9 @@ class BNN(BaseRegressor):
 
     def update_dataset_statistics(self, X_dataset, Y_dataset):
         Xm = X_dataset.mean(0).astype(floatX)
-        Xc = np.cov(X_dataset, rowvar=False, ddof=1).astype(floatX)
-        iXs = np.linalg.cholesky(np.linalg.inv(np.atleast_2d(Xc))).T
+        Xc = 4*np.cov(X_dataset, rowvar=False, ddof=1).astype(floatX)
+        iXs = np.linalg.cholesky(
+            np.linalg.inv(np.atleast_2d(Xc))).astype(floatX)
         if self.Xm is None:
             self.Xm = theano.shared(Xm, name='%s>Xm' % (self.name))
             self.iXs = theano.shared(iXs, name='%s>Xs' % (self.name))
@@ -147,8 +144,8 @@ class BNN(BaseRegressor):
             self.iXs.set_value(iXs)
 
         Ym = Y_dataset.mean(0).astype(floatX)
-        Yc = np.cov(Y_dataset, rowvar=False, ddof=1).astype(floatX)
-        Ys = np.linalg.cholesky(np.atleast_2d((Yc))).T
+        Yc = 4*np.cov(Y_dataset, rowvar=False, ddof=1).astype(floatX)
+        Ys = np.linalg.cholesky(np.atleast_2d((Yc))).T.astype(floatX)
         if self.Ym is None:
             self.Ym = theano.shared(Ym, name='%s>Ym' % (self.name))
             self.Ys = theano.shared(Ys, name='%s>Ys' % (self.name))
@@ -158,16 +155,17 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
-                                 hidden_dims=[400]*3,
-                                 p=lasagne.init.Constant(0.01),
-                                 p_input=lasagne.init.Constant(0.0001),
+                                 hidden_dims=[200]*2,
+                                 p=lasagne.init.Constant(1e-1),
+                                 p_input=0.0,
                                  nonlinearities=nonlinearities.rectify,
                                  output_nonlinearity=nonlinearities.linear,
-                                 W_init=lasagne.init.Orthogonal(gain='relu'),
+                                 W_init=lasagne.init.Orthogonal(),
                                  b_init=lasagne.init.Constant(0.),
                                  name=None):
         from lasagne.layers import InputLayer, DenseLayer
-        from kusanagi.ghost.regression.layers import DenseGaussianDropoutLayer as DenseDropoutLayer
+        from kusanagi.ghost.regression.layers import (
+            DenseLogNormalDropout as DenseDropoutLayer)
         if name is None:
             name = self.name
         if input_dims is None:
@@ -309,11 +307,16 @@ class BNN(BaseRegressor):
 
         # compute regularization term
         # this is only for binary dropout layers
+        input_ls = tt.minimum(M/N, input_lengthscale)
+        hidden_ls = tt.minimum(M/N, hidden_lengthscale)
         loss += objectives.dropout_gp_kl(
-            self.network, input_lengthscale, hidden_lengthscale)*M/N
+            self.network, input_ls, hidden_ls)
         # this is only for gaussian dropout layers
         loss += objectives.gaussian_dropout_kl(
-            self.network, input_lengthscale, hidden_lengthscale)*M/N
+            self.network, input_ls, hidden_ls)
+        # this is only for log normal dropout layers
+        loss += objectives.log_normal_kl(
+            self.network, input_ls, hidden_ls)
 
         inputs = [train_inputs, train_targets,
                   input_lengthscale, hidden_lengthscale]
@@ -377,6 +380,7 @@ class BNN(BaseRegressor):
             y = y.dot(self.Ys) + self.Ym
             # rescale variances
             #sn = sn.dot(self.Ys)
+            sn = sn*tt.diag(self.Ys)
 
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
@@ -457,4 +461,3 @@ class BNN(BaseRegressor):
                                      batch_size=batch_size)
         self.trained = True
         self.update()
-

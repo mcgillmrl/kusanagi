@@ -232,7 +232,7 @@ class DenseDropoutLayer(lasagne.layers.DenseLayer):
         one = tt.constant(1)
         retain_prob = one - self.p
         noise = self._srng.binomial(noise_shape, p=retain_prob,
-                                    dtype=input.dtype)
+                                    dtype=floatX)
 
         if self.shared_axes:
             bcast = tuple(bool(s == 1) for s in noise_shape)
@@ -286,14 +286,23 @@ class DenseGaussianDropoutLayer(DenseDropoutLayer):
     '''
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
-                 num_leading_axes=1, p=0.5, alpha=None, shared_axes=(),
-                 noise_samples=None, **kwargs):
+                 num_leading_axes=1, p=0.5, logit_alpha=None, shared_axes=(),
+                 noise_samples=None, max_alpha=0.5, **kwargs):
         super(DenseGaussianDropoutLayer, self).__init__(
             incoming, num_units, W, b, nonlinearity,
             num_leading_axes, p, shared_axes=(), noise_samples=None,
             **kwargs)
+        self.max_alpha = max_alpha
+        self.logit_alpha = logit_alpha
+        self.p = p
+        self.init_params()
 
-        if alpha is None:
+    def init_params(self):
+        p = self.p
+        logit_alpha = self.logit_alpha
+        max_alpha = self.max_alpha
+
+        if logit_alpha is None:
             if isinstance(p, Number):
                 p = np.atleast_1d(p)
             if callable(p):
@@ -301,28 +310,27 @@ class DenseGaussianDropoutLayer(DenseDropoutLayer):
             else:
                 p_shape = p.shape
             p = lasagne.utils.create_param(p, p_shape, name='p')
-            p = p.get_value() + 1e-12
-            # we will constrain range of alpha using sigmoid
-            alpha = p/(1-p)
-            alpha = np.log(alpha/(1-alpha))
+            p = p.get_value()
+            # we will constrain log_alpha between [-Inf, log(max_alpha))
+            alpha = (p/(1-p))
+            alpha = np.clip(alpha, 1e-6, max_alpha-1e-6)
+            logit_alpha = -np.log(max_alpha/alpha - 1).astype(floatX)
 
         # add alpha as trainable parameter
-        if isinstance(alpha, Number):
-            alpha = np.atleast_1d(alpha)
-        if callable(alpha):
-            alpha_shape = self.input_shape[1:]
-        elif isinstance(alpha, tt.sharedvar.SharedVariable):
-            alpha_shape = alpha.get_value().shape
+        if isinstance(logit_alpha, Number):
+            logit_alpha = np.atleast_1d(logit_alpha)
+        if callable(logit_alpha):
+            logit_alpha_shape = self.input_shape[1:]
+        elif isinstance(logit_alpha, tt.sharedvar.SharedVariable):
+            logit_alpha_shape = logit_alpha.get_value().shape
         else:
-            alpha_shape = alpha.shape
+            logit_alpha_shape = logit_alpha.shape
 
-        self.alpha = self.add_param(
-            alpha, alpha_shape, name='alpha', regularizable=False)
-
-        # no matter if we are training per layer, per unit or per weight, the
-        # KL divergence is computed per weight
-        log_alpha = tt.log(tt.nnet.sigmoid(self.alpha))
-        self.log_alpha = (log_alpha*tt.ones_like(self.W.T)).T
+        self.logit_alpha = self.add_param(
+            logit_alpha, logit_alpha_shape, name='logit_alpha',
+            regularizable=False)
+        alpha = self.max_alpha*tt.nnet.sigmoid(self.logit_alpha)
+        self.log_alpha = tt.log(alpha)
 
     def sample_noise(self, input, mean=0, std=1):
         # get noise_shape
@@ -336,7 +344,7 @@ class DenseGaussianDropoutLayer(DenseDropoutLayer):
                                 for a, s in enumerate(noise_shape))
 
         noise = self._srng.normal(
-            noise_shape, avg=mean, std=std, dtype=input.dtype)
+            noise_shape, avg=mean, std=std, dtype=floatX)
 
         if self.shared_axes:
             bcast = tuple(bool(s == 1) for s in noise_shape)
@@ -347,11 +355,8 @@ class DenseGaussianDropoutLayer(DenseDropoutLayer):
     def apply_noise(self, input, noise):
         # scale noise by alpha.
         # alpha is shared across mini batch samples
-        sq_alpha = tt.nnet.sigmoid(self.alpha)**0.5
+        sq_alpha = (tt.exp(0.5*self.log_alpha))
         return input*(1 + sq_alpha * noise)
-
-    def get_updates(self):
-        return self.updates
 
 
 class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
@@ -370,6 +375,18 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
               num_leading_axes, p, shared_axes=(), noise_samples=None,
               **kwargs)
         self.p = p
+        self.log_sigma2 = log_sigma2
+        self.init_params()
+
+    def init_params(self):
+        # delete tthe logit param from the superclass
+        if hasattr(self, 'logit_alpha'):
+            if self.logit_alpha in self.params:
+                del self.params[self.logit_alpha]
+            self.logit_alpha = None
+
+        log_sigma2 = self.log_sigma2
+        p = self.p
         if log_sigma2 is None:
             if isinstance(p, Number):
                 p = np.atleast_1d(p)
@@ -378,9 +395,10 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
             else:
                 p_shape = p.shape
             p = lasagne.utils.create_param(p, p_shape, name='p')
-            p = p.get_value() + 1e-8
+            p = p.get_value() + 1e-6
             alpha = p/(1-p)
-            log_sigma2 = np.log(alpha*(self.W.get_value()**2))
+            log_sigma2 = np.log(
+                alpha*(self.W.get_value().T**2)).T.astype(floatX)
 
         # add log_sigma2 as trainable parameter
         if isinstance(log_sigma2, Number):
@@ -391,16 +409,24 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
             log_sigma2_shape = log_sigma2.get_value().shape
         else:
             log_sigma2_shape = log_sigma2.shape
-        
+
         self.log_sigma2 = self.add_param(
             log_sigma2, log_sigma2_shape, name='log_sigma2',
             regularizable=False)
-        self.log_alpha = self.log_sigma2 - tt.log(self.W**2)
+        self.log_alpha = self.log_sigma2 + np.log(1e-6) - tt.log(self.W**2+1e-6)
+
         s2 = tt.exp(self.log_sigma2)
+        a = s2.eval()
+        print((a.min(), a.mean(), a.max()))
+        a = (self.W.get_value()+1e-6)**2
+        print((a.min(), a.mean(), a.max()))
         alpha = s2/(self.W**2)
+        a = alpha.eval()
+        print((a.min(), a.mean(), a.max()))
         p = alpha/(1+alpha)
         p = p.eval()
         print((p.min(), p.mean(), p.max()))
+        print(self.params)
 
     def init_noise(self, noise):
         # initalize noise param
@@ -435,9 +461,9 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
         if deterministic or self.p == 0:
             activation = tt.dot(input, self.W)
         else:
-
-            m_act = tt.dot(input, self.W)
-            S_act = tt.dot(input**2, tt.exp(self.log_sigma2))
+            W = self.W + 1e-6
+            m_act = tt.dot(input, W)
+            S_act = tt.dot(input**2, tt.exp(self.log_sigma2)+1e-6)
 
             # get expression for getting new noise samples
             noise = self.sample_noise(m_act)
@@ -458,3 +484,111 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
             activation = activation + self.b
 
         return self.nonlinearity(activation)
+
+
+def phi(x):
+    return 0.5*(1 + tt.erf(x/np.sqrt(2)))
+
+
+def inv_phi(y):
+    return np.sqrt(2)*tt.erfinv(2*y - 1)
+
+
+class DenseLogNormalDropout(DenseDropoutLayer):
+    def __init__(self, incoming, num_units, W=init.GlorotUniform(),
+                 b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
+                 num_leading_axes=1, posterior_mean=None,
+                 log_posterior_cov=None, interval=[-20, 0],
+                 shared_axes=(), noise_samples=None,
+                 **kwargs):
+        super(DenseLogNormalDropout, self).__init__(
+            incoming, num_units, W, b, nonlinearity,
+            num_leading_axes, shared_axes=(), noise_samples=None,
+            **kwargs)
+        self.posterior_mean = posterior_mean
+        self.log_posterior_cov = log_posterior_cov
+        self.interval = interval
+        self.init_params()
+
+    def init_params(self):
+        posterior_mean = self.posterior_mean
+        log_posterior_cov = self.log_posterior_cov
+
+        if posterior_mean is None:
+            # set posterior mean to values near 0
+            posterior_mean = lasagne.init.Normal(0.01, -1.0)
+
+        if log_posterior_cov is None:
+            log_posterior_cov = lasagne.init.Normal(0.01, -1.0)
+
+        # add the posterior parameters as trainable parameters
+        if isinstance(posterior_mean, Number):
+            posterior_mean = np.atleast_1d(posterior_mean)
+        if callable(posterior_mean):
+            posterior_mean_shape = self.input_shape[1:]
+        elif isinstance(posterior_mean, tt.sharedvar.SharedVariable):
+            posterior_mean_shape = posterior_mean.get_value().shape
+        else:
+            posterior_mean_shape = posterior_mean.shape
+
+        self.posterior_mean = self.add_param(
+            posterior_mean, posterior_mean_shape, name='posterior_mean',
+            regularizable=False)
+
+        if isinstance(log_posterior_cov, Number):
+            log_posterior_cov = np.atleast_1d(log_posterior_cov)
+        if callable(log_posterior_cov):
+            log_posterior_cov_shape = self.input_shape[1:]
+        elif isinstance(log_posterior_cov, tt.sharedvar.SharedVariable):
+            log_posterior_cov_shape = log_posterior_cov.get_value().shape
+        else:
+            log_posterior_cov_shape = log_posterior_cov.shape
+
+        self.log_posterior_cov = self.add_param(
+            log_posterior_cov, log_posterior_cov_shape,
+            name='log_posterior_cov',
+            regularizable=False)
+
+    def sample_noise(self, input, a=0, b=1):
+        # get noise_shape
+        noise_shape = input.shape
+
+        # respect shared axes
+        if self.shared_axes:
+            shared_axes = tuple(a if a >= 0 else a + input.ndim
+                                for a in self.shared_axes)
+            noise_shape = tuple(1 if a in shared_axes else s
+                                for a, s in enumerate(noise_shape))
+
+        noise = self._srng.uniform(
+            noise_shape, low=a, high=b, dtype=floatX)
+
+        if self.shared_axes:
+            bcast = tuple(bool(s == 1) for s in noise_shape)
+            noise = tt.patternbroadcast(noise, bcast)
+
+        return noise
+
+    def apply_noise(self, input, noise):
+        # noise should come from a U[0, 1] distribution
+        # transform noise to U [a, b]
+        a, b = self.interval
+        y = noise
+        # get posterior params
+        mu = self.posterior_mean
+        sigma = tt.exp(0.5*self.log_posterior_cov)
+        # transform noise  to truncated lognormal samples
+        alpha = (a - mu)/sigma
+        beta = (b - mu)/sigma
+        Z = phi(beta) - phi(alpha)
+        noise = tt.exp(mu + sigma*inv_phi(phi(alpha) + Z*y))
+
+        # compute SNR
+        Z1 = phi(sigma-alpha) - phi(sigma-beta)
+        Z2 = phi(2*sigma-alpha) - phi(2*sigma-beta)
+        Enoise = (Z1)/tt.sqrt(Z)
+        Varnoise = tt.sqrt(tt.exp(sigma**2)*Z2 - Z1**2)
+        snr = Enoise/Varnoise
+
+        # only keep neurons with high signal to noise ratio
+        return tt.switch(snr < 1, 0.0, input*noise)

@@ -1,4 +1,5 @@
 import lasagne
+import numpy as np
 import theano
 import theano.tensor as tt
 from kusanagi.ghost.regression.layers import (GaussianDropoutLayer,
@@ -96,7 +97,7 @@ def gaussian_dropout_kl(output_layer, input_lengthscale=1.0,
             log_alpha_shape = tuple(log_alpha.shape.eval())
             W_shape = tuple(layers[i].W.get_value().shape)
             if log_alpha_shape != W_shape:
-                # we assume that if alpha does not have the same shape as W 
+                # we assume that if alpha does not have the same shape as W
                 # (i.e. one alpha parameter per weight) there's either one per
                 # output or per layer
                 # TODO make this compatible with conv layers
@@ -113,7 +114,7 @@ def gaussian_dropout_kl(output_layer, input_lengthscale=1.0,
     return sum(reg)
 
 
-def soft_orthogonality_constraint(output_layer, rw=10.0):
+def soft_orthogonality_constraint(output_layer, rw=1.0):
     layers = lasagne.layers.get_all_layers(output_layer)
     reg = []
     for i in range(len(layers)):
@@ -121,4 +122,34 @@ def soft_orthogonality_constraint(output_layer, rw=10.0):
             W = layers[i].W
             norm = lasagne.regularization.l2(W.T.dot(W) - tt.eye(W.shape[1]))
             reg.append(rw*norm)
+    return sum(reg)
+
+
+def Phi(x):
+    return 0.5*(1 + tt.erf(x/np.sqrt(2)))
+
+
+def phi(x):
+    return tt.exp(-0.5*x**2)/np.sqrt(2*np.pi)
+
+
+def log_normal_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
+    layers = lasagne.layers.get_all_layers(output_layer)
+    reg = []
+    for i in range(1, len(layers)):
+        is_dropout = isinstance(layers[i], DenseLogNormalDropout)
+        if is_dropout:
+            a, b = layers[i].interval
+            mu = layers[i].posterior_mean
+            sigma = tt.exp(0.5*layers[i].log_posterior_cov)
+            alpha = (a - mu)/sigma
+            beta = (b - mu)/sigma
+            Z = Phi(beta) - Phi(alpha)
+            kl = (tt.log(b-a) - tt.log(np.sqrt(2*np.pi)*sigma) - tt.log(Z)
+                  - ((alpha*phi(alpha) - beta*phi(beta))/sigma)/(2*Z))
+
+            is_input = isinstance(layers[i].input_layer,
+                                  lasagne.layers.InputLayer)
+            rw = input_lengthscale if is_input else hidden_lengthscale
+            reg.append(rw*kl.sum())
     return sum(reg)
