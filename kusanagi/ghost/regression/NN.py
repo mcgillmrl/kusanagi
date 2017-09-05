@@ -66,7 +66,7 @@ class BNN(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 2000
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 5000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -133,7 +133,7 @@ class BNN(BaseRegressor):
 
     def update_dataset_statistics(self, X_dataset, Y_dataset):
         Xm = X_dataset.mean(0).astype(floatX)
-        Xc = 4*np.cov(X_dataset, rowvar=False, ddof=1).astype(floatX)
+        Xc = np.cov(X_dataset, rowvar=False, ddof=1).astype(floatX)
         iXs = np.linalg.cholesky(
             np.linalg.inv(np.atleast_2d(Xc))).astype(floatX)
         if self.Xm is None:
@@ -144,7 +144,7 @@ class BNN(BaseRegressor):
             self.iXs.set_value(iXs)
 
         Ym = Y_dataset.mean(0).astype(floatX)
-        Yc = 4*np.cov(Y_dataset, rowvar=False, ddof=1).astype(floatX)
+        Yc = np.cov(Y_dataset, rowvar=False, ddof=1).astype(floatX)
         Ys = np.linalg.cholesky(np.atleast_2d((Yc))).T.astype(floatX)
         if self.Ym is None:
             self.Ym = theano.shared(Ym, name='%s>Ym' % (self.name))
@@ -155,7 +155,7 @@ class BNN(BaseRegressor):
 
     def get_default_network_spec(self, batchsize=None, input_dims=None,
                                  output_dims=None,
-                                 hidden_dims=[200]*2,
+                                 hidden_dims=[200]*4,
                                  p=lasagne.init.Constant(1e-1),
                                  p_input=0.0,
                                  nonlinearities=nonlinearities.rectify,
@@ -380,7 +380,7 @@ class BNN(BaseRegressor):
             y = y.dot(self.Ys) + self.Ym
             # rescale variances
             #sn = sn.dot(self.Ys)
-            sn = sn*tt.diag(self.Ys)
+
 
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
@@ -451,7 +451,7 @@ class BNN(BaseRegressor):
         if input_ls is None:
             # set to some proportion of the standard deviation
             # (inputs are scaled and centered to N(0,1) )
-            input_ls = 0.1
+            input_ls = 0.01
 
         if hidden_ls is None:
             hidden_ls = input_ls

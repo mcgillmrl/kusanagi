@@ -140,8 +140,8 @@ def log_normal_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
         is_dropout = isinstance(layers[i], DenseLogNormalDropout)
         if is_dropout:
             a, b = layers[i].interval
-            mu = layers[i].posterior_mean
-            sigma = tt.exp(0.5*layers[i].log_posterior_cov)
+            mu = layers[i].mu
+            sigma = layers[i].sigma
             alpha = (a - mu)/sigma
             beta = (b - mu)/sigma
             Z = Phi(beta) - Phi(alpha)

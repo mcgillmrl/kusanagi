@@ -497,7 +497,7 @@ def inv_phi(y):
 class DenseLogNormalDropout(DenseDropoutLayer):
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
-                 num_leading_axes=1, posterior_mean=None,
+                 num_leading_axes=1, logit_posterior_mean=None,
                  log_posterior_cov=None, interval=[-20, 0],
                  shared_axes=(), noise_samples=None,
                  **kwargs):
@@ -505,35 +505,38 @@ class DenseLogNormalDropout(DenseDropoutLayer):
             incoming, num_units, W, b, nonlinearity,
             num_leading_axes, shared_axes=(), noise_samples=None,
             **kwargs)
-        self.posterior_mean = posterior_mean
+        self.logit_posterior_mean = logit_posterior_mean
         self.log_posterior_cov = log_posterior_cov
         self.interval = interval
         self.init_params()
 
     def init_params(self):
-        posterior_mean = self.posterior_mean
+        logit_posterior_mean = self.logit_posterior_mean
         log_posterior_cov = self.log_posterior_cov
-
-        if posterior_mean is None:
-            # set posterior mean to values near 0
-            posterior_mean = lasagne.init.Normal(0.01, -1.0)
+        a, b = self.interval
+        if logit_posterior_mean is None:
+            # set posterior mean close to b and constrain it to the
+            # interval [a, b]
+            mu0 = b - 1e-4*(b-a)
+            logit_mu0 = -np.log((b-a)/(mu0 - a) - 1)
+            logit_posterior_mean = lasagne.init.Constant(logit_mu0)
 
         if log_posterior_cov is None:
-            log_posterior_cov = lasagne.init.Normal(0.01, -1.0)
+            log_posterior_cov = lasagne.init.Constant(np.log(1e-2*(b-a)))
 
         # add the posterior parameters as trainable parameters
-        if isinstance(posterior_mean, Number):
-            posterior_mean = np.atleast_1d(posterior_mean)
-        if callable(posterior_mean):
-            posterior_mean_shape = self.input_shape[1:]
-        elif isinstance(posterior_mean, tt.sharedvar.SharedVariable):
-            posterior_mean_shape = posterior_mean.get_value().shape
+        if isinstance(logit_posterior_mean, Number):
+            logit_posterior_mean = np.atleast_1d(logit_posterior_mean)
+        if callable(logit_posterior_mean):
+            logit_posterior_mean_shape = self.input_shape[1:]
+        elif isinstance(logit_posterior_mean, tt.sharedvar.SharedVariable):
+            logit_posterior_mean_shape = logit_posterior_mean.get_value().shape
         else:
-            posterior_mean_shape = posterior_mean.shape
+            logit_posterior_mean_shape = logit_posterior_mean.shape
 
-        self.posterior_mean = self.add_param(
-            posterior_mean, posterior_mean_shape, name='posterior_mean',
-            regularizable=False)
+        self.logit_posterior_mean = self.add_param(
+            logit_posterior_mean, logit_posterior_mean_shape, 
+            name='logit_posterior_mean', regularizable=False)
 
         if isinstance(log_posterior_cov, Number):
             log_posterior_cov = np.atleast_1d(log_posterior_cov)
@@ -548,6 +551,9 @@ class DenseLogNormalDropout(DenseDropoutLayer):
             log_posterior_cov, log_posterior_cov_shape,
             name='log_posterior_cov',
             regularizable=False)
+
+        self.mu = (b-a)*tt.nnet.sigmoid(self.logit_posterior_mean) + a
+        self.sigma = tt.exp(0.5*self.log_posterior_cov)
 
     def sample_noise(self, input, a=0, b=1):
         # get noise_shape
@@ -575,13 +581,16 @@ class DenseLogNormalDropout(DenseDropoutLayer):
         a, b = self.interval
         y = noise
         # get posterior params
-        mu = self.posterior_mean
-        sigma = tt.exp(0.5*self.log_posterior_cov)
+        mu = self.mu
+        sigma = self.sigma
         # transform noise  to truncated lognormal samples
         alpha = (a - mu)/sigma
         beta = (b - mu)/sigma
         Z = phi(beta) - phi(alpha)
-        noise = tt.exp(mu + sigma*inv_phi(phi(alpha) + Z*y))
+
+        p = phi(alpha) + Z*y
+        iphi = inv_phi(p)
+        noise = tt.exp(mu + sigma*iphi)
 
         # compute SNR
         Z1 = phi(sigma-alpha) - phi(sigma-beta)
@@ -591,4 +600,4 @@ class DenseLogNormalDropout(DenseDropoutLayer):
         snr = Enoise/Varnoise
 
         # only keep neurons with high signal to noise ratio
-        return tt.switch(snr < 1, 0.0, input*noise)
+        return input*noise
