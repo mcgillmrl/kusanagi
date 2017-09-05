@@ -42,7 +42,7 @@ class NNPolicy(BNN):
                 hidden_dims=[100]*2,
                 nonlinearities=lasagne.nonlinearities.rectify,
                 output_nonlinearity=self.sat_func,
-                p=0.1, name=self.name)
+                name=self.name)
 
         if self.network is None:
             params = self.network_params\
