@@ -498,7 +498,7 @@ class DenseLogNormalDropout(DenseDropoutLayer):
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
                  num_leading_axes=1, logit_posterior_mean=None,
-                 logit_posterior_std=None, interval=[-20, 0],
+                 logit_posterior_std=None, interval=[-10.0, 0.0],
                  shared_axes=(), noise_samples=None,
                  **kwargs):
         super(DenseLogNormalDropout, self).__init__(
@@ -514,7 +514,7 @@ class DenseLogNormalDropout(DenseDropoutLayer):
         logit_posterior_mean = self.logit_posterior_mean
         logit_posterior_std = self.logit_posterior_std
         a, b = self.interval
-        s_interval = [1e-6, np.sqrt(((b-a)**2)/12.0)]
+        s_interval = [1e-4, np.sqrt(((b-a)**2)/12.0)]
         s_min, s_max = np.array(s_interval).astype(floatX).tolist()
         self.s_interval = [s_min, s_max]
 
@@ -526,7 +526,7 @@ class DenseLogNormalDropout(DenseDropoutLayer):
             logit_posterior_mean = lasagne.init.Constant(logit_mu0)
 
         if logit_posterior_std is None:
-            s0 = s_min + 1e-1*(s_max-s_min)
+            s0 = s_min + 0.25*(s_max-s_min)
             logit_s0 = -np.log((s_max-s_min)/(s0 - s_min) - 1).astype(floatX)
             logit_posterior_std = lasagne.init.Constant(logit_s0)
 
