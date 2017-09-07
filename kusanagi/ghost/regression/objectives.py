@@ -126,11 +126,11 @@ def soft_orthogonality_constraint(output_layer, rw=1.0):
 
 
 def Phi(x):
-    return 0.5*(1 + tt.erf(x/np.sqrt(2)))
+    return 0.5*(1 + tt.erf(x/tt.sqrt(2)))
 
 
 def phi(x):
-    return tt.exp(-0.5*x**2)/np.sqrt(2*np.pi)
+    return tt.exp(-0.5*x**2)/tt.sqrt(2*np.pi)
 
 
 def log_normal_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
@@ -145,7 +145,7 @@ def log_normal_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
             alpha = (a - mu)/sigma
             beta = (b - mu)/sigma
             Z = Phi(beta) - Phi(alpha)
-            kl = (tt.log(b-a) - tt.log(np.sqrt(2*np.pi)*sigma) - tt.log(Z)
+            kl = (tt.log(b-a) - tt.log(tt.sqrt(2*np.pi)*sigma) - tt.log(Z)
                   - ((alpha*phi(alpha) - beta*phi(beta))/sigma)/(2*Z))
 
             is_input = isinstance(layers[i].input_layer,

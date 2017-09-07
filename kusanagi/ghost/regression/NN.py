@@ -66,7 +66,7 @@ class BNN(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 5000
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -451,7 +451,7 @@ class BNN(BaseRegressor):
         if input_ls is None:
             # set to some proportion of the standard deviation
             # (inputs are scaled and centered to N(0,1) )
-            input_ls = 0.01
+            input_ls = 0.1
 
         if hidden_ls is None:
             hidden_ls = input_ls
