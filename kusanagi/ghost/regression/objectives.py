@@ -142,9 +142,9 @@ def log_normal_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
             a, b = layers[i].interval
             mu = layers[i].mu
             sigma = layers[i].sigma
-            alpha = (a - mu)/sigma
-            beta = (b - mu)/sigma
-            Z = Phi(beta) - Phi(alpha)
+            alpha = layers[i].alpha
+            beta = layers[i].beta
+            Z = layers[i].Z
             kl = (tt.log(b-a) - tt.log(tt.sqrt(2*np.pi)*sigma) - tt.log(Z)
                   - ((alpha*phi(alpha) - beta*phi(beta))/sigma)/(2*Z))
 

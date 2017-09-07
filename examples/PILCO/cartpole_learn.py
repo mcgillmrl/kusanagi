@@ -64,7 +64,7 @@ if __name__ == '__main__':
     params = cartpole.default_params()
     n_rnd = 4                           # number of random initial trials
     n_opt = 100                         # learning iterations
-    n_samples = 50                      # number of MC samples if bayesian nn
+    n_samples = 100                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
     polyak_averaging = None
     H = params['max_steps']
@@ -158,9 +158,9 @@ if __name__ == '__main__':
 
                 # parameters for building loss function
                 loss_kwargs['n_samples'] = n_samples
-                loss_kwargs['resample_particles'] = False
+                loss_kwargs['resample_particles'] = True
                 obj_kwargs['learning_rate'] = lr
-                obj_kwargs['clip'] = 100.0
+                obj_kwargs['clip'] = 1.0
                 obj_kwargs['polyak_averaging'] = polyak_averaging
                 learner = mc_pilco
             else:
@@ -186,7 +186,7 @@ if __name__ == '__main__':
             polopt_args.append(learning_rate)
         polopt.minimize(*polopt_args,
                         callback=polopt_cb,
-                        return_best=True)
+                        return_best=False)
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())

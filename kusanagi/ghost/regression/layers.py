@@ -516,6 +516,7 @@ class DenseLogNormalDropout(DenseDropoutLayer):
         a, b = self.interval
         s_interval = [1e-6, np.sqrt(((b-a)**2)/12.0)]
         s_min, s_max = np.array(s_interval).astype(floatX).tolist()
+        self.s_interval = [s_min, s_max]
 
         if logit_posterior_mean is None:
             # set posterior mean close to b and constrain it to the
@@ -557,11 +558,40 @@ class DenseLogNormalDropout(DenseDropoutLayer):
             name='logit_posterior_std',
             regularizable=False)
 
+        self.init_intermediate_vars()
+
+    def init_intermediate_vars(self):
+        a, b = self.interval
+        s_min, s_max = self.s_interval
         sigmoid = tt.nnet.sigmoid
+
+        # posterior params
         self.mu = (b-a)*sigmoid(self.logit_posterior_mean) + a
         self.sigma = (s_max-s_min)*sigmoid(self.logit_posterior_std) + s_min
 
-    def sample_noise(self, input, a=1e-4, b=1-1e-4):
+        # transform noise  to truncated lognormal samples
+        self.alpha = (a - self.mu)/self.sigma
+        self.beta = (b - self.mu)/self.sigma
+        self.phi_alpha = phi(self.alpha)
+        self.Z = phi(self.beta) - self.phi_alpha
+
+        # compute SNR
+        #Z1 = phi(sigma-alpha) - phi(sigma-beta)
+        #Z2 = phi(2*sigma-alpha) - phi(2*sigma-beta)
+        #Enoise = (Z1)/tt.sqrt(Z)
+        #Varnoise = tt.sqrt(tt.exp(sigma**2)*Z2 - Z1**2)
+        #snr = Enoise/Varnoise
+
+    def get_intermediate_outputs(self):
+        ''' returns variables that do not depend on the input;
+            i.e. are a function of the parameters only. This is done
+            so that we can pass these intermediate variable to calls
+            to scan (so they're not recomputed at every loop iteration
+        '''
+        return [self.mu, self.sigma, self.alpha, self.beta, 
+                self.phi_alpha, self.Z]
+
+    def sample_noise(self, input, a=1e-6, b=1-1e-6):
         # get noise_shape
         noise_shape = input.shape
 
@@ -583,27 +613,14 @@ class DenseLogNormalDropout(DenseDropoutLayer):
 
     def apply_noise(self, input, noise):
         # noise should come from a U[0, 1] distribution
-        # transform noise to U [a, b]
-        a, b = self.interval
-        y = noise
         # get posterior params
         mu = self.mu
         sigma = self.sigma
 
         # transform noise  to truncated lognormal samples
-        alpha = (a - mu)/sigma
-        beta = (b - mu)/sigma
-        Z = phi(beta) - phi(alpha)
-        p = phi(alpha) + Z*y
+        p = self.phi_alpha + self.Z*noise
         iphi = inv_phi(p)
         noise = tt.exp(mu + sigma*iphi)
-
-        # compute SNR
-        Z1 = phi(sigma-alpha) - phi(sigma-beta)
-        Z2 = phi(2*sigma-alpha) - phi(2*sigma-beta)
-        Enoise = (Z1)/tt.sqrt(Z)
-        Varnoise = tt.sqrt(tt.exp(sigma**2)*Z2 - Z1**2)
-        snr = Enoise/Varnoise
-
+        
         # only keep neurons with high signal to noise ratio
         return input*noise
