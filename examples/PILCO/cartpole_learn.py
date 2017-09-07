@@ -66,7 +66,7 @@ if __name__ == '__main__':
     n_opt = 100                         # learning iterations
     n_samples = 100                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
-    polyak_averaging = None
+    polyak_averaging = 0.99
     H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
@@ -160,7 +160,7 @@ if __name__ == '__main__':
                 loss_kwargs['n_samples'] = n_samples
                 loss_kwargs['resample_particles'] = True
                 obj_kwargs['learning_rate'] = lr
-                obj_kwargs['clip'] = 1.0
+                obj_kwargs['clip'] = 10.0
                 obj_kwargs['polyak_averaging'] = polyak_averaging
                 learner = mc_pilco
             else:

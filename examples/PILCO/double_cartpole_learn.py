@@ -67,7 +67,7 @@ if __name__ == '__main__':
     n_opt = 100                         # learning iterations
     n_samples = 100                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
-    polyak_averaging = 0.95
+    polyak_averaging = 0.99
     H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
@@ -187,7 +187,7 @@ if __name__ == '__main__':
             polopt_args.append(learning_rate)
         polopt.minimize(*polopt_args,
                         callback=polopt_cb,
-                        return_best=True)
+                        return_best=False)
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())
