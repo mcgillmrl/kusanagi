@@ -487,18 +487,18 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
 
 
 def phi(x):
-    return 0.5*(1 + tt.erf(x/np.sqrt(2)))
+    return 0.5*(1 + tt.erf(x/tt.sqrt(2)))
 
 
 def inv_phi(y):
-    return np.sqrt(2)*tt.erfinv(2*y - 1)
+    return tt.sqrt(2)*tt.erfinv(2*y - 1)
 
 
 class DenseLogNormalDropout(DenseDropoutLayer):
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
                  num_leading_axes=1, logit_posterior_mean=None,
-                 log_posterior_cov=None, interval=[-20, 0],
+                 logit_posterior_std=None, interval=[-20, 0],
                  shared_axes=(), noise_samples=None,
                  **kwargs):
         super(DenseLogNormalDropout, self).__init__(
@@ -506,23 +506,28 @@ class DenseLogNormalDropout(DenseDropoutLayer):
             num_leading_axes, shared_axes=(), noise_samples=None,
             **kwargs)
         self.logit_posterior_mean = logit_posterior_mean
-        self.log_posterior_cov = log_posterior_cov
+        self.logit_posterior_std = logit_posterior_std
         self.interval = interval
         self.init_params()
 
     def init_params(self):
         logit_posterior_mean = self.logit_posterior_mean
-        log_posterior_cov = self.log_posterior_cov
+        logit_posterior_std = self.logit_posterior_std
         a, b = self.interval
+        s_interval = [1e-6, np.sqrt(((b-a)**2)/12.0)]
+        s_min, s_max = np.array(s_interval).astype(floatX).tolist()
+
         if logit_posterior_mean is None:
             # set posterior mean close to b and constrain it to the
             # interval [a, b]
-            mu0 = b - 1e-4*(b-a)
-            logit_mu0 = -np.log((b-a)/(mu0 - a) - 1)
+            mu0 = b - 1e-2*(b-a)
+            logit_mu0 = -np.log((b-a)/(mu0 - a) - 1).astype(floatX)
             logit_posterior_mean = lasagne.init.Constant(logit_mu0)
 
-        if log_posterior_cov is None:
-            log_posterior_cov = lasagne.init.Constant(np.log(1e-2*(b-a)))
+        if logit_posterior_std is None:
+            s0 = s_min + 1e-1*(s_max-s_min)
+            logit_s0 = -np.log((s_max-s_min)/(s0 - s_min) - 1).astype(floatX)
+            logit_posterior_std = lasagne.init.Constant(logit_s0)
 
         # add the posterior parameters as trainable parameters
         if isinstance(logit_posterior_mean, Number):
@@ -538,24 +543,25 @@ class DenseLogNormalDropout(DenseDropoutLayer):
             logit_posterior_mean, logit_posterior_mean_shape, 
             name='logit_posterior_mean', regularizable=False)
 
-        if isinstance(log_posterior_cov, Number):
-            log_posterior_cov = np.atleast_1d(log_posterior_cov)
-        if callable(log_posterior_cov):
-            log_posterior_cov_shape = self.input_shape[1:]
-        elif isinstance(log_posterior_cov, tt.sharedvar.SharedVariable):
-            log_posterior_cov_shape = log_posterior_cov.get_value().shape
+        if isinstance(logit_posterior_std, Number):
+            logit_posterior_std = np.atleast_1d(logit_posterior_std)
+        if callable(logit_posterior_std):
+            logit_posterior_std_shape = self.input_shape[1:]
+        elif isinstance(logit_posterior_std, tt.sharedvar.SharedVariable):
+            logit_posterior_std_shape = logit_posterior_std.get_value().shape
         else:
-            log_posterior_cov_shape = log_posterior_cov.shape
+            logit_posterior_std_shape = logit_posterior_std.shape
 
-        self.log_posterior_cov = self.add_param(
-            log_posterior_cov, log_posterior_cov_shape,
-            name='log_posterior_cov',
+        self.logit_posterior_std = self.add_param(
+            logit_posterior_std, logit_posterior_std_shape,
+            name='logit_posterior_std',
             regularizable=False)
 
-        self.mu = (b-a)*tt.nnet.sigmoid(self.logit_posterior_mean) + a
-        self.sigma = tt.exp(0.5*self.log_posterior_cov)
+        sigmoid = tt.nnet.sigmoid
+        self.mu = (b-a)*sigmoid(self.logit_posterior_mean) + a
+        self.sigma = (s_max-s_min)*sigmoid(self.logit_posterior_std) + s_min
 
-    def sample_noise(self, input, a=0, b=1):
+    def sample_noise(self, input, a=1e-4, b=1-1e-4):
         # get noise_shape
         noise_shape = input.shape
 
@@ -583,11 +589,11 @@ class DenseLogNormalDropout(DenseDropoutLayer):
         # get posterior params
         mu = self.mu
         sigma = self.sigma
+
         # transform noise  to truncated lognormal samples
         alpha = (a - mu)/sigma
         beta = (b - mu)/sigma
         Z = phi(beta) - phi(alpha)
-
         p = phi(alpha) + Z*y
         iphi = inv_phi(p)
         noise = tt.exp(mu + sigma*iphi)
