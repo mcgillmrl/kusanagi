@@ -66,7 +66,7 @@ if __name__ == '__main__':
     n_opt = 100                         # learning iterations
     n_samples = 50                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
-    polyak_averaging = 0.95
+    polyak_averaging = None
     H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
@@ -158,9 +158,9 @@ if __name__ == '__main__':
 
                 # parameters for building loss function
                 loss_kwargs['n_samples'] = n_samples
-                loss_kwargs['resample_particles'] = True
+                loss_kwargs['resample_particles'] = False
                 obj_kwargs['learning_rate'] = lr
-                obj_kwargs['clip'] = 10.0
+                obj_kwargs['clip'] = 100.0
                 obj_kwargs['polyak_averaging'] = polyak_averaging
                 learner = mc_pilco
             else:
@@ -185,7 +185,8 @@ if __name__ == '__main__':
         if use_bnn_dyn:
             polopt_args.append(learning_rate)
         polopt.minimize(*polopt_args,
-                        callback=polopt_cb)
+                        callback=polopt_cb,
+                        return_best=True)
 
         # apply controller
         exp.new_episode(policy_params=pol.get_params())
