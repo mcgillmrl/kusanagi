@@ -133,7 +133,7 @@ if __name__ == '__main__':
 
         # train dynamics model
         train_dynamics(dyn, exp, angle_dims=angle_dims,
-                       init_episode=max(0, i-10))
+                       init_episode=max(0, i-20))
 
         # initial state distribution
         x0 = np.array([st[0] for st in exp.states])
