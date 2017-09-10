@@ -526,7 +526,7 @@ class DenseLogNormalDropout(DenseDropoutLayer):
             logit_posterior_mean = lasagne.init.Constant(logit_mu0)
 
         if logit_posterior_std is None:
-            s0 = s_min + 0.25*(s_max-s_min)
+            s0 = s_min + 0.1*(s_max-s_min)
             logit_s0 = -np.log((s_max-s_min)/(s0 - s_min) - 1).astype(floatX)
             logit_posterior_std = lasagne.init.Constant(logit_s0)
 
