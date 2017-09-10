@@ -47,7 +47,7 @@ def plot_rollout(rollout_fn, *args, **kwargs):
         axarr[d].plot(
             np.arange(T-1), np.array(exp.states[-1])[1:H, d], color='red')
         axarr[d].plot(
-            np.arange(T-1), st[:, :-1].mean(0), color='purple')
+            np.arange(T-1), st[:, :-1].mean(0), color='orange')
     plt.show(block=False)
     plt.waitforbuttonpress(0.1)
 
@@ -67,7 +67,7 @@ if __name__ == '__main__':
     n_opt = 100                         # learning iterations
     n_samples = 100                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
-    polyak_averaging = 0.99
+    polyak_averaging = None
     H = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
@@ -133,8 +133,7 @@ if __name__ == '__main__':
         utils.print_with_stamp(msg % (i+1, total_exp))
 
         # train dynamics model
-        train_dynamics(dyn, exp, angle_dims=angle_dims,
-                       init_episode=max(0, i-10))
+        train_dynamics(dyn, exp, angle_dims=angle_dims)
 
         # initial state distribution
         x0 = np.array([st[0] for st in exp.states])
@@ -161,7 +160,7 @@ if __name__ == '__main__':
                 loss_kwargs['n_samples'] = n_samples
                 loss_kwargs['resample_particles'] = True
                 obj_kwargs['learning_rate'] = lr
-                obj_kwargs['clip'] = 10.0
+                obj_kwargs['clip'] = 1.0
                 obj_kwargs['polyak_averaging'] = polyak_averaging
                 learner = mc_pilco
             else:

@@ -56,23 +56,22 @@ def rollout(x0, H, gamma0,
         '''
         # get next state distribution
         x_next, sn = propagate_particles(x, pol, dyn, D, angle_dims, **kwargs)
+
+        x_next_noisy = x_next + sn*m_rng.normal(x_next.shape) 
         #  get cost of applying action:
         n = x_next.shape[0]
         n = n.astype(theano.config.floatX)
         mx_next = x_next.mean(0)
         Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
-
-        # with measurement noise
-        sn2 = sn.mean(0)**2
-        Sx_next_noisy = Sx_next + tt.diag(sn2)
-        mc_next = cost(mx_next, Sx_next_noisy)[0]
-        c_next = cost(x_next, None)
-        #mc_next = c_next.mean(0)
+        mc_next = cost(mx_next, Sx_next)[0]
 
         # resample if requested
         if resample:
-            z = m_rng.normal(x.shape)
-            x_next = mx_next + z.dot(tt.slinalg.cholesky(Sx_next_noisy).T)
+            z = m_rng.normal(x_next.shape)
+            x_next = mx_next + z.dot(tt.slinalg.cholesky(Sx_next).T)
+
+        c_next = cost(x_next, None)
+        #mc_next = c_next.mean(0)
 
         return [gamma*mc_next, gamma*c_next, x_next, gamma*gamma0]
 
