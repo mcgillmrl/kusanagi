@@ -4,6 +4,10 @@ import theano.tensor as tt
 import lasagne
 import numpy as np
 
+from lasagne.layers import InputLayer, DenseLayer
+from kusanagi.ghost.regression.layers import (
+        DenseDropoutLayer, DenseGaussianDropoutLayer,
+        DenseAdditiveGaussianDropoutLayer, DenseLogNormalDropoutLayer)
 from lasagne import nonlinearities
 from lasagne.random import get_rng
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
@@ -14,6 +18,70 @@ from kusanagi.ghost.regression import BaseRegressor
 from kusanagi.ghost.regression import objectives
 
 floatX = theano.config.floatX
+
+
+def mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
+        nonlinearities=nonlinearities.rectify,
+        output_nonlinearity=nonlinearities.linear,
+        W_init=lasagne.init.Orthogonal(),
+        b_init=lasagne.init.Constant(0.),
+        name='mlp', **kwargs):
+    if not isinstance(nonlinearities, list):
+        nonlinearities = [nonlinearities]*len(hidden_dims)
+    if not isinstance(W_init, list):
+        W_init = [W_init]*(len(hidden_dims)+1)
+    if not isinstance(b_init, list):
+        b_init = [b_init]*(len(hidden_dims)+1)
+    network_spec = []
+    # input layer
+    input_shape = (batchsize, input_dims)
+    network_spec.append((InputLayer,
+                         dict(shape=input_shape,
+                              name=name+'_input')))
+
+    # hidden layers
+    for i in range(len(hidden_dims)):
+        layer_type = DenseLayer
+        network_spec.append((layer_type,
+                             dict(num_units=hidden_dims[i],
+                                  nonlinearity=nonlinearities[i],
+                                  W=W_init[i],
+                                  b=b_init[i],
+                                  name=name+'_fc%d' % (i))))
+    # output layer
+    layer_type = DenseLayer
+    network_spec.append((layer_type,
+                         dict(num_units=output_dims,
+                              nonlinearity=output_nonlinearity,
+                              W=W_init[-1],
+                              b=b_init[-1],
+                              name=name+'_output')))
+    return network_spec
+
+
+def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
+                nonlinearities=nonlinearities.rectify,
+                output_nonlinearity=nonlinearities.linear,
+                W_init=lasagne.init.Orthogonal(),
+                b_init=lasagne.init.Constant(0.),
+                p=0.1, p_input=0.0,
+                dropout_class=DenseDropoutLayer,
+                name='dropout_mlp'):
+    if not isinstance(p, list):
+        p = [p]*(len(hidden_dims))
+    p = [p_input] + p
+
+    network_spec = mlp(input_dims, output_dims, hidden_dims, batchsize,
+                       nonlinearities, output_nonlinearity, W_init, b_init,
+                       name)
+
+    # first layer is input layer, so we skip that
+    for i in range(len(p)):
+        layer_class, layer_args = network_spec[i+1]
+        if layer_class == DenseLayer and p[i] != 0:
+            layer_args['p'] = p[i]
+            network_spec[i+1] = (dropout_class, layer_args)
+    return network_spec
 
 
 class BNN(BaseRegressor):
@@ -66,7 +134,7 @@ class BNN(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 1000
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 2000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -156,63 +224,6 @@ class BNN(BaseRegressor):
             self.Ym.set_value(Ym)
             self.Ys.set_value(Ys)
 
-    def get_default_network_spec(self, batchsize=None, input_dims=None,
-                                 output_dims=None,
-                                 hidden_dims=[200]*4,
-                                 p=lasagne.init.Constant(1e-1),
-                                 p_input=0.0,
-                                 nonlinearities=nonlinearities.rectify,
-                                 output_nonlinearity=nonlinearities.linear,
-                                 W_init=lasagne.init.Orthogonal(),
-                                 b_init=lasagne.init.Constant(0.),
-                                 name=None):
-        from lasagne.layers import InputLayer, DenseLayer
-        from kusanagi.ghost.regression.layers import (
-            DenseLogNormalDropout as DenseDropoutLayer)
-        if name is None:
-            name = self.name
-        if input_dims is None:
-            input_dims = self.D
-        if output_dims is None:
-            output_dims = 2*self.E if self.heteroscedastic else self.E
-        if not isinstance(p, list):
-            p = [p]*(len(hidden_dims))
-        if not isinstance(nonlinearities, list):
-            nonlinearities = [nonlinearities]*len(hidden_dims)
-        if not isinstance(W_init, list):
-            W_init = [W_init]*(len(hidden_dims)+1)
-        if not isinstance(b_init, list):
-            b_init = [b_init]*(len(hidden_dims)+1)
-        network_spec = []
-        # input layer
-        input_shape = (batchsize, input_dims)
-        network_spec.append((InputLayer,
-                             dict(shape=input_shape,
-                                  name=name+'_input')))
-
-        # hidden layers
-        p = [p_input] + p
-        for i in range(len(hidden_dims)):
-            layer_type = DenseLayer if p == 0 else DenseDropoutLayer
-            network_spec.append((layer_type,
-                                 dict(num_units=hidden_dims[i],
-                                      nonlinearity=nonlinearities[i],
-                                      W=W_init[i],
-                                      b=b_init[i],
-                                      p=p[i],
-                                      name=name+'_fc%d' % (i))))
-        # output layer
-        layer_type = DenseLayer if p == 0 else DenseDropoutLayer
-        network_spec.append((layer_type,
-                             dict(num_units=output_dims,
-                                  nonlinearity=output_nonlinearity,
-                                  W=W_init[-1],
-                                  b=b_init[-1],
-                                  p=p[-1],
-                                  name=name+'_output')))
-
-        return network_spec
-
     def build_network(self, network_spec=None, input_shape=None,
                       params={}, name=None):
         ''' Builds a network according to the specification in the
@@ -235,7 +246,11 @@ class BNN(BaseRegressor):
         if name is None:
             name = self.name
         if network_spec is None:
-            network_spec = self.get_default_network_spec()
+            idims = self.D
+            odims = self.E*2 if self.heteroscedastic else self.E
+            network_spec = dropout_mlp(
+                idims, odims, hidden_dims=[400]*3, p_input=0.1,
+                dropout_class=DenseLogNormalDropoutLayer)
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
 
@@ -381,9 +396,8 @@ class BNN(BaseRegressor):
         if whiten_outputs and hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
             y = y.dot(self.Ys) + self.Ym
-            # rescale variances
-            #sn = sn.dot(self.Ys)
-
+            # rescale variances (I don't think thi is necessary)
+            # sn = sn.dot(self.Ys)
 
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
@@ -396,7 +410,9 @@ class BNN(BaseRegressor):
         # empirical covariance
         S = y.T.dot(y)/n - tt.outer(M, M)
         # noise
-        S += tt.diag(sn.mean(axis=0)**2)
+        S += tt.diag((sn**2).mean(axis=0)) 
+        # fudge factor
+        S += 1e-5*tt.eye(sn.shape[1])
 
         # empirical input output covariance
         if Sx is not None:

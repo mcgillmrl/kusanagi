@@ -5,7 +5,7 @@ import theano.tensor as tt
 from kusanagi.ghost.regression.layers import (GaussianDropoutLayer,
                                               DenseDropoutLayer,
                                               DenseGaussianDropoutLayer,
-                                              DenseLogNormalDropout)
+                                              DenseLogNormalDropoutLayer)
 
 
 def gaussian_log_likelihood(targets, pred_mean, pred_std=None):
@@ -42,7 +42,7 @@ def dropout_gp_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
         is_dropout_b = isinstance(
             layers[i], DenseDropoutLayer) and\
             not isinstance(layers[i], DenseGaussianDropoutLayer) and\
-            not isinstance(layers[i], DenseLogNormalDropout)
+            not isinstance(layers[i], DenseLogNormalDropoutLayer)
 
         is_dropout = is_dropout_a or is_dropout_b
 
@@ -137,7 +137,7 @@ def log_normal_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
     layers = lasagne.layers.get_all_layers(output_layer)
     reg = []
     for i in range(1, len(layers)):
-        is_dropout = isinstance(layers[i], DenseLogNormalDropout)
+        is_dropout = isinstance(layers[i], DenseLogNormalDropoutLayer)
         if is_dropout:
             a, b = layers[i].interval
             mu = layers[i].mu

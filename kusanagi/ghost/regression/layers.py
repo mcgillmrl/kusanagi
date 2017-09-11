@@ -494,14 +494,14 @@ def inv_phi(y):
     return tt.sqrt(2)*tt.erfinv(2*y - 1)
 
 
-class DenseLogNormalDropout(DenseDropoutLayer):
+class DenseLogNormalDropoutLayer(DenseDropoutLayer):
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
                  num_leading_axes=1, logit_posterior_mean=None,
                  logit_posterior_std=None, interval=[-10.0, 0.0],
                  shared_axes=(), noise_samples=None,
                  **kwargs):
-        super(DenseLogNormalDropout, self).__init__(
+        super(DenseLogNormalDropoutLayer, self).__init__(
             incoming, num_units, W, b, nonlinearity,
             num_leading_axes, shared_axes=(), noise_samples=None,
             **kwargs)

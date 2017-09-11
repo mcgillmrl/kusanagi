@@ -2,7 +2,7 @@ import lasagne
 import numpy as np
 import theano
 
-from kusanagi.ghost.regression import BNN
+from kusanagi.ghost.regression import BNN, mlp, dropout_mlp
 from kusanagi.ghost.control.saturation import tanhSat as sat
 from functools import partial
 
@@ -36,10 +36,10 @@ class NNPolicy(BNN):
 
     def predict_symbolic(self, mx, Sx=None, **kwargs):
         if self.network_spec is None:
-            self.network_spec = self.get_default_network_spec(
+            self.network_spec = dropout_mlp(
                 input_dims=self.D,
                 output_dims=self.E,
-                hidden_dims=[100]*2,
+                hidden_dims=[200]*2,
                 nonlinearities=lasagne.nonlinearities.rectify,
                 output_nonlinearity=self.sat_func,
                 name=self.name)
