@@ -250,6 +250,7 @@ class BNN(BaseRegressor):
             odims = self.E*2 if self.heteroscedastic else self.E
             network_spec = dropout_mlp(
                 idims, odims, hidden_dims=[200]*4,
+                p=0.1, p_input=0.01,
                 dropout_class=DenseLogNormalDropoutLayer)
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
@@ -410,7 +411,7 @@ class BNN(BaseRegressor):
         # empirical covariance
         S = y.T.dot(y)/n - tt.outer(M, M)
         # noise
-        S += tt.diag((sn**2).mean(axis=0)) 
+        S += tt.diag((sn**2).mean(axis=0))
         # fudge factor
         S += 1e-5*tt.eye(sn.shape[1])
 

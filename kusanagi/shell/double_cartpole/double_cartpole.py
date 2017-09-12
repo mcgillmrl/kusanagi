@@ -25,7 +25,7 @@ def default_params():
 
     # plant parameters
     plant_params = {}
-    plant_params['dt'] = 0.05
+    plant_params['dt'] = 0.1
     plant_params['link1_length'] = 0.6
     plant_params['link2_length'] = 0.6
     plant_params['link1_mass'] = 0.5

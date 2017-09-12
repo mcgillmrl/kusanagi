@@ -141,13 +141,13 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     # discount factor
     gamma = tt.scalar('gamma')
 
-    # draw initial set of particles
+    # sample random numbers to be used in the rollout
     if crn:
         # use common random numbers
         # initialize z as a shared variable; i.e. z will be sampled once.
-        z = theano.shared(
-            np.random.normal(
-                size=(100, n_samples, D)).astype(theano.config.floatX))
+        z_init = np.random.normal(
+            size=(100, n_samples, D)).astype(theano.config.floatX)
+        z = theano.shared(z_init)
 
         # now we will make sure that z is has the correct shape
         z = theano.ifelse.ifelse(
@@ -159,8 +159,10 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         # new samples with every rollout
         z = m_rng.normal((H, n_samples, D))
 
+    # draw initial set of particles
+    # z0 = m_rng.normal((n_samples, D))
     Lx0 = tt.slinalg.cholesky(Sx0)
-    x0 = mx0 + z[0].dot(Lx0.T)
+    x0 = mx0 + z[-1].dot(Lx0.T)
 
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma,
