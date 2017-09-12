@@ -1,4 +1,5 @@
 import lasagne
+import numpy as np
 import theano
 import theano.tensor as tt
 from kusanagi import utils
@@ -141,9 +142,9 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     gamma = tt.scalar('gamma')
 
     # draw initial set of particles
-    import numpy as np
     if crn:
-        # initialize z as a shared variable; i.e. z will be sampled once
+        # use common random numbers
+        # initialize z as a shared variable; i.e. z will be sampled once.
         z = theano.shared(
             np.random.normal(
                 size=(100, n_samples, D)).astype(theano.config.floatX))
