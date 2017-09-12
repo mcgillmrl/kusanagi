@@ -44,7 +44,7 @@ def quadratic_loss(mx, Sx, target, Q, *args, **kwargs):
             mx = mx[None, :]
         delta = mx-target
         deltaQ = delta.dot(Q)
-        cost = deltaQ.dot(delta)
+        cost = tt.sum(deltaQ*delta, 1)
         return cost
     else:
         # stochastic case (moment matching)
