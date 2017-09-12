@@ -33,6 +33,7 @@ def linear_loss(mx, Sx, target, Q, absolute=True, *args, **kwargs):
         s_cost = Q.T.dot(SxQ)
         return m_cost, s_cost
 
+
 def quadratic_loss(mx, Sx, target, Q, *args, **kwargs):
     '''
         Quadratic penalty function c(x) = (||x-target||_Q)^2
@@ -42,7 +43,7 @@ def quadratic_loss(mx, Sx, target, Q, *args, **kwargs):
         if mx.ndim == 1:
             mx = mx[None, :]
         delta = mx-target
-        deltaQ = delta.T.dot(Q)
+        deltaQ = delta.dot(Q)
         cost = deltaQ.dot(delta)
         return cost
     else:
@@ -79,7 +80,8 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
         Ip2SxQ = EyeM + 2*SxQ
         # S2= Q.dot(matrix_inverse(Ip2SxQ))
         S2 = solve(Ip2SxQ.T, Q.T).T
-        s_cost = tt.exp(-delta.dot(S2).dot(delta))/tt.sqrt(det(Ip2SxQ)) - m_cost**2
+        s_cost = tt.exp(
+            -delta.dot(S2).dot(delta))/tt.sqrt(det(Ip2SxQ)) - m_cost**2
 
         return 1.0 + m_cost, s_cost
 
