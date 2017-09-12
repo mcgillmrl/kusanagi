@@ -64,7 +64,7 @@ def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
                 output_nonlinearity=nonlinearities.linear,
                 W_init=lasagne.init.Orthogonal(),
                 b_init=lasagne.init.Constant(0.),
-                p=0.1, p_input=0.0,
+                p=0.5, p_input=0.2,
                 dropout_class=DenseDropoutLayer,
                 name='dropout_mlp'):
     if not isinstance(p, list):
@@ -249,7 +249,7 @@ class BNN(BaseRegressor):
             idims = self.D
             odims = self.E*2 if self.heteroscedastic else self.E
             network_spec = dropout_mlp(
-                idims, odims, hidden_dims=[400]*3, p_input=0.1,
+                idims, odims, hidden_dims=[200]*4,
                 dropout_class=DenseLogNormalDropoutLayer)
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec

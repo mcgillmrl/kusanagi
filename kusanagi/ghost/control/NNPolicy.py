@@ -39,7 +39,8 @@ class NNPolicy(BNN):
             self.network_spec = dropout_mlp(
                 input_dims=self.D,
                 output_dims=self.E,
-                hidden_dims=[200]*2,
+                hidden_dims=[100]*2,
+                p=0.1, p_input=0.0,
                 nonlinearities=lasagne.nonlinearities.rectify,
                 output_nonlinearity=self.sat_func,
                 name=self.name)
