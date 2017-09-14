@@ -160,9 +160,9 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         z = m_rng.normal((H, n_samples, D))
 
     # draw initial set of particles
-    # z0 = m_rng.normal((n_samples, D))
+    z0 = m_rng.normal((n_samples, D))
     Lx0 = tt.slinalg.cholesky(Sx0)
-    x0 = mx0 + z[-1].dot(Lx0.T)
+    x0 = mx0 + z0.dot(Lx0.T)
 
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma,
