@@ -76,7 +76,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
 
 def train_dynamics(dynmodel, data, angle_dims=[],
                    init_episode=0, max_episodes=None,
-                   wrap_angles=True, append=False):
+                   wrap_angles=False, append=False):
     ''' Trains a dynamics model using the data dataset '''
     utils.print_with_stamp('Training dynamics model', 'train_dynamics')
 
@@ -86,14 +86,15 @@ def train_dynamics(dynmodel, data, angle_dims=[],
     if n_episodes > init_episode:
         # get dataset for dynamics model
         episodes = list(range(init_episode, n_episodes))\
-        if max_episodes is None or n_episodes < max_episodes\
-        else list(range(max(0, n_episodes-max_episodes), n_episodes))
+            if max_episodes is None or n_episodes < max_episodes\
+            else list(range(max(0, n_episodes-max_episodes), n_episodes))
 
         X, Y = data.get_dynmodel_dataset(filter_episodes=episodes,
                                          angle_dims=angle_dims,
                                          deltas=True)
 
-        # wrap angles if requested (this might introduce error if the angular velocities are high)
+        # wrap angles if requested
+        # (this might introduce error if the angular velocities are high)
         if wrap_angles:
             # wrap angle differences to [-pi,pi]
             Y[:, angle_dims] = (Y[:, angle_dims] + np.pi) % (2 * np.pi) - np.pi
@@ -114,5 +115,3 @@ def train_dynamics(dynmodel, data, angle_dims=[],
     utils.print_with_stamp('Done training dynamics model', 'train_dynamics')
 
     return dynmodel
-
-
