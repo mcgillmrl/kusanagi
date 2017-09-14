@@ -247,7 +247,10 @@ class SGDOptimizer(object):
         self.best_p = [loss0, state0, 0]
 
         # training loop
-        out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
+        if return_best:
+            out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
+        else:
+            out_str = 'Curr loss: %E, n_evals: %d, Avg. time per updt: %f'
         for i in range(1, self.max_evals):
             start_time = time.time()
 
@@ -256,7 +259,7 @@ class SGDOptimizer(object):
             # the returned loss corresponds to the parameters BEFORE the update
             loss, dloss = ret[0], ret[1:]
 
-            if loss < self.best_p[0] or i < 10:
+            if loss < self.best_p[0] or i < 10 and return_best:
                 # get current optimizer state
                 state = [s.get_value(return_internal_type=True,
                                      borrow=False)
@@ -270,8 +273,11 @@ class SGDOptimizer(object):
             dt = end_time - start_time
             it_updt = (dt - self.iter_time)/self.n_evals
             self.iter_time += it_updt
-            str_params = (loss, self.best_p[2], self.best_p[0],
-                          self.n_evals, self.iter_time)
+            if return_best:
+                str_params = (loss, self.best_p[2], self.best_p[0],
+                    self.n_evals, self.iter_time)
+            else:
+                str_params = (loss, self.n_evals, self.iter_time)
             utils.print_with_stamp(out_str % str_params, self.name, True)
 
         print('')

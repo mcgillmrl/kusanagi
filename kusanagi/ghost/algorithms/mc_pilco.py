@@ -58,7 +58,7 @@ def rollout(x0, H, gamma0,
         # get next state distribution
         x_next, sn = propagate_particles(x, pol, dyn, D, angle_dims, **kwargs)
         # noisy state measurement
-        x_next += z2*tt.sqrt(0.25*sn**2)
+        # x_next += z2*sn
 
         #  get cost of applying action:
         n = x_next.shape[0]
