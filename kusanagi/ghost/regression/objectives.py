@@ -126,7 +126,7 @@ def soft_orthogonality_constraint(output_layer, rw=1.0):
 
 
 def Phi(x):
-    return 0.5*(1 + tt.erf(x/tt.sqrt(2)))
+    return 0.5*(tt.erfc(-x/tt.sqrt(2)))
 
 
 def phi(x):

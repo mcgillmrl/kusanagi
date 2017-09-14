@@ -487,11 +487,11 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
 
 
 def phi(x):
-    return 0.5*(1 + tt.erf(x/tt.sqrt(2)))
+    return 0.5*(tt.erfc(-x/tt.sqrt(2)))
 
 
 def inv_phi(y):
-    return tt.sqrt(2)*tt.erfinv(2*y - 1)
+    return -tt.sqrt(2)*tt.erfcinv(2*y)
 
 
 class DenseLogNormalDropoutLayer(DenseDropoutLayer):
