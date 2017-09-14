@@ -75,10 +75,10 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
         EyeM = tt.eye(mx.shape[0])
         IpSxQ = EyeM + SxQ
         Ip2SxQ = EyeM + 2*SxQ
-        # S1 = Q.dot(matrix_inverse(IpSxQ))   x = Q dot I^-1; x' = I^-1' dot Q'
-        # S2 = Q.dot(matrix_inverse(Ip2SxQ))
-        S1 = solve(IpSxQ.T, Q.T).T
-        S2 = solve(Ip2SxQ.T, Q.T).T
+        S1 = tt.dot(Q, matrix_inverse(IpSxQ))
+        S2 = tt.dot(Q, matrix_inverse(Ip2SxQ))
+        # S1 = solve(IpSxQ.T, Q.T).T
+        # S2 = solve(Ip2SxQ.T, Q.T).T
         # mean
         m_cost = -tt.exp(-0.5*delta.dot(S1).dot(delta))/tt.sqrt(det(IpSxQ))
         # var
