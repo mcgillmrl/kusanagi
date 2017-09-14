@@ -250,7 +250,7 @@ class BNN(BaseRegressor):
             odims = self.E*2 if self.heteroscedastic else self.E
             network_spec = dropout_mlp(
                 idims, odims, hidden_dims=[200]*4,
-                p=0.1, p_input=0.01,
+                p=0.1, p_input=0.0,
                 dropout_class=DenseLogNormalDropoutLayer)
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
