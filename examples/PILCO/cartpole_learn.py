@@ -72,7 +72,7 @@ if __name__ == '__main__':
     params = cartpole.default_params()
     n_rnd = 1                           # number of random initial trials
     n_opt = 100                         # learning iterations
-    n_samples = 100                      # number of MC samples if bayesian nn
+    n_samples = 10                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
     polyak_averaging = 0.999
     H = params['min_steps']

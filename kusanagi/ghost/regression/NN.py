@@ -134,7 +134,7 @@ class BNN(BaseRegressor):
             self.load()
 
         # optimizer options
-        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 2500
+        max_evals = kwargs['max_evals'] if 'max_evals' in kwargs else 5000
         conv_thr = kwargs['conv_thr'] if 'conv_thr' in kwargs else 1e-12
         min_method = kwargs['min_method'] if 'min_method' in kwargs else 'ADAM'
         self.optimizer = SGDOptimizer(min_method, max_evals,
@@ -393,6 +393,8 @@ class BNN(BaseRegressor):
         sn = (tt.nnet.softplus(ret[:, self.E:])
               if self.heteroscedastic
               else tt.tile(self.sn, (y.shape[0], 1)))
+        # fudge factor
+        sn += 1e-6
 
         if whiten_outputs and hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
@@ -412,8 +414,6 @@ class BNN(BaseRegressor):
         S = y.T.dot(y)/n - tt.outer(M, M)
         # noise
         S += tt.diag((sn**2).mean(axis=0))
-        # fudge factor
-        S += 1e-5*tt.eye(sn.shape[1])
 
         # empirical input output covariance
         if Sx is not None:

@@ -51,12 +51,14 @@ def rollout(x0, H, gamma0,
     utils.print_with_stamp(msg, 'mc_pilco.rollout')
 
     # define internal scan computations
-    def step_rollout(z, x, gamma, *args):
+    def step_rollout(z1, z2, x, gamma, *args):
         '''
             Single step of rollout.
         '''
         # get next state distribution
         x_next, sn = propagate_particles(x, pol, dyn, D, angle_dims, **kwargs)
+        # noisy state measurement
+        x_next += z2*tt.sqrt(0.25*sn**2)
 
         #  get cost of applying action:
         n = x_next.shape[0]
@@ -69,7 +71,7 @@ def rollout(x0, H, gamma0,
 
         # resample if requested
         if resample:
-            x_next = mx_next + z.dot(tt.slinalg.cholesky(Sx_next).T)
+            x_next = mx_next + z1.dot(tt.slinalg.cholesky(Sx_next).T)
 
         return [gamma*mc_next, gamma*c_next, x_next, gamma*gamma0]
 
@@ -82,7 +84,7 @@ def rollout(x0, H, gamma0,
 
     # loop over the planning horizon
     output = theano.scan(fn=step_rollout,
-                         sequences=[z],
+                         sequences=[z, z[::-1]],
                          outputs_info=[None, None, x0, gamma0],
                          non_sequences=nseq,
                          n_steps=H,
