@@ -146,7 +146,7 @@ if __name__ == '__main__':
         x0 = np.array([st[0] for st in exp.states])
         m0 = x0.mean(0)
         S0 = np.cov(x0, rowvar=False, ddof=1) +\
-            1e-4*np.eye(x0.shape[1]) if len(x0) > 2 else p0.cov
+            1e-4*np.eye(x0.shape[1]) if len(x0) > 10 else p0.cov
 
         if fig is not None:
             # plot rollout
