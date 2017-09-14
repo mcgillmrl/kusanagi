@@ -2,7 +2,7 @@ import lasagne
 import numpy as np
 import theano
 
-from kusanagi.ghost.regression import BNN, mlp, dropout_mlp
+from kusanagi.ghost.regression import BNN, mlp, dropout_mlp, layers
 from kusanagi.ghost.control.saturation import tanhSat as sat
 from functools import partial
 
@@ -43,6 +43,7 @@ class NNPolicy(BNN):
                 p=0.1, p_input=0.0,
                 nonlinearities=lasagne.nonlinearities.rectify,
                 output_nonlinearity=self.sat_func,
+                dropout_class=layers.DenseLogNormalDropoutLayer,
                 name=self.name)
 
         if self.network is None:
