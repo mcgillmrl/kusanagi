@@ -44,7 +44,7 @@ def quadratic_loss(mx, Sx, target, Q, *args, **kwargs):
             mx = mx[None, :]
         delta = mx-target
         deltaQ = delta.dot(Q)
-        cost = tt.sum(deltaQ*delta, 1)
+        cost = tt.batched_dot(deltaQ, delta)
         return cost
     else:
         # stochastic case (moment matching)
@@ -66,7 +66,7 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
             mx = mx[None, :]
         delta = mx - target[None, :]
         deltaQ = delta.dot(Q)
-        cost = 1.0 - tt.exp(-0.5*tt.sum(deltaQ*delta, 1))
+        cost = 1.0 - tt.exp(-0.5*tt.batched_dot(deltaQ, delta))
         return cost
     else:
         # stochastic case (moment matching)
