@@ -71,8 +71,9 @@ def default_params():
     params = {}
     params['state0_dist'] = p0
     params['angle_dims'] = angi
-    params['max_steps'] = int(4.0/plant_params['dt'])  # control horizon
-    params['discount'] = 1.0                           # discount factor
+    params['min_steps'] = int(2.5/plant_params['dt'])   # control horizon
+    params['max_steps'] = int(5.0/plant_params['dt'])  # control horizon
+    params['discount'] = 1.0                            # discount factor
     params['plant'] = plant_params
     params['policy'] = policy_params
     params['dynamics_model'] = dynmodel_params

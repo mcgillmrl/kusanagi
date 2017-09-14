@@ -54,6 +54,14 @@ def plot_rollout(rollout_fn, *args, **kwargs):
     return fig, axarr
 
 
+def check_task_learned(rollout_fn, *args, **kwargs):
+    '''
+    From Deisenroth's PhD thesis page 61
+    '''
+    loss, costs, trajectories = rollout_fn(*args)
+    return costs.mean(0)[-1] < 0.2
+
+
 if __name__ == '__main__':
     use_bnn_dyn = True
     use_bnn_pol = True
@@ -67,7 +75,8 @@ if __name__ == '__main__':
     n_samples = 100                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
     polyak_averaging = 0.99
-    H = params['max_steps']
+    H = params['min_steps']
+    maxH = params['max_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
 
@@ -131,9 +140,8 @@ if __name__ == '__main__':
         msg = '==== Iteration [%d], experience: [%d steps] ===='
         utils.print_with_stamp(msg % (i+1, total_exp))
 
-        # train dynamics model
+        # 1. train dynamics model
         train_dynamics(dyn, exp, angle_dims=angle_dims)
-
         # initial state distribution
         x0 = np.array([st[0] for st in exp.states])
         m0 = x0.mean(0)
@@ -145,7 +153,7 @@ if __name__ == '__main__':
             fig, axarr = plot_rollout(
                 rollout_fn, m0, S0, H, gamma, fig=fig, axarr=axarr)
 
-        # train policy
+        # 2. train policy
         if polopt.loss_fn is None or dyn.should_recompile:
             loss_kwargs = {}
             obj_kwargs = {}
@@ -187,7 +195,11 @@ if __name__ == '__main__':
                         callback=polopt_cb,
                         return_best=False)
 
-        # apply controller
+        # 3. if task learned, increase horizon
+        if check_task_learned(rollout_fn, m0, S0, H, gamma) and H < maxH:
+            H = int(min(maxH, 1.25*H))
+
+        # 4. apply controller
         exp.new_episode(policy_params=pol.get_params())
         apply_controller(env, pol, H,
                          preprocess=gTrig, callback=step_cb)
