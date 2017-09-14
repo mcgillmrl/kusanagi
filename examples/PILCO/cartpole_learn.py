@@ -70,11 +70,11 @@ if __name__ == '__main__':
     utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
 
     params = cartpole.default_params()
-    n_rnd = 4                           # number of random initial trials
+    n_rnd = 1                           # number of random initial trials
     n_opt = 100                         # learning iterations
     n_samples = 100                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
-    polyak_averaging = 0.99
+    polyak_averaging = 0.999
     H = params['min_steps']
     maxH = params['max_steps']
     gamma = params['discount']
@@ -198,6 +198,7 @@ if __name__ == '__main__':
         # 3. if task learned, increase horizon
         if check_task_learned(rollout_fn, m0, S0, H, gamma) and H < maxH:
             H = int(min(maxH, 1.25*H))
+            print(H)
 
         # 4. apply controller
         exp.new_episode(policy_params=pol.get_params())
