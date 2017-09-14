@@ -63,13 +63,12 @@ def rollout(x0, H, gamma0,
         n = n.astype(theano.config.floatX)
         mx_next = x_next.mean(0)
         Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
-        mc_next = cost(mx_next, Sx_next)[0]
         c_next = cost(x_next, None)
-        #mc_next = c_next.mean(0)
+        # mc_next = c_next.mean()
+        mc_next = cost(mx_next, Sx_next)[0]
 
         # resample if requested
         if resample:
-            #z = m_rng.normal(x_next.shape)
             x_next = mx_next + z.dot(tt.slinalg.cholesky(Sx_next).T)
 
         return [gamma*mc_next, gamma*c_next, x_next, gamma*gamma0]
