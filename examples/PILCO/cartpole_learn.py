@@ -20,7 +20,7 @@ from kusanagi.shell import experiment_utils, cartpole
 np.set_printoptions(linewidth=500)
 
 
-def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI):
+def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI, **kwargs):
     ''' pilco with rbf controller'''
     params = cartpole.default_params()
     params['n_rnd'] = n_rnd
@@ -37,11 +37,20 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI):
 def experiment2_params(n_rnd=1, n_opt=100,
                        mc_samples=10, learning_rate=1e-3,
                        polyak_averaging=0.999,
-                       min_method='adam', max_evals=100,
+                       min_method='adam', max_evals=1000,
                        resample_particles=True,
                        heteroscedastic_dyn_noise=False,
-                       clip_gradients=1.0):
+                       clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
+    mc_samples = int(mc_samples)
+    n_rnd = int(n_rnd)
+    n_opt = int(n_opt)
+    max_evals = int(max_evals)
+    try:    
+        polyak_averaging = float(polyak_averaging)
+    except:
+        polyak_averaging = None
+
     scenario_params = experiment1_params(n_rnd, n_opt)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
@@ -100,7 +109,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
     elif experiment_id == 3:
         # mc PILCO with RBF controller and dropout mlp dynamics
-        scenario_params = experiment1_params(*args, **kwargs)
+        scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
         pol = control.RBFPolicy(**params['policy'])
@@ -121,7 +130,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
     elif experiment_id == 4:
         # mc PILCO with NN controller and dropout mlp dynamics
-        scenario_params = experiment1_params(*args, **kwargs)
+        scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
         p0 = params['state0_dist']
@@ -156,7 +165,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
     elif experiment_id == 5:
         # mc PILCO with RBF controller and dropout mlp dynamics
-        scenario_params = experiment1_params(*args, **kwargs)
+        scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
         pol = control.RBFPolicy(**params['policy'])
@@ -179,7 +188,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
     elif experiment_id == 6:
         # mc PILCO with NN controller and dropout mlp dynamics
-        scenario_params = experiment1_params(*args, **kwargs)
+        scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
         p0 = params['state0_dist']
@@ -229,13 +238,17 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--render', type=bool,
                         default=False,
                         help='whether to call env.render')
-
+    parser.add_argument('-k', '--kwarg', nargs=2, action='append',
+                        default=[],
+                        help='additional arguments for the experiment [name value]')
     args = parser.parse_args()
 
     e_id = args.exp
     odir = args.output_folder
     name = args.name+'_'+str(e_id)
     output_folder = os.path.join(odir, name)
+    kwargs = dict(args.kwarg)
+
     try:
         os.mkdir(output_folder)
     except:
@@ -249,9 +262,9 @@ if __name__ == '__main__':
 
     utils.print_with_stamp('Results will be saved in [%s]' % (output_folder))
 
-    scenario_params, pol, dyn, learner_setup = get_scenario(e_id)
-    params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
+    scenario_params, pol, dyn, learner_setup = get_scenario(e_id, **kwargs)
 
+    params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
     # write the inital configuration to disk
     params_path = os.path.join(output_folder, 'initial_config.dill')
@@ -275,7 +288,7 @@ if __name__ == '__main__':
 
     # run pilco
     experiment_utils.run_pilco_experiment(
-        scenario, params, loss_kwargs, polopt_kwargs,
+        scenario, params, loss_kwargs, polopt_kwargs, extra_inps,
         learning_iteration_cb=iter_cb)
 
     input('Finished experiment')

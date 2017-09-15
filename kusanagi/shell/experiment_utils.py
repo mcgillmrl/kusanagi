@@ -203,7 +203,7 @@ def mcpilco_double_cartpole_experiment(params=None, policy=None, dynmodel=None):
 
 def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                          params=None, loss_kwargs={}, polopt_kwargs={},
-                         step_cb=None, polopt_cb=None,
+                         extra_inps=[], step_cb=None, polopt_cb=None,
                          learning_iteration_cb=None,
                          render=False):
     # setup experiment
@@ -253,7 +253,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
         pol, dyn, cost, D, angle_dims, **loss_kwargs)
 
     # set objective of policy optimizer
-    inps += polopt_kwargs.get('extra_inps', [])
+    inps += extra_inps
     polopt.set_objective(loss, pol.get_params(symbolic=True),
                          inps, updts, **polopt_kwargs)
 
