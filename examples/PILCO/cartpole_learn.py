@@ -70,11 +70,10 @@ def experiment2_params(n_rnd=1, n_opt=100,
     # optimizer parameters
     params['optimizer']['min_method'] = min_method
     params['optimizer']['max_evals'] = max_evals
-    params['optimizer']['learning_rate'] = learning_rate
-
     polopt_kwargs['learning_rate'] = lr
     polopt_kwargs['clip'] = clip_gradients
     polopt_kwargs['polyak_averaging'] = polyak_averaging
+    params['learning_rate'] = learning_rate
 
     return params, loss_kwargs, polopt_kwargs, extra_inps
 
