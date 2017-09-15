@@ -179,23 +179,23 @@ def setup_double_cartpole_experiment(params=None):
     return env, cost, params
 
 
-def pilco_double_cartpole_experiment(params=None, policy=None):
+def pilco_double_cartpole_experiment(params=None, policy=None, dynmodel=None):
     # init cartpole specific objects
     env, cost, params = setup_double_cartpole_experiment(params)
 
     # init policy and dynamics model
-    ret = setup_pilco_experiment(params, policy)
+    ret = setup_pilco_experiment(params, policy, dynmodel)
     p0, D, pol, dyn, exp, polopt, build_loss_fn = ret
 
     return p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params
 
 
-def mcpilco_double_cartpole_experiment(params=None, policy=None):
+def mcpilco_double_cartpole_experiment(params=None, policy=None, dynmodel=None):
     # init cartpole specific objects
     env, cost, params = setup_double_cartpole_experiment(params)
 
     # init policy and dynamics model
-    ret = setup_mc_pilco_experiment(params, policy)
+    ret = setup_mc_pilco_experiment(params, policy, dynmodel)
     p0, D, pol, dyn, exp, polopt, build_loss_fn = ret
 
     return p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params
@@ -236,7 +236,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     # function to execute before applying policy
     def gTrig(state):
         return utils.gTrig_np(state, angle_dims).flatten()
-    
+
     # collect experience with random controls
     randpol = control.RandPolicy(maxU=pol.maxU)
     for i in range(n_rnd):

@@ -31,9 +31,7 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI):
     polopt_kwargs = {}
     extra_inps = []
 
-    pol = control.RBFPolicy(**params['policy'])
-
-    return pol, params, loss_kwargs, polopt_kwargs, extra_inps
+    return params, loss_kwargs, polopt_kwargs, extra_inps
 
 
 def experiment2_params(n_rnd=1, n_opt=100,
@@ -45,7 +43,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        clip_gradients=1.0):
     ''' mc-pilco with rbf controller'''
     scenario_params = experiment1_params(n_rnd, n_opt)
-    pol, params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
+    params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
     # params for the dynamics model
     params['dynamics_model']['heteroscedastic'] = heteroscedastic_dyn_noise
@@ -66,7 +64,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     polopt_kwargs['clip'] = clip_gradients
     polopt_kwargs['polyak_averaging'] = polyak_averaging
 
-    return pol, params, loss_kwargs, polopt_kwargs, extra_inps
+    return params, loss_kwargs, polopt_kwargs, extra_inps
 
 
 def get_scenario(experiment_id, *args, **kwargs):
@@ -76,12 +74,15 @@ def get_scenario(experiment_id, *args, **kwargs):
     if experiment_id == 1:
         # PILCO with rbf controller
         scenario_params = experiment1_params(*args, **kwargs)
+        params = scenario_params[0]
+        pol = control.RBFPolicy(**params['policy'])
 
     elif experiment_id == 2:
         # PILCO with nn controller 1
         scenario_params = experiment1_params(*args, **kwargs)
-        params = scenario_params[1]
+        params = scenario_params[0]
         p0 = params['state0_dist']
+
         pol = control.NNPolicy(p0.mean, **params['policy'])
         pol_spec = regression.mlp(
             input_dims=pol.D,
@@ -97,9 +98,9 @@ def get_scenario(experiment_id, *args, **kwargs):
 
     elif experiment_id == 3:
         # mc PILCO with RBF controller and dropout mlp dynamics
-        scenario_params = experiment2_params(*args, **kwargs)
-        params = scenario_params[1]
-        p0 = params['state0_dist']
+        scenario_params = experiment1_params(*args, **kwargs)
+        params = scenario_params[0]
+        pol = control.RBFPolicy(**params['policy'])
 
         # init dyn to use dropout
         dyn = regression.BNN(**params['dynamics_model'])
@@ -117,7 +118,9 @@ def get_scenario(experiment_id, *args, **kwargs):
 
     elif experiment_id == 4:
         # mc PILCO with NN controller and dropout mlp dynamics
-        scenario_params = experiment2_params(*args, **kwargs)
+        scenario_params = experiment1_params(*args, **kwargs)
+        params = scenario_params[0]
+        p0 = params['state0_dist']
 
         # init dyn to use dropout
         dyn = regression.BNN(**params['dynamics_model'])
@@ -149,9 +152,9 @@ def get_scenario(experiment_id, *args, **kwargs):
 
     elif experiment_id == 5:
         # mc PILCO with RBF controller and dropout mlp dynamics
-        scenario_params = experiment2_params(*args, **kwargs)
-        params = scenario_params[1]
-        p0 = params['state0_dist']
+        scenario_params = experiment1_params(*args, **kwargs)
+        params = scenario_params[0]
+        pol = control.RBFPolicy(**params['policy'])
 
         # init dyn to use dropout
         dyn = regression.BNN(**params['dynamics_model'])
@@ -171,7 +174,9 @@ def get_scenario(experiment_id, *args, **kwargs):
 
     elif experiment_id == 6:
         # mc PILCO with NN controller and dropout mlp dynamics
-        scenario_params = experiment2_params(*args, **kwargs)
+        scenario_params = experiment1_params(*args, **kwargs)
+        params = scenario_params[0]
+        p0 = params['state0_dist']
 
         # init dyn to use dropout
         dyn = regression.BNN(**params['dynamics_model'])
@@ -239,7 +244,9 @@ if __name__ == '__main__':
     utils.print_with_stamp('Results will be saved in [%s]' % (output_folder))
 
     scenario_params, pol, dyn = get_scenario(e_id)
-    pol, params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
+    params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
+
+    print(pol)
 
     # write the inital configuration to disk
     params_path = os.path.join(output_folder, 'initial_config.dill')
