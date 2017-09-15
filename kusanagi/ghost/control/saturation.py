@@ -96,10 +96,12 @@ def gSat(m, v=None, i=None, e=None):
 
 
 def tanhSat(u, e):
-    return e*lasagne.nonlinearities.tanh(u)
+    return e*tt.tanh(u)
+
 
 def sigmoidSat(u, e):
-    return e*(2*lasagne.nonlinearities.sigmoid(u)-1)
+    return e*(2*tt.nnet.sigmoid(u)-1)
+
 
 def maxSat(u, e):
-    return theano.tensor.minimum(theano.tensor.maximum(u, -e), e)
+    return tt.minimum(theano.tensor.maximum(u, -e), e)
