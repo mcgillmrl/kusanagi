@@ -72,9 +72,9 @@ if __name__ == '__main__':
     params = cartpole.default_params()
     n_rnd = 1                           # number of random initial trials
     n_opt = 100                         # learning iterations
-    n_samples = 10                      # number of MC samples if bayesian nn
+    n_samples = 100                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
-    polyak_averaging = None
+    polyak_averaging = 0.999
     H = params['min_steps']
     maxH = params['max_steps']
     gamma = params['discount']
@@ -99,6 +99,7 @@ if __name__ == '__main__':
             hidden_dims=[50]*2,
             p=0.05, p_input=0.0,
             nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
             output_nonlinearity=pol.sat_func,
             dropout_class=layers.DenseDropoutLayer,
             name=pol.name)
@@ -117,6 +118,7 @@ if __name__ == '__main__':
             hidden_dims=[200]*2,
             p=0.1, p_input=0.1,
             nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
             dropout_class=layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)

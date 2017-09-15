@@ -75,7 +75,7 @@ if __name__ == '__main__':
     n_opt = 100                         # learning iterations
     n_samples = 100                      # number of MC samples if bayesian nn
     learning_rate = 1e-3
-    polyak_averaging = None
+    polyak_averaging = 0.999
     H = params['min_steps']
     maxH = params['max_steps']
 
@@ -93,18 +93,19 @@ if __name__ == '__main__':
     pol = control.NNPolicy(p0.mean, **params['policy'])\
         if use_bnn_pol else control.RBFPolicy(**params['policy'])
     if use_bnn_pol:
-        from kusanagi.ghost.regression import layers, dropout_mlp
+        from kusanagi.ghost.regression import layers, mlp
         import lasagne
-        dyn_spec = dropout_mlp(
+        pol_spec = mlp(
             input_dims=pol.D,
             output_dims=pol.E,
             hidden_dims=[100]*2,
             p=0.05, p_input=0.0,
             nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
             output_nonlinearity=pol.sat_func,
             dropout_class=layers.DenseDropoutLayer,
             name=pol.name)
-        pol.network = pol.build_network(dyn_spec)
+        pol.network = pol.build_network(pol_spec)
     randpol = control.RandPolicy(maxU=pol.maxU)
 
     # init dynmodel
@@ -116,9 +117,10 @@ if __name__ == '__main__':
         dyn_spec = dropout_mlp(
             input_dims=dyn.D,
             output_dims=dyn.E,
-            hidden_dims=[400]*2,
+            hidden_dims=[200]*3,
             p=0.1, p_input=0.1,
             nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
             dropout_class=layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
