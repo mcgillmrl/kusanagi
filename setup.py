@@ -11,5 +11,5 @@ setup(name='kusanagi',
       author_email='juancamilog@gmail.com',
       license='MIT',
       packages=find_packages(exclude=['examples', 'thirdparty', 'doc', 'test']),
-      install_requires=['theano', 'lasagne', 'pyserial', 'matplotlib'],
+      install_requires=['theano', 'lasagne', 'pyserial', 'matplotlib', 'dill'],
      )
