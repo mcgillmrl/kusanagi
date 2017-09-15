@@ -3,7 +3,7 @@ import numpy as np
 import theano
 
 from kusanagi.ghost.regression import BNN, mlp, dropout_mlp, layers
-from kusanagi.ghost.control.saturation import sigmoidSat as sat
+from kusanagi.ghost.control.saturation import tanhSat as sat
 from functools import partial
 
 

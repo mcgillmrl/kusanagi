@@ -470,7 +470,7 @@ class BNN(BaseRegressor):
                                     inps, updts, learning_rate=learning_rate)
         if input_ls is None:
             # by default, be less strict with the input layer
-            input_ls = 0.1
+            input_ls = 1.0
 
         if hidden_ls is None:
             hidden_ls = 1.0

@@ -185,3 +185,11 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False):
         return [loss]+list(r_outs), inps, updts
     else:
         return loss, inps, updts
+
+def build_rollout(*args, **kwargs):
+    kwargs['intermediate_outs'] = True
+    outs, inps, updts = get_loss(*args, **kwargs)
+    rollout_fn = theano.function(inps, outs, updates=updts,
+                                 allow_input_downcast=True)
+    return rollout_fn
+

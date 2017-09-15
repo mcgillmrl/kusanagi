@@ -1,16 +1,13 @@
 import numpy as np
-import theano
-import theano.tensor as tt
 
 from functools import partial
 from lasagne import nonlinearities
 from matplotlib import pyplot as plt
 
-from kusanagi.ghost import (algorithms, regression, control, optimizers,
-                            ExperienceDataset)
-from kusanagi.shell import cartpole, double_cartpole
 from kusanagi import utils
-from kusanagi.base import apply_controller, train_dynamics
+from kusanagi.ghost import (algorithms, regression, control, optimizers)
+from kusanagi.shell import cartpole, double_cartpole
+from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 
 
 def plot_rollout(rollout_fn, exp, *args, **kwargs):
@@ -57,7 +54,7 @@ def gTrig(state, angle_dims=[]):
     return utils.gTrig_np(state, angle_dims).flatten()
 
 
-def setup_pilco_experiment(params, pol):
+def setup_pilco_experiment(params, pol=None, dyn=None):
     # initial state distribution
     p0 = params['state0_dist']
     D = p0.mean.size
@@ -67,8 +64,9 @@ def setup_pilco_experiment(params, pol):
         pol = control.RBFPolicy(**params['policy'])
 
     # init dynmodel
-    dynmodel_class = params.get('dynmodel_class', regression.SSGP_UI)
-    dyn = dynmodel_class(**params['dynamics_model'])
+    if dyn is None:
+        dynmodel_class = params.get('dynmodel_class', regression.SSGP_UI)
+        dyn = dynmodel_class(**params['dynamics_model'])
 
     # create experience dataset
     exp = ExperienceDataset()
@@ -82,11 +80,12 @@ def setup_pilco_experiment(params, pol):
     return p0, D, pol, dyn, exp, polopt, build_loss_fn
 
 
-def setup_mc_pilco_experiment(params, pol=None,
-                              pol_spec=None, dyn_spec=None):
+def setup_mc_pilco_experiment(params, pol=None, dyn=None):
     # initial state distribution
     p0 = params['state0_dist']
     D = p0.mean.size
+    pol_spec = params.get('pol_spec', None)
+    dyn_spec = params.get('dyn_spec', None)
 
     # init policy
     if pol is None:
@@ -104,24 +103,24 @@ def setup_mc_pilco_experiment(params, pol=None,
         pol.network = pol.build_network(pol_spec)
 
     # init dynmodel
-    dyn = regression.BNN(**params['dynamics_model'])
-    if dyn_spec is None:
-        dyn_spec = regression.dropout_mlp(
-            input_dims=dyn.D,
-            output_dims=dyn.E,
-            hidden_dims=[200]*2,
-            p=0.1, p_input=0.1,
-            nonlinearities=nonlinearities.rectify,
-            dropout_class=regression.DenseLogNormalDropoutLayer,
-            name=dyn.name)
-    dyn.network = dyn.build_network(dyn_spec)
+    if dyn is None:
+        dyn = regression.BNN(**params['dynamics_model'])
+        if dyn_spec is None:
+            odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
+            dyn_spec = regression.dropout_mlp(
+                input_dims=dyn.D,
+                output_dims=odims,
+                hidden_dims=[200]*2,
+                p=0.1, p_input=0.1,
+                nonlinearities=nonlinearities.rectify,
+                dropout_class=regression.DenseLogNormalDropoutLayer,
+                name=dyn.name)
+        dyn.network = dyn.build_network(dyn_spec)
 
     # create experience dataset
     exp = ExperienceDataset()
 
     # init policy optimizer
-    params['optimizer']['min_method'] = 'adam'
-    params['optimizer']['max_evals'] = 1000
     polopt = optimizers.SGDOptimizer(**params['optimizer'])
 
     # function for building the objective function
@@ -144,23 +143,23 @@ def setup_cartpole_experiment(params=None):
     return env, cost, params
 
 
-def pilco_cartpole_experiment(params=None, policy=None):
+def pilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
     # init cartpole specific objects
     env, cost, params = setup_cartpole_experiment(params)
 
     # init policy and dynamics model
-    ret = setup_pilco_experiment(params, policy)
+    ret = setup_pilco_experiment(params, policy, dynmodel)
     p0, D, pol, dyn, exp, polopt, build_loss_fn = ret
 
     return p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params
 
 
-def mcpilco_cartpole_experiment(params=None, policy=None):
+def mcpilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
     # init cartpole specific objects
     env, cost, params = setup_cartpole_experiment(params)
 
     # init policy and dynamics model
-    ret = setup_mc_pilco_experiment(params, policy)
+    ret = setup_mc_pilco_experiment(params, policy, dynmodel)
     p0, D, pol, dyn, exp, polopt, build_loss_fn = ret
 
     return p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params
@@ -205,12 +204,14 @@ def mcpilco_double_cartpole_experiment(params=None, policy=None):
 def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                          params=None, loss_kwargs={}, polopt_kwargs={},
                          step_cb=None, polopt_cb=None,
-                         learning_iteration_cb=None):
+                         learning_iteration_cb=None,
+                         render=False):
     # setup experiment
-    exp_objs = exp_setup(params, policy=None)
+    exp_objs = exp_setup(params)
     p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params = exp_objs
     n_rnd = params.get('n_rnd', 1)
-    n_opt = params.get('n_rnd', 100)
+    n_opt = params.get('n_opt', 100)
+    return_best = params.get('return_best', False)
     H = params['min_steps']
     gamma = params['discount']
     angle_dims = params['angle_dims']
@@ -219,28 +220,32 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     # callback executed after every call to env.step
     def step_cb_internal(state, action, cost, info):
         exp.add_sample(state, action, cost, info)
-        step_cb(state, action, cost, info)
+        if render:
+            env.render()
+        if callable(step_cb):
+            step_cb(state, action, cost, info)
 
     def polopt_cb_internal(*args, **kwargs):
         if hasattr(dyn, 'update'):
             dyn.update()
         if hasattr(pol, 'update'):
             pol.update()
-        polopt_cb(*args, **kwargs)
+        if callable(polopt_cb):
+            polopt_cb(*args, **kwargs)
 
     # function to execute before applying policy
     def gTrig(state):
         return utils.gTrig_np(state, angle_dims).flatten()
-
+    
     # collect experience with random controls
     randpol = control.RandPolicy(maxU=pol.maxU)
     for i in range(n_rnd):
         exp.new_episode()
         apply_controller(env, randpol, H,
                          preprocess=gTrig,
-                         callback=step_cb)
+                         callback=step_cb_internal)
 
-    # train dynamics once
+    # 1. train dynamics once
     train_dynamics(dyn, exp, angle_dims=angle_dims)
 
     # build loss function
@@ -252,33 +257,43 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     polopt.set_objective(loss, pol.get_params(symbolic=True),
                          inps, updts, **polopt_kwargs)
 
+    # initial call so that the user gets the state before
+    # the first learrning iteration
+    if callable(learning_iteration_cb):
+        learning_iteration_cb(exp, dyn, pol, polopt, params)
+
     for i in range(n_opt):
+        total_exp = sum([len(st) for st in exp.states])
+        msg = '==== Iteration [%d], experience: [%d steps] ===='
+        utils.print_with_stamp(msg % (i+1, total_exp))
+
         # get initial state distribution (assumed gaussian)
         x0 = np.array([st[0] for st in exp.states])
         m0 = x0.mean(0)
         S0 = np.cov(x0, rowvar=False, ddof=1) +\
             1e-4*np.eye(x0.shape[1]) if len(x0) > 10 else p0.cov
 
-        # optimize policy
+        # 2. optimize policy
         polopt_args = [m0, S0, H, gamma]
         if isinstance(polopt, optimizers.SGDOptimizer):
             # check if we have a learning rate parameter
             lr = params.get('learning_rate', 1e-4)
-            return_best = params.get('return_best', False) 
             if callable(lr):
                 lr = lr(i)
             polopt_args.append(lr)
         polopt.minimize(*polopt_args,
-                        callback=polopt_cb,
+                        callback=polopt_cb_internal,
                         return_best=return_best)
 
-        # apply controller
+        # 3. apply controller
         exp.new_episode(policy_params=pol.get_params())
         apply_controller(env, pol, H,
-                         preprocess=gTrig, callback=step_cb)
-        # train dynamics once
+                         preprocess=gTrig, callback=step_cb_internal)
+        # 4. train dynamics once
         train_dynamics(dyn, exp, angle_dims=angle_dims)
 
         if callable(learning_iteration_cb):
             # user callback
             learning_iteration_cb(exp, dyn, pol, polopt, params)
+
+    env.close()

@@ -4,6 +4,7 @@ import numpy as np
 from kusanagi import utils
 from kusanagi.base.Loadable import Loadable
 
+
 class ExperienceDataset(Loadable):
     ''' Class used to store data from runs with a learning agent'''
     def __init__(self, name='Experience', filename_prefix=None, filename=None):

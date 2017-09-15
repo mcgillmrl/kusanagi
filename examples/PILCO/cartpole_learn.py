@@ -3,97 +3,87 @@ Example of how to use the library for learning using the PILCO learner
 on the cartpole tas
 '''
 # pylint: disable=C0103
+import argparse
+import dill
 import os
 import sys
 import numpy as np
+import lasagne
 import theano
 
-from kusanagi.ghost import control
-from kusanagi.ghost import regression
-from kusanagi.shell import cartpole
-from kusanagi.ghost.algorithms import pilco, mc_pilco
-from kusanagi.ghost.optimizers import ScipyOptimizer, SGDOptimizer
-from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
-from kusanagi import utils
 from functools import partial
-from matplotlib import pyplot as plt
-
+from kusanagi import utils
+from kusanagi.ghost import regression, control
+from kusanagi.shell import experiment_utils, cartpole
 
 # np.random.seed(1337)
 np.set_printoptions(linewidth=500)
 
 
-def plot_rollout(rollout_fn, *args, **kwargs):
-    fig = kwargs.get('fig')
-    axarr = kwargs.get('axarr')
-    loss, costs, trajectories = rollout_fn(*args)
-    n_samples, T, dims = trajectories.shape
-
-    if fig is None or axarr is None:
-        fig, axarr = plt.subplots(dims, sharex=True)
-    exp_states = np.array(exp.states)
-    for d in range(dims):
-        axarr[d].clear()
-        st = trajectories[:, :, d]
-        # plot predictive distribution
-        for i in range(n_samples):
-            axarr[d].plot(
-                np.arange(T-1), st[i, :-1], color='steelblue', alpha=0.3)
-        # for i in range(len(exp.states)):
-        #    axarr[d].plot(
-        #         np.arange(T-1), exp_states[i,1:,d],
-        #         color='orange', alpha=0.3)
-        # plot experience
-        axarr[d].plot(
-            np.arange(T-1), np.array(exp.states[-1])[1:H, d], color='red')
-        axarr[d].plot(
-            np.arange(T-1), st[:, :-1].mean(0), color='orange')
-    plt.show(block=False)
-    plt.waitforbuttonpress(0.1)
-
-    return fig, axarr
-
-
-def check_task_learned(rollout_fn, *args, **kwargs):
-    '''
-    From Deisenroth's PhD thesis page 61
-    '''
-    loss, costs, trajectories = rollout_fn(*args)
-    return costs.mean(0)[-1] < 0.2
-
-
-if __name__ == '__main__':
-    use_bnn_dyn = True
-    use_bnn_pol = True
-
-    # setup output directory
-    utils.set_output_dir(os.path.join(utils.get_output_dir(), 'cartpole'))
-
+def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI):
+    ''' pilco with rbf controller'''
     params = cartpole.default_params()
-    n_rnd = 1                           # number of random initial trials
-    n_opt = 100                         # learning iterations
-    n_samples = 100                      # number of MC samples if bayesian nn
-    learning_rate = 1e-3
-    polyak_averaging = 0.999
-    H = params['min_steps']
-    maxH = params['max_steps']
-    gamma = params['discount']
-    angle_dims = params['angle_dims']
+    params['n_rnd'] = n_rnd
+    params['n_opt'] = n_opt
+    params['dynmodel_class'] = dynmodel_class
 
-    # initial state distribution
-    p0 = params['state0_dist']
-    D = p0.mean.size
+    loss_kwargs = {}
+    polopt_kwargs = {}
+    extra_inps = []
 
-    # init environment
-    env = cartpole.Cartpole(**params['plant'])
+    pol = control.RBFPolicy(**params['policy'])
 
-    # init policy
-    pol = control.NNPolicy(p0.mean, **params['policy'])\
-        if use_bnn_pol else control.RBFPolicy(**params['policy'])
-    if use_bnn_pol:
-        from kusanagi.ghost.regression import layers, dropout_mlp
-        import lasagne
-        dyn_spec = dropout_mlp(
+    return pol, params, loss_kwargs, polopt_kwargs, extra_inps
+
+
+def experiment2_params(n_rnd=1, n_opt=100,
+                       mc_samples=10, learning_rate=1e-3,
+                       polyak_averaging=0.999,
+                       min_method='adam', max_evals=100,
+                       resample_particles=True,
+                       heteroscedastic_dyn_noise=False,
+                       clip_gradients=1.0):
+    ''' mc-pilco with rbf controller'''
+    scenario_params = experiment1_params(n_rnd, n_opt)
+    pol, params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
+
+    # params for the dynamics model
+    params['dynamics_model']['heteroscedastic'] = heteroscedastic_dyn_noise
+    params['dynamics_model']['n_samples'] = mc_samples
+
+    # parameters for building loss function
+    loss_kwargs['n_samples'] = mc_samples
+    loss_kwargs['resample_particles'] = resample_particles
+
+    # init symbolic learning rate parameter
+    lr = theano.tensor.scalar('lr')
+    extra_inps += [lr]
+
+    # optimizer parameters
+    params['optimizer']['min_method'] = min_method
+    params['optimizer']['max_evals'] = max_evals
+    polopt_kwargs['learning_rate'] = lr
+    polopt_kwargs['clip'] = clip_gradients
+    polopt_kwargs['polyak_averaging'] = polyak_averaging
+
+    return pol, params, loss_kwargs, polopt_kwargs, extra_inps
+
+
+def get_scenario(experiment_id, *args, **kwargs):
+    pol = None
+    dyn = None
+
+    if experiment_id == 1:
+        # PILCO with rbf controller
+        scenario_params = experiment1_params(*args, **kwargs)
+
+    elif experiment_id == 2:
+        # PILCO with nn controller 1
+        scenario_params = experiment1_params(*args, **kwargs)
+        params = scenario_params[1]
+        p0 = params['state0_dist']
+        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
             hidden_dims=[50]*2,
@@ -101,138 +91,179 @@ if __name__ == '__main__':
             nonlinearities=lasagne.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain='relu'),
             output_nonlinearity=pol.sat_func,
-            dropout_class=layers.DenseDropoutLayer,
+            dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
-        pol.network = pol.build_network(dyn_spec)
-    randpol = control.RandPolicy(maxU=pol.maxU)
+        pol.network = pol.build_network(pol_spec)
 
-    # init dynmodel
-    dyn = regression.BNN(**params['dynamics_model'])\
-        if use_bnn_dyn else regression.SSGP_UI(**params['dynamics_model'])
-    if use_bnn_dyn:
-        from kusanagi.ghost.regression import layers, dropout_mlp
-        import lasagne
-        dyn_spec = dropout_mlp(
+    elif experiment_id == 3:
+        # mc PILCO with RBF controller and dropout mlp dynamics
+        scenario_params = experiment2_params(*args, **kwargs)
+        params = scenario_params[1]
+        p0 = params['state0_dist']
+
+        # init dyn to use dropout
+        dyn = regression.BNN(**params['dynamics_model'])
+        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
+        dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
-            output_dims=dyn.E,
+            output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.1, p_input=0.1,
+            p=0.05, p_input=0.05,
             nonlinearities=lasagne.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain='relu'),
-            dropout_class=layers.DenseLogNormalDropoutLayer,
+            dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
-    # init cost model
-    cost = partial(cartpole.cartpole_loss, **params['cost'])
 
-    # create experience dataset
-    exp = ExperienceDataset()
+    elif experiment_id == 4:
+        # mc PILCO with NN controller and dropout mlp dynamics
+        scenario_params = experiment2_params(*args, **kwargs)
 
-    # init policy optimizer
-    if use_bnn_dyn:
-        params['optimizer']['min_method'] = 'adam'
-        params['optimizer']['max_evals'] = 1000
-        polopt = SGDOptimizer(**params['optimizer'])
-    else:
-        polopt = ScipyOptimizer(**params['optimizer'])
+        # init dyn to use dropout
+        dyn = regression.BNN(**params['dynamics_model'])
+        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
+        dyn_spec = regression.dropout_mlp(
+            input_dims=dyn.D,
+            output_dims=odims,
+            hidden_dims=[200]*2,
+            p=0.05, p_input=0.05,
+            nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
+            dropout_class=regression.layers.DenseDropoutLayer,
+            name=dyn.name)
+        dyn.network = dyn.build_network(dyn_spec)
 
-    # callback executed after every call to env.step
-    def step_cb(state, action, cost, info):
-        exp.add_sample(state, action, cost, info)
-        env.render()
+        # init policy
+        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol_spec = regression.mlp(
+            input_dims=pol.D,
+            output_dims=pol.E,
+            hidden_dims=[50]*2,
+            p=0.05, p_input=0.0,
+            nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
+            output_nonlinearity=pol.sat_func,
+            dropout_class=regression.layers.DenseDropoutLayer,
+            name=pol.name)
+        pol.network = pol.build_network(pol_spec)
 
-    def polopt_cb(*args, **kwargs):
-        if hasattr(dyn, 'update'):
-            dyn.update()
-        if hasattr(pol, 'update'):
-            pol.update()
+    elif experiment_id == 5:
+        # mc PILCO with RBF controller and dropout mlp dynamics
+        scenario_params = experiment2_params(*args, **kwargs)
+        params = scenario_params[1]
+        p0 = params['state0_dist']
 
-    # function to execute before applying policy
-    def gTrig(state):
-        return utils.gTrig_np(state, angle_dims).flatten()
+        # init dyn to use dropout
+        dyn = regression.BNN(**params['dynamics_model'])
+        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
+        # for the log normal dropout layers, the dropout probabilities 
+        # are dummy variables to enable dropout (not actual dropout probs)
+        dyn_spec = regression.dropout_mlp(
+            input_dims=dyn.D,
+            output_dims=odims,
+            hidden_dims=[200]*2,
+            p=True, p_input=True,
+            nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
+            dropout_class=regression.layers.DenseLogNormalDropoutLayer,
+            name=dyn.name)
+        dyn.network = dyn.build_network(dyn_spec)
 
-    # during first n_rnd trials, apply randomized controls
-    for i in range(n_rnd):
-        exp.new_episode()
-        apply_controller(env, randpol, H,
-                         preprocess=gTrig,
-                         callback=step_cb)
+    elif experiment_id == 6:
+        # mc PILCO with NN controller and dropout mlp dynamics
+        scenario_params = experiment2_params(*args, **kwargs)
 
-    # PILCO loop
-    rollout_fn = None
-    fig, axarr = None, None
-    for i in range(n_opt):
-        total_exp = sum([len(st) for st in exp.states])
-        msg = '==== Iteration [%d], experience: [%d steps] ===='
-        utils.print_with_stamp(msg % (i+1, total_exp))
+        # init dyn to use dropout
+        dyn = regression.BNN(**params['dynamics_model'])
+        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
+        dyn_spec = regression.dropout_mlp(
+            input_dims=dyn.D,
+            output_dims=odims,
+            hidden_dims=[200]*2,
+            p=True, p_input=True,
+            nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
+            dropout_class=regression.layers.DenseLogNormalDropoutLayer,
+            name=dyn.name)
+        dyn.network = dyn.build_network(dyn_spec)
 
-        # 1. train dynamics model
-        train_dynamics(dyn, exp, angle_dims=angle_dims)
-        # initial state distribution
-        x0 = np.array([st[0] for st in exp.states])
-        m0 = x0.mean(0)
-        S0 = np.cov(x0, rowvar=False, ddof=1) +\
-            1e-4*np.eye(x0.shape[1]) if len(x0) > 10 else p0.cov
+        # init policy
+        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol_spec = regression.mlp(
+            input_dims=pol.D,
+            output_dims=pol.E,
+            hidden_dims=[50]*2,
+            p=0.05, p_input=0.0,
+            nonlinearities=lasagne.nonlinearities.rectify,
+            W_init=lasagne.init.Orthogonal(gain='relu'),
+            output_nonlinearity=pol.sat_func,
+            dropout_class=regression.layers.DenseDropoutLayer,
+            name=pol.name)
+        pol.network = pol.build_network(pol_spec)
 
-        if fig is not None:
-            # plot rollout
-            fig, axarr = plot_rollout(
-                rollout_fn, m0, S0, H, gamma, fig=fig, axarr=axarr)
+    return scenario_params, pol, dyn
 
-        # 2. train policy
-        if polopt.loss_fn is None or dyn.should_recompile:
-            loss_kwargs = {}
-            obj_kwargs = {}
-            extra_inps = []
-            if use_bnn_dyn:
-                # init learning rate parameter
-                lr = theano.tensor.scalar('lr')
-                extra_inps += [lr]
 
-                # parameters for building loss function
-                loss_kwargs['n_samples'] = n_samples
-                loss_kwargs['resample_particles'] = True
-                obj_kwargs['learning_rate'] = lr
-                obj_kwargs['clip'] = 1.0
-                obj_kwargs['polyak_averaging'] = polyak_averaging
-                learner = mc_pilco
-            else:
-                learner = pilco
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-e', '--exp', type=int,
+                        default=1,
+                        help='id of experiment to run')
+    parser.add_argument('-n', '--name', type=str,
+                        default='cartpole',
+                        help='experiment name')
+    parser.add_argument('-o', '--output_folder', type=str,
+                        default=utils.get_output_dir(),
+                        help='where to save the results of the experiment')
+    parser.add_argument('-r', '--render', type=bool,
+                        default=False,
+                        help='whether to call env.render')
 
-            # build loss function
-            loss, inps, updts = learner.get_loss(
-                pol, dyn, cost, D, angle_dims, **loss_kwargs)
-            inps += extra_inps
+    args = parser.parse_args()
 
-            # set objective of policy optimizer
-            polopt.set_objective(loss, pol.get_params(symbolic=True),
-                                 inps, updts, **obj_kwargs)
+    e_id = args.exp
+    odir = args.output_folder
+    name = args.name+'_'+str(e_id)
+    output_folder = os.path.join(odir, name)
+    try:
+        os.mkdir(output_folder)
+    except:
+        # move the old stuff
+        target_dir = output_folder+'_'+str(os.stat(output_folder).st_ctime)
+        os.rename(output_folder, target_dir)
+        os.mkdir(output_folder)
+        utils.print_with_stamp(
+            'Moved old results from [%s] to [%s]' % (output_folder, 
+                                                     target_dir))
 
-            # build rollout function for plotting
-            if rollout_fn is None:
-                loss_kwargs['resample_particles'] = False
-                rollout_fn = learner.build_rollout(
-                    pol, dyn, cost, D, angle_dims, **loss_kwargs)
+    utils.print_with_stamp('Results will be saved in [%s]' % (output_folder))
 
-        polopt_args = [m0, S0, H, gamma]
-        if use_bnn_dyn:
-            polopt_args.append(learning_rate)
-        polopt.minimize(*polopt_args,
-                        callback=polopt_cb,
-                        return_best=False)
+    scenario_params, pol, dyn = get_scenario(e_id)
+    pol, params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
-        # 3. if task learned, increase horizon
-        if check_task_learned(rollout_fn, m0, S0, H, gamma) and H < maxH:
-            H = int(min(maxH, 1.25*H))
-            print(H)
+    # write the inital configuration to disk
+    params_path = os.path.join(output_folder, 'initial_config.dill')
+    with open(params_path, 'wb+') as f:
+        config_dict = dict(params=params, loss_kwargs=loss_kwargs,
+                           polopt_kwargs=polopt_kwargs, extra_inps=extra_inps)
 
-        # 4. apply controller
-        exp.new_episode(policy_params=pol.get_params())
-        apply_controller(env, pol, H,
-                         preprocess=gTrig, callback=step_cb)
+        dill.dump(config_dict, f)
 
-        # plot rollout
-        fig, axarr = plot_rollout(
-            rollout_fn, m0, S0, H, gamma, fig=fig, axarr=axarr)
-    input('Finished training')
+    scenario = partial(
+        experiment_utils.pilco_cartpole_experiment, policy=pol, dynmodel=dyn)
+
+    # callback executed after every learning iteration
+    def iter_cb(exp, dyn, pol, polopt, params):
+        i = exp.curr_episode
+        # setup output directory
+        exp.save(output_folder, 'experience_%d' % (i))
+        dyn.save(output_folder, 'policy_%d' % (i))
+        pol.save(output_folder, 'dynamics_%d' % (i))
+        # TODO save state of the optimizer
+
+    # run pilco
+    experiment_utils.run_pilco_experiment(
+        scenario, params, loss_kwargs, polopt_kwargs)
+
+    input('Finished experiment')
     sys.exit(0)
