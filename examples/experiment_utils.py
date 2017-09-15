@@ -1,78 +1,156 @@
-import utils
-from shell.cartpole import default_params
-from shell.plant import SerialPlant
-from ghost.algorithms.ExperienceDataset import ExperienceDataset
-from ghost.control import RBFPolicy,AdjustedPolicy
-from ghost.regression import GP
 import numpy as np
 
-def setup_cartpole():
-    learner_params = default_params()
-    learner_params['params']['use_empirical_x0'] = True
-    learner_params['dynmodel_class'] = GP.SSGP_UI
-    learner_params['params']['dynmodel']['n_inducing'] = 100
-    return learner_params
- 
-def setup_serial_cartpole(serial_port='/dev/ttyACM0'):
-    learner_params = setup_cartpole()
-   
-    learner_params['plant_class'] = SerialPlant
-    learner_params['params']['plant']['maxU'] = np.array(learner_params['params']['policy']['maxU'])*0.75/0.4
-    learner_params['params']['plant']['state_indices'] = [0,2,3,1]
-    learner_params['params']['plant']['baud_rate'] = 4000000
-    learner_params['params']['plant']['port'] = serial_port
-    return learner_params
+from functools import partial
+from lasagne import nonlinearities
+from matplotlib import pyplot as plt
 
-def setup_transfer(N=100, J=100, simulation= False,
-                   source_dir='examples/learned_policies/cartpole_serial',
-                   target_dir='examples/learned_policies/target_180g_run_1',
-                   serial_port='/dev/ttyACM0'):
-    # SOURCE DOMAIN 
-    utils.set_output_dir(source_dir)
-    # load source experience
-    if simulation:
-        source_experience = ExperienceDataset(filename='PILCO_SSGP_UI_Cartpole_RBFPolicy_sat_dataset')
-    else:
-        source_experience = ExperienceDataset(filename='PILCO_SSGP_UI_SerialPlant_RBFPolicy_sat_dataset')
+from kusanagi.ghost import regression, control, optimizers, ExperienceDataset
+from kusanagi.shell import cartpole, double_cartpole
+from kusanagi import utils
 
-    #load source policy
-    source_policy = RBFPolicy(filename='RBFPolicy_sat_5_1_cpu_float64')
 
-    # TARGET DOMAIN
-    utils.set_output_dir(target_dir)
-    target_params = setup_serial_cartpole(serial_port=serial_port)
-    target_params['params']['max_evals'] = 125
-    # policy
-    target_params['dynmodel_class'] = GP.SSGP_UI
-    target_params['invdynmodel_class'] = GP.GP_UI
-    target_params['params']['invdynmodel'] = {}
-    target_params['params']['invdynmodel']['max_evals'] = 1000
-    target_params['policy_class'] = AdjustedPolicy
-    target_params['params']['policy']['adjustment_model_class'] = GP.GP
-    #target_params['params']['policy']['adjustment_model_class'] = control.RBFPolicy
-    #target_params['params']['policy']['n_inducing'] = 20
-    target_params['params']['policy']['sat_func'] = None # this is because we probably need bigger controls for heavier pendulums
-    target_params['params']['policy']['max_evals'] = 5000
-    target_params['params']['policy']['m0'] = np.zeros(source_policy.D+source_policy.E)
-    target_params['params']['policy']['S0'] = 1e-2*np.eye(source_policy.E)
+def plot_rollout(rollout_fn, exp, *args, **kwargs):
+    fig = kwargs.get('fig')
+    axarr = kwargs.get('axarr')
+    loss, costs, trajectories = rollout_fn(*args)
+    n_samples, T, dims = trajectories.shape
 
-    # initialize target plant
-    if not simulation:
-        print(target_params['params']['policy']['maxU'])
-        print(target_params['params']['plant']['maxU'])
-    else:
-        # TODO get these as command line arguments
-        target_params['params']['plant']['params'] = {'l': 0.5, 'm': 1.5, 'M': 1.5, 'b': 0.1, 'g': 9.82}
-        target_params['params']['cost']['pendulum_length'] = target_params['params']['plant']['params']['l']
+    if fig is None or axarr is None:
+        fig, axarr = plt.subplots(dims, sharex=True)
+    exp_states = np.array(exp.states)
+    for d in range(dims):
+        axarr[d].clear()
+        st = trajectories[:, :, d]
+        # plot predictive distribution
+        for i in range(n_samples):
+            axarr[d].plot(
+                np.arange(T-1), st[i, :-1], color='steelblue', alpha=0.3)
+        # for i in range(len(exp.states)):
+        #    axarr[d].plot(
+        #         np.arange(T-1), exp_states[i,1:,d],
+        #         color='orange', alpha=0.3)
+        # plot experience
+        axarr[d].plot(
+            np.arange(T-1), np.array(exp.states[-1])[1:H, d], color='red')
+        axarr[d].plot(
+            np.arange(T-1), st[:, :-1].mean(0), color='orange')
+    plt.show(block=False)
+    plt.waitforbuttonpress(0.1)
 
-    target_params['params']['source_policy'] = source_policy
-    target_params['params']['source_experience'] = source_experience
+    return fig, axarr
 
-    return target_params
 
-def run_policy(learner,i,H=4.0):
-    learner.policy.set_params(learner.experience.policy_parameters[i])
-    learner.plant.reset_state()
-    learner.apply_controller(H)
+def check_task_learned(rollout_fn, *args, **kwargs):
+    '''
+    From Deisenroth's PhD thesis page 61
+    '''
+    loss, costs, trajectories = rollout_fn(*args)
+    return costs.mean(0)[-1] < 0.2
 
+
+# function to execute before applying policy
+def gTrig(state, angle_dims=[]):
+    return utils.gTrig_np(state, angle_dims).flatten()
+
+
+def setup_pilco_experiment(params, pol, dynmodel_class=regression.SSGP_UI):
+    # initial state distribution
+    p0 = params['state0_dist']
+    D = p0.mean.size
+
+    # init policy
+    if pol is None:
+        pol = control.RBFPolicy(**params['policy'])
+
+    # init dynmodel
+    dyn = dynmodel_class(**params['dynamics_model'])
+
+    # create experience dataset
+    exp = ExperienceDataset()
+
+    # init policy optimizer
+    polopt = optimizers.ScipyOptimizer(**params['optimizer'])
+
+    return p0, D, pol, dyn, exp, polopt
+
+
+def setup_mc_pilco_experiment(params, pol=None,
+                              pol_spec=None, dyn_spec=None):
+    # initial state distribution
+    p0 = params['state0_dist']
+    D = p0.mean.size
+
+    # init policy
+    if pol is None:
+        pol = control.NNPolicy(p0.mean, **params['policy'])
+        if pol_spec is None:
+            pol_spec = regression.mlp(
+                input_dims=pol.D,
+                output_dims=pol.E,
+                hidden_dims=[50]*2,
+                p=0.05, p_input=0.0,
+                nonlinearities=nonlinearities.rectify,
+                output_nonlinearity=pol.sat_func,
+                dropout_class=regression.DenseDropoutLayer,
+                name=pol.name)
+        pol.network = pol.build_network(pol_spec)
+
+    # init dynmodel
+    dyn = regression.BNN(**params['dynamics_model'])
+    if dyn_spec is None:
+        dyn_spec = regression.dropout_mlp(
+            input_dims=dyn.D,
+            output_dims=dyn.E,
+            hidden_dims=[200]*2,
+            p=0.1, p_input=0.1,
+            nonlinearities=nonlinearities.rectify,
+            dropout_class=regression.DenseLogNormalDropoutLayer,
+            name=dyn.name)
+    dyn.network = dyn.build_network(dyn_spec)
+
+    # create experience dataset
+    exp = ExperienceDataset()
+
+    # init policy optimizer
+    params['optimizer']['min_method'] = 'adam'
+    params['optimizer']['max_evals'] = 1000
+    polopt = optimizers.SGDOptimizer(**params['optimizer'])
+
+    return p0, D, pol, dyn, exp, polopt
+
+
+def setup_cartpole_experiment(params=None):
+    # get experiment parameters
+    if params is None:
+        params = cartpole.default_params()
+
+    # init environment
+    env = cartpole.Cartpole(**params['plant'])
+
+    # init cost model
+    cost = partial(cartpole.cartpole_loss, **params['cost'])
+
+    return env, cost, params
+
+
+def pilco_cartpole_experiment(params=None, policy=None,
+                              dynmodel_class=regression.SSGP_UI):
+    # init cartpole specific objects
+    env, cost, params = setup_cartpole_experiment(params)
+
+    # init policy and dynamics model
+    p0, D, pol, dyn, exp, polopt = setup_pilco_experiment(
+        params, policy, dynmodel_class)
+
+    return p0, D, env, pol, dyn, cost, exp, polopt
+
+
+def mcpilco_cartpole_experiment(params=None, policy=None):
+    # init cartpole specific objects
+    env, cost, params = setup_cartpole_experiment(params)
+
+    # init policy and dynamics model
+    p0, D, pol, dyn, exp, polopt = setup_mc_pilco_experiment(params, policy)
+
+    return p0, D, env, pol, dyn, cost, exp, polopt
 
