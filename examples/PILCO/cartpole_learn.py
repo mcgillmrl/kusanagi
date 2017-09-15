@@ -73,7 +73,7 @@ if __name__ == '__main__':
     n_rnd = 1                           # number of random initial trials
     n_opt = 100                         # learning iterations
     n_samples = 10                      # number of MC samples if bayesian nn
-    learning_rate = 1e-4
+    learning_rate = 1e-3
     polyak_averaging = None
     H = params['min_steps']
     maxH = params['max_steps']
