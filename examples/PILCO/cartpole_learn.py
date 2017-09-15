@@ -263,7 +263,8 @@ if __name__ == '__main__':
 
     # run pilco
     experiment_utils.run_pilco_experiment(
-        scenario, params, loss_kwargs, polopt_kwargs)
+        scenario, params, loss_kwargs, polopt_kwargs,
+        learning_iteration_cb=iter_cb)
 
     input('Finished experiment')
     sys.exit(0)
