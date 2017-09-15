@@ -74,7 +74,7 @@ if __name__ == '__main__':
     n_rnd = 2                           # number of random initial trials
     n_opt = 100                         # learning iterations
     n_samples = 100                      # number of MC samples if bayesian nn
-    learning_rate = 1e-4
+    learning_rate = 1e-3
     polyak_averaging = None
     H = params['min_steps']
     maxH = params['max_steps']
@@ -92,11 +92,36 @@ if __name__ == '__main__':
     # init policy
     pol = control.NNPolicy(p0.mean, **params['policy'])\
         if use_bnn_pol else control.RBFPolicy(**params['policy'])
+    if use_bnn_pol:
+        from kusanagi.ghost.regression import layers, dropout_mlp
+        import lasagne
+        dyn_spec = dropout_mlp(
+            input_dims=pol.D,
+            output_dims=pol.E,
+            hidden_dims=[100]*2,
+            p=0.05, p_input=0.0,
+            nonlinearities=lasagne.nonlinearities.rectify,
+            output_nonlinearity=pol.sat_func,
+            dropout_class=layers.DenseDropoutLayer,
+            name=pol.name)
+        pol.network = pol.build_network(dyn_spec)
     randpol = control.RandPolicy(maxU=pol.maxU)
 
     # init dynmodel
     dyn = regression.BNN(**params['dynamics_model'])\
         if use_bnn_dyn else regression.SSGP_UI(**params['dynamics_model'])
+    if use_bnn_dyn:
+        from kusanagi.ghost.regression import layers, dropout_mlp
+        import lasagne
+        dyn_spec = dropout_mlp(
+            input_dims=dyn.D,
+            output_dims=dyn.E,
+            hidden_dims=[400]*2,
+            p=0.1, p_input=0.1,
+            nonlinearities=lasagne.nonlinearities.rectify,
+            dropout_class=layers.DenseLogNormalDropoutLayer,
+            name=dyn.name)
+        dyn.network = dyn.build_network(dyn_spec)
 
     # init cost model
     cost = partial(double_cartpole.double_cartpole_loss, **params['cost'])
