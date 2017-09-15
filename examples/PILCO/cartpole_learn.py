@@ -74,12 +74,14 @@ def get_scenario(experiment_id, *args, **kwargs):
     if experiment_id == 1:
         # PILCO with rbf controller
         scenario_params = experiment1_params(*args, **kwargs)
+        learner_setup = experiment_utils.pilco_cartpole_experiment
         params = scenario_params[0]
         pol = control.RBFPolicy(**params['policy'])
 
     elif experiment_id == 2:
         # PILCO with nn controller 1
         scenario_params = experiment1_params(*args, **kwargs)
+        learner_setup = experiment_utils.pilco_cartpole_experiment
         params = scenario_params[0]
         p0 = params['state0_dist']
 
@@ -99,6 +101,7 @@ def get_scenario(experiment_id, *args, **kwargs):
     elif experiment_id == 3:
         # mc PILCO with RBF controller and dropout mlp dynamics
         scenario_params = experiment1_params(*args, **kwargs)
+        learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
         pol = control.RBFPolicy(**params['policy'])
 
@@ -119,6 +122,7 @@ def get_scenario(experiment_id, *args, **kwargs):
     elif experiment_id == 4:
         # mc PILCO with NN controller and dropout mlp dynamics
         scenario_params = experiment1_params(*args, **kwargs)
+        learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
         p0 = params['state0_dist']
 
@@ -153,6 +157,7 @@ def get_scenario(experiment_id, *args, **kwargs):
     elif experiment_id == 5:
         # mc PILCO with RBF controller and dropout mlp dynamics
         scenario_params = experiment1_params(*args, **kwargs)
+        learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
         pol = control.RBFPolicy(**params['policy'])
 
@@ -175,6 +180,7 @@ def get_scenario(experiment_id, *args, **kwargs):
     elif experiment_id == 6:
         # mc PILCO with NN controller and dropout mlp dynamics
         scenario_params = experiment1_params(*args, **kwargs)
+        learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
         p0 = params['state0_dist']
 
@@ -206,7 +212,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
-    return scenario_params, pol, dyn
+    return scenario_params, pol, dyn, learner_setup
 
 
 if __name__ == '__main__':
@@ -243,10 +249,9 @@ if __name__ == '__main__':
 
     utils.print_with_stamp('Results will be saved in [%s]' % (output_folder))
 
-    scenario_params, pol, dyn = get_scenario(e_id)
+    scenario_params, pol, dyn, learner_setup = get_scenario(e_id)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
-    print(pol)
 
     # write the inital configuration to disk
     params_path = os.path.join(output_folder, 'initial_config.dill')
@@ -257,7 +262,7 @@ if __name__ == '__main__':
         dill.dump(config_dict, f)
 
     scenario = partial(
-        experiment_utils.pilco_cartpole_experiment, policy=pol, dynmodel=dyn)
+        learner_setup, policy=pol, dynmodel=dyn)
 
     # callback executed after every learning iteration
     def iter_cb(exp, dyn, pol, polopt, params):
