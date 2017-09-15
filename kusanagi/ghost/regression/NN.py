@@ -469,9 +469,9 @@ class BNN(BaseRegressor):
             optimizer.set_objective(loss, self.get_params(symbolic=True),
                                     inps, updts, learning_rate=learning_rate)
         if input_ls is None:
-            # set to some proportion of the standard deviation
+            # set to one standard deviation
             # (inputs are scaled and centered to N(0,1) )
-            input_ls = 0.1
+            input_ls = 1.0
 
         if hidden_ls is None:
             hidden_ls = input_ls
