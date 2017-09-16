@@ -51,6 +51,6 @@ if __name__=='__main__':
 
     # dump results to file
     results_path = os.path.join(odir, 'results_%d_%d'%(last_iteration, n_trials))
-    with open(results_path, 'w+') as f:
+    with open(results_path, 'wb+') as f:
         utils.print_with_stamp('Dumping results to [%s]' % (results_path))
         dill.dump(results, f)
