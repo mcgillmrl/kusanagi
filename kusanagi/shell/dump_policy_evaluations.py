@@ -29,8 +29,8 @@ if __name__=='__main__':
 
     odir = args.dataset_folder
     kwargs = dict(args.kwarg)
-    n_trials = kwargs.get('n_trials', 5)
-    last_iteration = kwargs.get('last_iteration', 5)
+    n_trials = int(kwargs.get('n_trials', 5))
+    last_iteration = int(kwargs.get('last_iteration', 5))
     config_path = os.path.join(odir, 'initial_config.dill')
     exp_path = os.path.join(odir, 'experience_%d'%(last_iteration))
     setup_func = getattr(experiment_utils, args.setup_func)
