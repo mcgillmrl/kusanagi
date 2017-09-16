@@ -1,6 +1,6 @@
 '''
-Example of how to use the library for learning using the PILCO learner 
-on the cartpole tas
+Example of how to use the library for learning using the PILCO learner
+on the cartpole task
 '''
 # pylint: disable=C0103
 import argparse
