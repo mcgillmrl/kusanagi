@@ -237,7 +237,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=True, p_input=True,
+            p=0.05, p_input=0.05,
             nonlinearities=lasagne.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain='relu'),
             dropout_class=regression.layers.DenseDropoutLayer,
