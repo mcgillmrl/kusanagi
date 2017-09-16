@@ -309,8 +309,10 @@ def evaluate_policy(env, pol, exp, params, n_tests=100):
     for i,p in enumerate(exp.policy_parameters):
         utils.print_with_stamp('Evaluating policy at iteration %d'%(i))
         pol.set_params(p)
+        results_i = []
         for it in range(n_tests):
             ret = apply_controller(env, pol, H, preprocess=gTrig)
-            results.append([ret])
+            results_i.append(ret)
+        results.append(results_i)
 
     return results        
