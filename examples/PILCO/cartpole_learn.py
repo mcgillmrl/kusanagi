@@ -223,6 +223,77 @@ def get_scenario(experiment_id, *args, **kwargs):
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
+        elif experiment_id == 7:
+            # mc PILCO with dropout controller and dropout mlp dynamics
+            scenario_params = experiment2_params(*args, **kwargs)
+            learner_setup = experiment_utils.mcpilco_cartpole_experiment
+            params = scenario_params[0]
+            p0 = params['state0_dist']
+
+            # init dyn to use dropout
+            dyn = regression.BNN(**params['dynamics_model'])
+            odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
+            dyn_spec = regression.dropout_mlp(
+                input_dims=dyn.D,
+                output_dims=odims,
+                hidden_dims=[200]*2,
+                p=True, p_input=True,
+                nonlinearities=lasagne.nonlinearities.rectify,
+                W_init=lasagne.init.Orthogonal(gain='relu'),
+                dropout_class=regression.layers.DenseLogNormalDropoutLayer,
+                name=dyn.name)
+            dyn.network = dyn.build_network(dyn_spec)
+
+            # init policy
+            pol = control.NNPolicy(p0.mean, **params['policy'])
+            pol_spec = regression.dropout_mlp(
+                input_dims=pol.D,
+                output_dims=pol.E,
+                hidden_dims=[50]*2,
+                p=0.05, p_input=0.0,
+                nonlinearities=lasagne.nonlinearities.rectify,
+                W_init=lasagne.init.Orthogonal(gain='relu'),
+                output_nonlinearity=pol.sat_func,
+                dropout_class=regression.layers.DenseDropoutLayer,
+                name=pol.name)
+            pol.network = pol.build_network(pol_spec)
+
+        elif experiment_id == 8:
+            # mc PILCO with dropout controller and dropout mlp dynamics
+            scenario_params = experiment2_params(*args, **kwargs)
+            learner_setup = experiment_utils.mcpilco_cartpole_experiment
+            params = scenario_params[0]
+            p0 = params['state0_dist']
+
+            # init dyn to use dropout
+            dyn = regression.BNN(**params['dynamics_model'])
+            odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
+            dyn_spec = regression.dropout_mlp(
+                input_dims=dyn.D,
+                output_dims=odims,
+                hidden_dims=[200]*2,
+                p=True, p_input=True,
+                nonlinearities=lasagne.nonlinearities.rectify,
+                W_init=lasagne.init.Orthogonal(gain='relu'),
+                dropout_class=regression.layers.DenseDropoutLayer,
+                name=dyn.name)
+            dyn.network = dyn.build_network(dyn_spec)
+
+            # init policy
+            pol = control.NNPolicy(p0.mean, **params['policy'])
+            pol_spec = regression.dropout_mlp(
+                input_dims=pol.D,
+                output_dims=pol.E,
+                hidden_dims=[50]*2,
+                p=0.05, p_input=0.0,
+                nonlinearities=lasagne.nonlinearities.rectify,
+                W_init=lasagne.init.Orthogonal(gain='relu'),
+                output_nonlinearity=pol.sat_func,
+                dropout_class=regression.layers.DenseDropoutLayer,
+                name=pol.name)
+            pol.network = pol.build_network(pol_spec)
+
+
     return scenario_params, pol, dyn, learner_setup
 
 
