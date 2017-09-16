@@ -33,6 +33,7 @@ if __name__=='__main__':
     last_iteration = int(kwargs.get('last_iteration', 5))
     config_path = os.path.join(odir, 'initial_config.dill')
     exp_path = os.path.join(odir, 'experience_%d'%(last_iteration))
+    pol_path = os.path.join(odir, 'policy_%d'%(last_iteration))
     setup_func = getattr(experiment_utils, args.setup_func)
     policy_class = getattr(control, args.policy_class)
 
@@ -43,9 +44,9 @@ if __name__=='__main__':
     p0 = params['state0_dist']
     exp = ExperienceDataset(filename=exp_path)
     if args.policy_class == 'NNPolicy':
-        pol = policy_class(p0.mean, **params['policy'])
+        pol = policy_class(p0.mean, filename=pol_path)
     else:
-        pol = policy_class(**params['policy'])
+        pol = policy_class(filename=pol_path)
     env, cost, params = setup_func(params)
     results = experiment_utils.evaluate_policy(env, pol, exp, params, n_trials)
 
