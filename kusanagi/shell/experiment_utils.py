@@ -286,7 +286,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                         return_best=return_best)
 
         # 3. apply controller
-        exp.new_episode(policy_params=pol.get_params())
+        exp.new_episode(policy_params=pol.get_params(symbolic=False))
         apply_controller(env, pol, H,
                          preprocess=gTrig, callback=step_cb_internal)
         # 4. train dynamics once
