@@ -48,7 +48,7 @@ if __name__=='__main__':
     else:
         pol = policy_class(filename=pol_path)
     env, cost, params = setup_func(params)
-    results = experiment_utils.evaluate_policy(env, pol, exp, params, n_trials)
+    results = experiment_utils.evaluate_policy(env, pol, exp, params, n_trials, render=args.render)
 
     # dump results to file
     results_path = os.path.join(odir, 'results_%d_%d'%(last_iteration, n_trials))

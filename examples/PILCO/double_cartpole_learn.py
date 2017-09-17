@@ -123,7 +123,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*4,
-            p=0.05, p_input=0.05,
+            p=0.05, p_input=0.0,
             nonlinearities=lasagne.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain='relu'),
             dropout_class=regression.layers.DenseDropoutLayer,
@@ -144,7 +144,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*4,
-            p=0.05, p_input=0.05,
+            p=0.05, p_input=0.0,
             nonlinearities=lasagne.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain='relu'),
             dropout_class=regression.layers.DenseDropoutLayer,
@@ -157,11 +157,9 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=pol.D,
             output_dims=pol.E,
             hidden_dims=[50]*4,
-            p=0.05, p_input=0.0,
             nonlinearities=lasagne.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain='relu'),
             output_nonlinearity=pol.sat_func,
-            dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
@@ -215,11 +213,9 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=pol.D,
             output_dims=pol.E,
             hidden_dims=[50]*4,
-            p=0.05, p_input=0.0,
             nonlinearities=lasagne.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain='relu'),
             output_nonlinearity=pol.sat_func,
-            dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
@@ -237,7 +233,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*4,
-            p=0.05, p_input=0.05,
+            p=0.05, p_input=0.0,
             nonlinearities=lasagne.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain='relu'),
             dropout_class=regression.layers.DenseDropoutLayer,
@@ -354,14 +350,14 @@ if __name__ == '__main__':
         i = exp.curr_episode
         # setup output directory
         exp.save(output_folder, 'experience_%d' % (i))
-        dyn.save(output_folder, 'policy_%d' % (i))
-        pol.save(output_folder, 'dynamics_%d' % (i))
+        pol.save(output_folder, 'policy_%d' % (i))
+        dyn.save(output_folder, 'dynamics_%d' % (i))
         # TODO save state of the optimizer
 
     # run pilco
     experiment_utils.run_pilco_experiment(
         scenario, params, loss_kwargs, polopt_kwargs, extra_inps,
-        learning_iteration_cb=iter_cb)
+        learning_iteration_cb=iter_cb, render=args.render)
 
     input('Finished experiment')
     sys.exit(0)

@@ -298,20 +298,26 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
 
     env.close()
 
-def evaluate_policy(env, pol, exp, params, n_tests=100):
+def evaluate_policy(env, pol, exp, params, n_tests=100, render=False):
     H = params['min_steps']
     angle_dims = params['angle_dims']
 
     def gTrig(state):
         return utils.gTrig_np(state, angle_dims).flatten()
+
+    def step_cb(*args, **kwargs):
+        env.render()
     
     results = []
     for i,p in enumerate(exp.policy_parameters):
         utils.print_with_stamp('Evaluating policy at iteration %d'%(i))
-        pol.set_params(p)
+        if p:
+            pol.set_params(p)
+        else:
+            continue
         results_i = []
         for it in range(n_tests):
-            ret = apply_controller(env, pol, H, preprocess=gTrig)
+            ret = apply_controller(env, pol, H, preprocess=gTrig, callback=step_cb)
             results_i.append(ret)
         results.append(results_i)
 

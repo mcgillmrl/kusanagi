@@ -354,8 +354,8 @@ if __name__ == '__main__':
         i = exp.curr_episode
         # setup output directory
         exp.save(output_folder, 'experience_%d' % (i))
-        dyn.save(output_folder, 'policy_%d' % (i))
-        pol.save(output_folder, 'dynamics_%d' % (i))
+        pol.save(output_folder, 'policy_%d' % (i))
+        dyn.save(output_folder, 'dynamics_%d' % (i))
         # TODO save state of the optimizer
 
     # run pilco
