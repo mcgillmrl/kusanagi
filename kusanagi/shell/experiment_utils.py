@@ -13,11 +13,13 @@ from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 def plot_rollout(rollout_fn, exp, *args, **kwargs):
     fig = kwargs.get('fig')
     axarr = kwargs.get('axarr')
+
     loss, costs, trajectories = rollout_fn(*args)
     n_samples, T, dims = trajectories.shape
 
     if fig is None or axarr is None:
         fig, axarr = plt.subplots(dims, sharex=True)
+
     exp_states = np.array(exp.states)
     for d in range(dims):
         axarr[d].clear()
@@ -32,7 +34,7 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
         #         color='orange', alpha=0.3)
         # plot experience
         axarr[d].plot(
-            np.arange(T-1), np.array(exp.states[-1])[1:H, d], color='red')
+            np.arange(T-1), np.array(exp.states[-1])[1:T, d], color='red')
         axarr[d].plot(
             np.arange(T-1), st[:, :-1].mean(0), color='orange')
     plt.show(block=False)
@@ -74,10 +76,11 @@ def setup_pilco_experiment(params, pol=None, dyn=None):
     # init policy optimizer
     polopt = optimizers.ScipyOptimizer(**params['optimizer'])
 
-    # function for building the objective function
-    build_loss_fn = algorithms.pilco.get_loss
+    # module where get_loss and build_rollout are defined
+    # (can also be a class)
+    learner = algorithms.pilco
 
-    return p0, D, pol, dyn, exp, polopt, build_loss_fn
+    return p0, D, pol, dyn, exp, polopt, learner
 
 
 def setup_mc_pilco_experiment(params, pol=None, dyn=None):
@@ -123,10 +126,11 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
     # init policy optimizer
     polopt = optimizers.SGDOptimizer(**params['optimizer'])
 
-    # function for building the objective function
-    build_loss_fn = algorithms.mc_pilco.get_loss
+    # module where get_loss and build_rollout are defined
+    # (can also be a class)
+    learner = algorithms.mc_pilco
 
-    return p0, D, pol, dyn, exp, polopt, build_loss_fn
+    return p0, D, pol, dyn, exp, polopt, learner
 
 
 def setup_cartpole_experiment(params=None):
@@ -149,9 +153,9 @@ def pilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
 
     # init policy and dynamics model
     ret = setup_pilco_experiment(params, policy, dynmodel)
-    p0, D, pol, dyn, exp, polopt, build_loss_fn = ret
+    p0, D, pol, dyn, exp, polopt, learner = ret
 
-    return p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params
+    return p0, D, env, pol, dyn, cost, exp, polopt, learner, params
 
 
 def mcpilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
@@ -160,9 +164,9 @@ def mcpilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
 
     # init policy and dynamics model
     ret = setup_mc_pilco_experiment(params, policy, dynmodel)
-    p0, D, pol, dyn, exp, polopt, build_loss_fn = ret
+    p0, D, pol, dyn, exp, polopt, learner = ret
 
-    return p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params
+    return p0, D, env, pol, dyn, cost, exp, polopt, learner, params
 
 
 def setup_double_cartpole_experiment(params=None):
@@ -185,20 +189,21 @@ def pilco_double_cartpole_experiment(params=None, policy=None, dynmodel=None):
 
     # init policy and dynamics model
     ret = setup_pilco_experiment(params, policy, dynmodel)
-    p0, D, pol, dyn, exp, polopt, build_loss_fn = ret
+    p0, D, pol, dyn, exp, polopt, learner = ret
 
-    return p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params
+    return p0, D, env, pol, dyn, cost, exp, polopt, learner, params
 
 
-def mcpilco_double_cartpole_experiment(params=None, policy=None, dynmodel=None):
+def mcpilco_double_cartpole_experiment(
+    params=None, policy=None, dynmodel=None):
     # init cartpole specific objects
     env, cost, params = setup_double_cartpole_experiment(params)
 
     # init policy and dynamics model
     ret = setup_mc_pilco_experiment(params, policy, dynmodel)
-    p0, D, pol, dyn, exp, polopt, build_loss_fn = ret
+    p0, D, pol, dyn, exp, polopt, learner = ret
 
-    return p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params
+    return p0, D, env, pol, dyn, cost, exp, polopt, learner, params
 
 
 def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
@@ -208,13 +213,14 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                          render=False):
     # setup experiment
     exp_objs = exp_setup(params)
-    p0, D, env, pol, dyn, cost, exp, polopt, build_loss_fn, params = exp_objs
+    p0, D, env, pol, dyn, cost, exp, polopt, learner, params = exp_objs
     n_rnd = params.get('n_rnd', 1)
     n_opt = params.get('n_opt', 100)
     return_best = params.get('return_best', False)
-    H = params['min_steps']
-    gamma = params['discount']
-    angle_dims = params['angle_dims']
+    H = params.get('min_steps', 100)
+    gamma = params.get('discount', 1.0)
+    angle_dims = params.get('angle_dims', [])
+    debug_plot = params.get('debug_plot', 0)
 
     # init callbacks
     # callback executed after every call to env.step
@@ -249,8 +255,15 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     train_dynamics(dyn, exp, angle_dims=angle_dims)
 
     # build loss function
-    loss, inps, updts = build_loss_fn(
+    loss, inps, updts = learner.get_loss(
         pol, dyn, cost, D, angle_dims, **loss_kwargs)
+
+    if debug_plot > 0:
+        # build rollout function for plotting
+        loss_kwargs['resample_particles'] = False
+        rollout_fn = learner.build_rollout(
+            pol, dyn, cost, D, angle_dims, **loss_kwargs)
+        fig, axarr = None, None
 
     # set objective of policy optimizer
     inps += extra_inps
@@ -296,7 +309,12 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
             # user callback
             learning_iteration_cb(exp, dyn, pol, polopt, params)
 
+        if debug_plot > 0:
+            fig, axarr = plot_rollout(
+                rollout_fn, exp, m0, S0, H, gamma, fig=fig, axarr=axarr)
+
     env.close()
+
 
 def evaluate_policy(env, pol, exp, params, n_tests=100, render=False):
     H = params['min_steps']
@@ -307,9 +325,9 @@ def evaluate_policy(env, pol, exp, params, n_tests=100, render=False):
 
     def step_cb(*args, **kwargs):
         env.render()
-    
+
     results = []
-    for i,p in enumerate(exp.policy_parameters):
+    for i, p in enumerate(exp.policy_parameters):
         utils.print_with_stamp('Evaluating policy at iteration %d'%(i))
         if p:
             pol.set_params(p)
@@ -317,8 +335,9 @@ def evaluate_policy(env, pol, exp, params, n_tests=100, render=False):
             continue
         results_i = []
         for it in range(n_tests):
-            ret = apply_controller(env, pol, H, preprocess=gTrig, callback=step_cb)
+            ret = apply_controller(
+                env, pol, H, preprocess=gTrig, callback=step_cb)
             results_i.append(ret)
         results.append(results_i)
 
-    return results        
+    return results
