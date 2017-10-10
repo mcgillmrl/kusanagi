@@ -222,12 +222,15 @@ class GP(BaseRegressor):
 
             # We initialise the kernel matrices (one for each output dimension)
             K = kernel_func(X)
+
             # add the contribution from the input noise
             if nigp:
                 K += tt.diag(nigp[i])
             # add the contribution from the output uncertainty (acts as weight)
             if y_var:
                 K += tt.diag(y_var[i])
+
+            K = theano.printing.Print()(K)
 
             # compute chol(K)
             L = Cholesky()(K)
