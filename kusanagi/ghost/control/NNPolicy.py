@@ -18,7 +18,6 @@ class NNPolicy(BNN):
         if sat_func:
             self.sat_func = partial(sat_func, e=self.maxU)
 
-        print(type(self), isinstance(self, NNPolicy))
         super(NNPolicy, self).__init__(self.D, self.E, name=name,
                                        filename=filename, **kwargs)
 
