@@ -88,6 +88,25 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
         return 1.0 + m_cost, s_cost
 
 
+def convert_angle_dimensions(mx, Sx):
+    if Sx is None:
+        flatten = False
+        if mx.ndim == 1:
+            flatten = True
+            mx = mx[None, :]
+        mxa = utils.gTrig(mx, angle_dims, D)
+        if flatten:
+            # since we are dealing with one input vector at a time
+            mxa = mxa.flatten()
+        Sxa = None
+    else:
+        # angle dimensions are removed, and their complex
+        # representation is appended
+        mxa, Sxa = utils.gTrig2(mx, Sx, angle_dims, D)[:2]
+
+    return mxa, Sxa
+
+
 def generic_loss(mx, Sx, target, Q,
                  cw=[1], expl=None,
                  loss_func=quadratic_saturating_loss,
