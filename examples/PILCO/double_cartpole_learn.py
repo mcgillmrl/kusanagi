@@ -39,7 +39,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        polyak_averaging=0.999,
                        min_method='adam', max_evals=1000,
                        resample_particles=True,
-                       heteroscedastic_dyn_noise=False,
+                       heteroscedastic_dyn_noise=True,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
     mc_samples = int(mc_samples)
@@ -270,7 +270,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*4,
             p=True, p_input=True,
             nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            W_init=lasagne.init.Orthogonal(gain='relu'),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
@@ -283,7 +283,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[50]*4,
             p=0.05, p_input=0.0,
             nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            W_init=lasagne.init.Orthogonal(gain='relu'),
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)

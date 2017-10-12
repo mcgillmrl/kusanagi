@@ -39,7 +39,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        polyak_averaging=0.999,
                        min_method='adam', max_evals=1000,
                        resample_particles=True,
-                       heteroscedastic_dyn_noise=False,
+                       heteroscedastic_dyn_noise=True,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
     mc_samples = int(mc_samples)
