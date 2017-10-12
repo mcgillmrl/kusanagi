@@ -9,7 +9,7 @@ from gym import spaces
 from matplotlib import pyplot as plt
 
 from kusanagi.shell import plant
-from kusanagi.ghost import cost
+from kusanagi.shell import cost
 from kusanagi import utils
 
 
