@@ -90,7 +90,7 @@ def cartpole_loss(mx, Sx,
 
     # convert angle dimensions
     targeta = utils.gTrig_np(target, angle_dims).flatten()
-    mxa, Sxa = cost.convert_angle_dimensions(mx, Sx)
+    mxa, Sxa = cost.convert_angle_dimensions(mx, Sx, D, angle_dims)
     Da = targeta.size
 
     # build cost scaling function

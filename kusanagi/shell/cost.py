@@ -2,14 +2,12 @@
 import theano
 import numpy as np
 import theano.tensor as tt
-from theano.tensor.nlinalg import matrix_inverse, trace
+from theano.tensor.nlinalg import matrix_inverse
 from theano.tensor.slinalg import solve
 from theano.tensor.nlinalg import det
-from theano.sandbox.linalg import psd
-from kusanagi.utils import print_with_stamp,gTrig2, gTrig_np, gTrig
+from kusanagi import utils
 
 
-# TODO verify this produces same costs as before!
 def linear_loss(mx, Sx, target, Q, absolute=True, *args, **kwargs):
     '''
         Linear penalty function c(x) = Q.dot(|x-target|)
@@ -88,7 +86,7 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
         return 1.0 + m_cost, s_cost
 
 
-def convert_angle_dimensions(mx, Sx):
+def convert_angle_dimensions(mx, Sx, D, angle_dims=[]):
     if Sx is None:
         flatten = False
         if mx.ndim == 1:
@@ -138,6 +136,7 @@ def generic_loss(mx, Sx, target, Q,
             M_cost.append(m_cost)
             S_cost.append(s_cost)
         return sum(M_cost)/len(cw), sum(S_cost)/(len(cw)**2)
+
 
 def build_loss_func(loss_func, uncertain_inputs=False, name='loss_func', *args, **kwargs):
     '''
