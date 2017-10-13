@@ -17,4 +17,4 @@ Install the Miniconda 3 distribution: https://conda.io/miniconda.html
 
 ## Example to reproduce some of the results:
 
-python examples/PILCO/cartpole_learn.py -e 8 -n mcpilco_lognormal_dropout -k mc_samples 100 -k max_evals 1000 -k learning_rate 1e-3 -k polyak_averaging None -r True -k clip_gradients 1.0
+    python examples/PILCO/cartpole_learn.py -e 8 -n mcpilco_lognormal_dropout -k mc_samples 100 -k max_evals 1000 -k learning_rate 1e-3 -k polyak_averaging None -r True -k clip_gradients 1.0
