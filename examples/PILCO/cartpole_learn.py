@@ -39,7 +39,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        polyak_averaging=0.999,
                        min_method='adam', max_evals=1000,
                        resample_particles=True,
-                       heteroscedastic_dyn_noise=True,
+                       heteroscedastic_dyn=False,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
     mc_samples = int(mc_samples)
@@ -56,7 +56,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
     # params for the dynamics model
-    params['dynamics_model']['heteroscedastic'] = heteroscedastic_dyn_noise
+    params['dynamics_model']['heteroscedastic'] = heteroscedastic_dyn != "False"
     params['dynamics_model']['n_samples'] = mc_samples
 
     # parameters for building loss function
@@ -139,7 +139,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init dyn to use dropout
         dyn = regression.BNN(**params['dynamics_model'])
-        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
+        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E            
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
@@ -360,8 +360,8 @@ if __name__ == '__main__':
 
     # run pilco
     experiment_utils.run_pilco_experiment(
-        scenario, params, loss_kwargs, polopt_kwargs, extra_inps,
-        learning_iteration_cb=iter_cb)
+        scenario, params, loss_kwargs, polopt_kwargs, extra_inps, 
+        learning_iteration_cb=iter_cb, render=args.render)
 
     input('Finished experiment')
     sys.exit(0)
