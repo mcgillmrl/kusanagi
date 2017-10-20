@@ -20,7 +20,8 @@ from kusanagi.shell import experiment_utils, cartpole
 np.set_printoptions(linewidth=500)
 
 
-def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI, **kwargs):
+def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
+                       **kwargs):
     ''' pilco with rbf controller'''
     params = cartpole.default_params()
     params['n_rnd'] = n_rnd
@@ -47,7 +48,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
     n_opt = int(n_opt)
     max_evals = int(max_evals)
     learning_rate = float(learning_rate)
-    try:    
+    heteroscedastic_dyn = (str(heteroscedastic_dyn) .lower() != "false")
+    try:
         polyak_averaging = float(polyak_averaging)
     except:
         polyak_averaging = None
@@ -56,7 +58,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
     # params for the dynamics model
-    params['dynamics_model']['heteroscedastic'] = heteroscedastic_dyn != "False"
+    params['dynamics_model']['heteroscedastic'] = heteroscedastic_dyn
     params['dynamics_model']['n_samples'] = mc_samples
 
     # parameters for building loss function
@@ -139,7 +141,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init dyn to use dropout
         dyn = regression.BNN(**params['dynamics_model'])
-        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E            
+        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
@@ -175,7 +177,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # init dyn to use dropout
         dyn = regression.BNN(**params['dynamics_model'])
         odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
-        # for the log normal dropout layers, the dropout probabilities 
+        # for the log normal dropout layers, the dropout probabilities
         # are dummy variables to enable dropout (not actual dropout probs)
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
@@ -298,21 +300,21 @@ def get_scenario(experiment_id, *args, **kwargs):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-e', '--exp', type=int,
-                        default=1,
-                        help='id of experiment to run')
-    parser.add_argument('-n', '--name', type=str,
-                        default='cartpole',
-                        help='experiment name')
-    parser.add_argument('-o', '--output_folder', type=str,
-                        default=utils.get_output_dir(),
-                        help='where to save the results of the experiment')
-    parser.add_argument('-r', '--render', type=bool,
-                        default=False,
-                        help='whether to call env.render')
-    parser.add_argument('-k', '--kwarg', nargs=2, action='append',
-                        default=[],
-                        help='additional arguments for the experiment [name value]')
+    parser.add_argument(
+        '-e', '--exp', type=int, default=1,
+        help='id of experiment to run')
+    parser.add_argument(
+        '-n', '--name', type=str, default='cartpole',
+        help='experiment name')
+    parser.add_argument(
+        '-o', '--output_folder', type=str, default=utils.get_output_dir(),
+        help='where to save the results of the experiment')
+    parser.add_argument(
+        '-r', '--render', type=bool, default=False,
+        help='whether to call env.render')
+    parser.add_argument(
+        '-k', '--kwarg', nargs=2, action='append', default=[],
+        help='additional arguments for the experiment [name value]')
     args = parser.parse_args()
 
     e_id = args.exp
@@ -329,7 +331,7 @@ if __name__ == '__main__':
         os.rename(output_folder, target_dir)
         os.mkdir(output_folder)
         utils.print_with_stamp(
-            'Moved old results from [%s] to [%s]' % (output_folder, 
+            'Moved old results from [%s] to [%s]' % (output_folder,
                                                      target_dir))
 
     utils.print_with_stamp('Results will be saved in [%s]' % (output_folder))
@@ -360,7 +362,7 @@ if __name__ == '__main__':
 
     # run pilco
     experiment_utils.run_pilco_experiment(
-        scenario, params, loss_kwargs, polopt_kwargs, extra_inps, 
+        scenario, params, loss_kwargs, polopt_kwargs, extra_inps,
         learning_iteration_cb=iter_cb, render=args.render)
 
     input('Finished experiment')
