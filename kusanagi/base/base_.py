@@ -56,7 +56,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
             callback(x_t, u_t, c_t, info)
 
         # break if done
-        if env.done:
+        if done:
             break
 
         # replace current state
@@ -76,6 +76,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
 
 def train_dynamics(dynmodel, data, angle_dims=[],
                    init_episode=0, max_episodes=None,
+                   max_dataset_size=-1,
                    wrap_angles=False, append=False):
     ''' Trains a dynamics model using the data dataset '''
     utils.print_with_stamp('Training dynamics model', 'train_dynamics')
@@ -92,7 +93,8 @@ def train_dynamics(dynmodel, data, angle_dims=[],
         X, Y = data.get_dynmodel_dataset(filter_episodes=episodes,
                                          angle_dims=angle_dims,
                                          deltas=True)
-
+        X = X[-max_dataset_size:]
+        Y = Y[-max_dataset_size:]
         # wrap angles if requested
         # (this might introduce error if the angular velocities are high)
         if wrap_angles:

@@ -209,7 +209,7 @@ def mcpilco_double_cartpole_experiment(
 def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                          params=None, loss_kwargs={}, polopt_kwargs={},
                          extra_inps=[], step_cb=None, polopt_cb=None,
-                         learning_iteration_cb=None,
+                         learning_iteration_cb=None, max_dataset_size=-1,
                          render=False):
     # setup experiment
     exp_objs = exp_setup(params)
@@ -252,7 +252,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                          callback=step_cb_internal)
 
     # 1. train dynamics once
-    train_dynamics(dyn, exp, angle_dims=angle_dims)
+    train_dynamics(dyn, exp, angle_dims=angle_dims, max_dataset_size=max_dataset_size)
 
     # build loss function
     loss, inps, updts = learner.get_loss(
@@ -303,7 +303,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
         apply_controller(env, pol, H,
                          preprocess=gTrig, callback=step_cb_internal)
         # 4. train dynamics once
-        train_dynamics(dyn, exp, angle_dims=angle_dims)
+        train_dynamics(dyn, exp, angle_dims=angle_dims, max_dataset_size=max_dataset_size)
 
         if callable(learning_iteration_cb):
             # user callback
