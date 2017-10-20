@@ -87,7 +87,7 @@ def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
 class BNN(BaseRegressor):
     ''' Bayesian neural net regressor '''
     def __init__(self, idims, odims, n_samples=100,
-                 heteroscedastic=True, name='BNN',
+                 heteroscedastic=False, name='BNN',
                  filename=None, **kwargs):
         self.D = idims
         self.E = odims
@@ -399,7 +399,7 @@ class BNN(BaseRegressor):
         if whiten_outputs and hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
             y = y.dot(self.Ys) + self.Ym
-            # rescale variances (I don't think thi is necessary)
+            # rescale variances (I don't think this is necessary)
             # sn = sn.dot(self.Ys)
 
         y.name = '%s>output_samples' % (self.name)
