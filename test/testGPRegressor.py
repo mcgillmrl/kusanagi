@@ -110,6 +110,10 @@ if __name__=='__main__':
     for i in range(n_test):
         start_time = time()
         ret = gp.predict(test_mX[i], test_sX[i])
+        cov = ret[1]
+        idx = range(cov.shape[0])
+        cov[idx, idx] -= np.minimum(cov[idx, idx].min()-1e-6, 1e-6)
+        ret[1] = cov
         times.append(time()-start_time)
         preds.append(ret)
         print('============%04d============'%(i))
