@@ -211,7 +211,7 @@ class SSGP(GP):
         variance = [[]]*odims
         for i in range(odims):
             sr = self.sr[i]
-            M = sr.shape[0].astype('float64')
+            M = sr.shape[0].astype(floatX)
             sf2 = self.hyp[i, idims]**2
             sn2 = self.hyp[i, idims+1]**2
             # sr.T.dot(x) for all sr and X. size n_inducing x N
@@ -245,10 +245,27 @@ class SSGP_UI(SSGP, GP_UI):
         idims = self.D
         odims = self.E
 
-        # precompute some variables
         Ms = self.sr.shape[1]
         sf2M = (self.hyp[:, idims]**2)/tt.cast(Ms, floatX)
         sn2 = self.hyp[:, idims+1]**2
+
+        # TODO this should just fallback to the method from the SSGP class
+        if Sx is None:
+            # first check if we received a vector [D] or a matrix [nxD]
+            if mx.ndim == 1:
+                mx = mx[None, :]
+
+            srdotx = self.sr.dot(self.X.T).transpose(0,2,1)
+            phi_x = tt.concatenate([tt.sin(srdotx), tt.cos(srdotx)], 2)
+            M = (phi_x*self.beta_ss[:, None, :]).sum(-1)
+            phi_x_L = tt.stack([
+                solve_lower_triangular(self.Lmm[i], phi_x[i].T)
+                for i in range(odims)])
+            S = sn2[:, None]*(1 + (sf2M[:, None])*(phi_x_L**2).sum(-2)) + 1e-6
+
+            return M, S
+
+        # precompute some variables
         srdotx = self.sr.dot(mx)
         srdotSx = self.sr.dot(Sx)
         srdotSxdotsr = tt.sum(srdotSx*self.sr, 2)
