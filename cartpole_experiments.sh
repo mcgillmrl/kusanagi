@@ -9,4 +9,4 @@ python examples/PILCO/cartpole_learn.py -e 4 -n mcpilco_dropoutd_mlpp ${OPTS} ${
 python examples/PILCO/cartpole_learn.py -e 5 -n mcpilco_lndropoutd_rbfp ${OPTS} ${EXTRA_OPTS}
 python examples/PILCO/cartpole_learn.py -e 6 -n mcpilco_lndropoutd_mlpp ${OPTS} ${EXTRA_OPTS}
 python examples/PILCO/cartpole_learn.py -e 7 -n mcpilco_dropoutd_dropoutp ${OPTS} ${EXTRA_OPTS}
-python examples/PILCO/cartpole_learn.py -e 8 -n mcpilco_dropoutd_lndropoutp ${OPTS} ${EXTRA_OPTS}
+python examples/PILCO/cartpole_learn.py -e 8 -n mcpilco_lndropoutd_dropoutp ${OPTS} ${EXTRA_OPTS}
