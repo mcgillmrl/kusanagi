@@ -69,7 +69,8 @@ class NNPolicy(BNN):
         # by default, sample internal params (e.g. dropout masks)
         # at every evaluation
         kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
-        kwargs['return_samples'] = kwargs.get('return_samples', True)
+        if s is None:
+            kwargs['return_samples'] = kwargs.get('return_samples', True)
         kwargs['deterministic'] = kwargs.get('deterministic', False)
         if symbolic:
             ret = self.predict_symbolic(m, s, **kwargs)
