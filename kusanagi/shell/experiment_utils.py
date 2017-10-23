@@ -14,8 +14,14 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
     fig = kwargs.get('fig')
     axarr = kwargs.get('axarr')
 
-    loss, costs, trajectories = rollout_fn(*args)
-    n_samples, T, dims = trajectories.shape
+    ret = rollout_fn(*args)
+    trajectories = m_states = None
+    if len(ret) == 3:
+        loss, costs, trajectories = ret
+        n_samples, T, dims = trajectories.shape
+    else:
+        loss, m_costs, s_costs, m_states, s_states = ret
+        T, dims = m_states.shape
 
     if fig is None or axarr is None:
         fig, axarr = plt.subplots(dims, sharex=True)
@@ -23,11 +29,22 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
     exp_states = np.array(exp.states)
     for d in range(dims):
         axarr[d].clear()
-        st = trajectories[:, :, d]
-        # plot predictive distribution
-        for i in range(n_samples):
+        if trajectories is not None:
+            st = trajectories[:, :, d]
+            # plot predictive distribution
+            for i in range(n_samples):
+                axarr[d].plot(
+                    np.arange(T-1), st[i, :-1], color='steelblue', alpha=0.3)
             axarr[d].plot(
-                np.arange(T-1), st[i, :-1], color='steelblue', alpha=0.3)
+                np.arange(T-1), st[:, :-1].mean(0), color='orange')
+        if m_states is not None:
+            axarr[d].plot(
+                np.arange(T-1), m_states[:-1, d], color='steelblue',
+                alpha=0.3)
+            axarr[d].errorbar(
+                np.arange(T-1), m_states[:-1, d],
+                1.96*np.sqrt(s_states[:-1, d, d]), color='steelblue', alpha=0.3)
+
         # for i in range(len(exp.states)):
         #    axarr[d].plot(
         #         np.arange(T-1), exp_states[i,1:,d],
@@ -35,8 +52,6 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
         # plot experience
         axarr[d].plot(
             np.arange(T-1), np.array(exp.states[-1])[1:T, d], color='red')
-        axarr[d].plot(
-            np.arange(T-1), st[:, :-1].mean(0), color='orange')
     plt.show(block=False)
     plt.waitforbuttonpress(0.1)
 
@@ -220,7 +235,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     H = params.get('min_steps', 100)
     gamma = params.get('discount', 1.0)
     angle_dims = params.get('angle_dims', [])
-    debug_plot = params.get('debug_plot', 0)
+    debug_plot = params.get('debug_plot', 1)
 
     # init callbacks
     # callback executed after every call to env.step
@@ -303,7 +318,8 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
         apply_controller(env, pol, H,
                          preprocess=gTrig, callback=step_cb_internal)
         # 4. train dynamics once
-        train_dynamics(dyn, exp, angle_dims=angle_dims, max_dataset_size=max_dataset_size)
+        train_dynamics(dyn, exp, angle_dims=angle_dims,
+                       max_dataset_size=max_dataset_size)
 
         if callable(learning_iteration_cb):
             # user callback
