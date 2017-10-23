@@ -6,6 +6,7 @@ from kusanagi import utils
 
 randint = lasagne.random.get_rng().randint(1, 2147462579)
 m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
+s_rng = theano.tensor.shared_randomstreams.RandomStreams(randint)
 
 
 def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
@@ -84,7 +85,7 @@ def rollout(x0, H, gamma0,
 
     # loop over the planning horizon
     output = theano.scan(fn=step_rollout,
-                         sequences=[z, z[::-1]],
+                         sequences=[z[0], z[1]],
                          outputs_info=[None, None, x0, gamma0],
                          non_sequences=nseq,
                          n_steps=H,
@@ -122,6 +123,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         @param D number of state dimensions, must be a python integer
         @param angle_dims angle dimensions that should be converted to complex
                           representation
+        @param crn wheter to use common random numbers.
         @return Returns a tuple of (outs, inps, updts). These correspond to the
                 output variables, input variables and updates dictionary, if
                 any.
@@ -141,24 +143,31 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     H = tt.iscalar('H')
     # discount factor
     gamma = tt.scalar('gamma')
+    # how many times we've done a forward pass
+    n_evals = theano.shared(0)
+    # new samples with every rollout
+    z = m_rng.normal((2, H, n_samples, D))
 
     # sample random numbers to be used in the rollout
+    updates = theano.updates.OrderedUpdates()
     if crn:
-        # use common random numbers
-        # initialize z as a shared variable; i.e. z will be sampled once.
+        # we reuse samples and resamples every 500 iterations
+        # resampling is done to avoid getting stuck with bad solutions
+        # when we get unlucky.
+        z_resampled = z
         z_init = np.random.normal(
-            size=(100, n_samples, D)).astype(theano.config.floatX)
+            size=(2, 1000, n_samples, D)).astype(theano.config.floatX)
         z = theano.shared(z_init)
+        updates[z] = theano.ifelse.ifelse(
+            tt.eq(n_evals % 500, 0), z_resampled, z)
+        updates[n_evals] = (n_evals + 1) % 1000000
 
         # now we will make sure that z is has the correct shape
         z = theano.ifelse.ifelse(
-            z.shape[0] < H,
-            tt.tile(z, (tt.ceil(H/z.shape[0]).astype('int64'), 1, 1)),
+            z.shape[1] < H,
+            tt.tile(z, (1, tt.ceil(H/z.shape[0]).astype('int64'), 1, 1)),
             z
         )[:H]
-    else:
-        # new samples with every rollout
-        z = m_rng.normal((H, n_samples, D))
 
     # draw initial set of particles
     z0 = m_rng.normal((n_samples, D))
@@ -181,10 +190,11 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     loss = mean_costs.mean() if average else mean_costs.sum()
 
     inps = [mx0, Sx0, H, gamma]
+    updates += updts
     if intermediate_outs:
-        return [loss, costs, trajectories], inps, updts
+        return [loss, costs, trajectories], inps, updates
     else:
-        return loss, inps, updts
+        return loss, inps, updates
 
 
 def build_rollout(*args, **kwargs):
