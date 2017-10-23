@@ -20,11 +20,12 @@ from kusanagi.shell import experiment_utils, double_cartpole
 np.set_printoptions(linewidth=500)
 
 
-def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI, **kwargs):
+def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
+                       **kwargs):
     ''' pilco with rbf controller'''
     params = double_cartpole.default_params()
-    params['n_rnd'] = n_rnd
-    params['n_opt'] = n_opt
+    params['n_rnd'] = int(n_rnd)
+    params['n_opt'] = int(n_opt)
     params['dynmodel_class'] = dynmodel_class
 
     loss_kwargs = {}
@@ -36,7 +37,7 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI, **
 
 def experiment2_params(n_rnd=1, n_opt=100,
                        mc_samples=10, learning_rate=1e-3,
-                       polyak_averaging=0.999,
+                       polyak_averaging=None,
                        min_method='adam', max_evals=1000,
                        resample_particles=True,
                        heteroscedastic_dyn=False,
@@ -47,6 +48,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     n_opt = int(n_opt)
     max_evals = int(max_evals)
     learning_rate = float(learning_rate)
+    heteroscedastic_dyn = (str(heteroscedastic_dyn) .lower() != "false")
     try:    
         polyak_averaging = float(polyak_averaging)
     except:
@@ -56,7 +58,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
     # params for the dynamics model
-    params['dynamics_model']['heteroscedastic'] = heteroscedastic_dyn != 'False'
+    params['dynamics_model']['heteroscedastic'] = heteroscedastic_dyn
     params['dynamics_model']['n_samples'] = mc_samples
 
     # parameters for building loss function
@@ -100,12 +102,10 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*4,
-            p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            hidden_dims=[200]*2,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             output_nonlinearity=pol.sat_func,
-            dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
@@ -122,9 +122,9 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
-            hidden_dims=[200]*4,
+            hidden_dims=[200]*3,
             p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
@@ -143,9 +143,9 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
-            hidden_dims=[200]*4,
+            hidden_dims=[200]*3,
             p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
@@ -156,8 +156,8 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*4,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            hidden_dims=[200]*2,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             output_nonlinearity=pol.sat_func,
             name=pol.name)
@@ -178,9 +178,9 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
-            hidden_dims=[200]*4,
+            hidden_dims=[200]*3,
             p=True, p_input=True,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
@@ -199,9 +199,9 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
-            hidden_dims=[200]*4,
+            hidden_dims=[200]*3,
             p=True, p_input=True,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
@@ -212,8 +212,8 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*4,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            hidden_dims=[200]*2,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             output_nonlinearity=pol.sat_func,
             name=pol.name)
@@ -232,9 +232,9 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
-            hidden_dims=[200]*4,
+            hidden_dims=[200]*3,
             p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
@@ -245,9 +245,9 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*4,
+            hidden_dims=[200]*2,
             p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
@@ -267,9 +267,9 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
-            hidden_dims=[200]*4,
+            hidden_dims=[200]*3,
             p=True, p_input=True,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
@@ -280,9 +280,9 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*4,
+            hidden_dims=[200]*2,
             p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
+            nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.Orthogonal(gain=0.1),
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,

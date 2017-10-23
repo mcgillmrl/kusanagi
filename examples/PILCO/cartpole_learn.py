@@ -16,7 +16,7 @@ from kusanagi import utils
 from kusanagi.ghost import regression, control
 from kusanagi.shell import experiment_utils, cartpole
 
-# np.random.seed(1337)
+np.random.seed(1337)
 np.set_printoptions(linewidth=500)
 
 
@@ -24,8 +24,8 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
                        **kwargs):
     ''' pilco with rbf controller'''
     params = cartpole.default_params()
-    params['n_rnd'] = n_rnd
-    params['n_opt'] = n_opt
+    params['n_rnd'] = int(n_rnd)
+    params['n_opt'] = int(n_opt)
     params['dynmodel_class'] = dynmodel_class
 
     loss_kwargs = {}
@@ -37,7 +37,7 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
 
 def experiment2_params(n_rnd=1, n_opt=100,
                        mc_samples=10, learning_rate=1e-3,
-                       polyak_averaging=0.999,
+                       polyak_averaging=None,
                        min_method='adam', max_evals=1000,
                        resample_particles=True,
                        heteroscedastic_dyn=False,
@@ -102,12 +102,10 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*2,
-            p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            hidden_dims=[200]*2,
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
-            dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
@@ -125,9 +123,9 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.05, p_input=0.05,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            p=0.05, p_input=0.0,
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
@@ -146,9 +144,9 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.05, p_input=0.05,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            p=0.05, p_input=0.0,
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
@@ -158,17 +156,15 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*2,
-            p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            hidden_dims=[200]*2,
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
-            dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
     elif experiment_id == 5:
-        # mc PILCO with RBF controller and dropout mlp dynamics
+        # mc PILCO with RBF controller and log normal dropout dynamics
         scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
@@ -184,8 +180,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             output_dims=odims,
             hidden_dims=[200]*2,
             p=True, p_input=True,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
@@ -205,8 +201,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             output_dims=odims,
             hidden_dims=[200]*2,
             p=True, p_input=True,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
@@ -216,12 +212,10 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*2,
-            p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            hidden_dims=[200]*2,
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
-            dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
@@ -239,9 +233,9 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.05, p_input=0.05,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            p=0.05, p_input=0.0,
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
@@ -251,17 +245,17 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*2,
+            hidden_dims=[200]*2,
             p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
     elif experiment_id == 8:
-        # mc PILCO with dropout controller and dropout mlp dynamics
+        # mc PILCO with dropout controller and log-normal dropout dynamics
         scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.mcpilco_cartpole_experiment
         params = scenario_params[0]
@@ -275,8 +269,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             output_dims=odims,
             hidden_dims=[200]*2,
             p=True, p_input=True,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
@@ -286,10 +280,10 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*2,
+            hidden_dims=[200]*2,
             p=0.05, p_input=0.0,
-            nonlinearities=lasagne.nonlinearities.rectify,
-            W_init=lasagne.init.Orthogonal(gain=0.1),
+            nonlinearities=regression.nonlinearities.rectify,
+            W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
