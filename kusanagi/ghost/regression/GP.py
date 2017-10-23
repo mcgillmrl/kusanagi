@@ -230,8 +230,6 @@ class GP(BaseRegressor):
             if y_var:
                 K += tt.diag(y_var[i])
 
-            K = theano.printing.Print()(K)
-
             # compute chol(K)
             L = Cholesky()(K)
 
