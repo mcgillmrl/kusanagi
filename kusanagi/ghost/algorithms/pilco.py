@@ -36,7 +36,11 @@ def propagate_belief(mx, Sx, policy, dynmodel, D, angle_dims=None):
 
     # compute state control joint distribution
     mxu = tt.concatenate([mxa, mu])
-    q = Sxa.dot(Cu)
+    if isinstance(policy, regression.SSGP) or\
+       isinstance(policy, regression.BNN):
+        q = Cu
+    else:
+        q = Sxa.dot(Cu)
     Sxu_up = tt.concatenate([Sxa, q], axis=1)
     Sxu_lo = tt.concatenate([q.T, Su], axis=1)
     Sxu = tt.concatenate([Sxu_up, Sxu_lo], axis=0)  # [D+U]x[D+U]
@@ -140,7 +144,8 @@ def rollout(mx0, Sx0, H, gamma,
     return [mean_costs, var_costs, mean_states, cov_states], updts
 
 
-def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False):
+def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False,
+             **kwargs):
     '''
         Constructs the computation graph for the value function according to
         the pilco algorithm:
@@ -186,10 +191,10 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False):
     else:
         return loss, inps, updts
 
+
 def build_rollout(*args, **kwargs):
     kwargs['intermediate_outs'] = True
     outs, inps, updts = get_loss(*args, **kwargs)
     rollout_fn = theano.function(inps, outs, updates=updts,
                                  allow_input_downcast=True)
     return rollout_fn
-
