@@ -5,15 +5,15 @@ import lasagne
 import numpy as np
 
 from lasagne.layers import InputLayer, DenseLayer
-from kusanagi.ghost.regression.layers import (
-        DenseDropoutLayer, DenseGaussianDropoutLayer,
-        DenseAdditiveGaussianDropoutLayer, DenseLogNormalDropoutLayer)
-from lasagne import nonlinearities
 from lasagne.random import get_rng
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from kusanagi import utils
+from kusanagi.ghost.regression.layers import (
+        DenseDropoutLayer, DenseGaussianDropoutLayer,
+        DenseAdditiveGaussianDropoutLayer, DenseLogNormalDropoutLayer)
 from kusanagi.ghost.optimizers import SGDOptimizer
+from kusanagi.ghost.regression import nonlinearities
 from kusanagi.ghost.regression import BaseRegressor
 from kusanagi.ghost.regression import objectives
 
@@ -251,6 +251,7 @@ class BNN(BaseRegressor):
             network_spec = dropout_mlp(
                 idims, odims, hidden_dims=[200]*3,
                 p=0.1, p_input=0.0,
+                nonlinearities=nonlinearities.rectify,
                 dropout_class=DenseLogNormalDropoutLayer)
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
