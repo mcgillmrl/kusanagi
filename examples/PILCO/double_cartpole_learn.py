@@ -49,10 +49,14 @@ def experiment2_params(n_rnd=1, n_opt=100,
     max_evals = int(max_evals)
     learning_rate = float(learning_rate)
     heteroscedastic_dyn = (str(heteroscedastic_dyn) .lower() != "false")
-    if type(clip_gradients) is str:
-        clip_gradients = eval(clip_gradients)
-    if type(clip_gradients) is str:
-        polyak_averaging = eval(polyak_averaging)
+    try:
+        clip_gradients = float(clip_gradients)
+    except:
+        clip_gradients = None
+    try:
+        polyak_averaging = float(polyak_averaging)
+    except:
+        polyak_averaging = None
 
     scenario_params = experiment1_params(n_rnd, n_opt)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
