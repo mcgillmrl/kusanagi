@@ -95,42 +95,41 @@ class SPGP(GP):
                 hyps = [hyp[:idims+1], hyp[idims+1]]
                 kernel_func = partial(cov.Sum, hyps, self.covs)
 
-                sf2 = tt.exp(2*hyp[idims])
-                sn2 = tt.exp(2*hyp[idims+1])
+                sf2 = hyp[idims]**2
+                sn2 = hyp[idims+1]**2
                 N = X.shape[0].astype(theano.config.floatX)
 
                 ridge = 1e-6
                 Kmm = kernel_func(X_sp) + ridge*EyeM
                 Kmn = kernel_func(X_sp, X)
                 Lmm = Cholesky()(Kmm)
-                iKmm = solve_upper_triangular(
-                    Lmm.T, solve_lower_triangular(Lmm, EyeM))
-                Lmn = solve_lower_triangular(Lmm, Kmn)
-                diagQnn = (Lmn**2).sum(0)
+                rhs = tt.concatenate([EyeM, Kmn], axis=1)
+                sol = solve_lower_triangular(Lmm, rhs)
+                iKmm = solve_upper_triangular(Lmm.T, sol[:, :EyeM.shape[0]])
+                Lmn  = sol[:, EyeM.shape[0]:]
+                diagQnn =  (Lmn**2).sum(0)
 
                 # Gamma = diag(Knn - Qnn) + sn2*I
                 Gamma = sf2 + sn2 - diagQnn
                 Gamma_inv = 1.0/Gamma
 
-                # these operations are done to avoid inverting
-                # K_sp = (Qnn+Gamma)
+                # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
                 sqrtGamma_inv = tt.sqrt(Gamma_inv)
                 Lmn_ = Lmn*sqrtGamma_inv                      # Kmn_*Gamma^-.5
                 Yi = Y*(sqrtGamma_inv)                        # Gamma^-.5* Y
-                Bmm = tt.eye(Kmm.shape[0]) + (Lmn_).dot(Lmn_.T)
+                Bmm = tt.eye(Kmm.shape[0]) + (Lmn_).dot(Lmn_.T)     # I + Lmn * Gamma^-1 * Lnm
                 Amm = Cholesky()(Bmm)
                 LAmm = Lmm.dot(Amm)
-                Lmn_dotYi = Lmn_.dot(Yi)
-                rhs = tt.concatenate([EyeM, Lmn_dotYi[:, None]], axis=1)
-                sol = solve_upper_triangular(
-                    LAmm.T, solve_lower_triangular(LAmm, rhs))
+                Kmn_dotYi = Kmn.dot(Yi*(sqrtGamma_inv))
+                rhs = tt.concatenate([EyeM, Kmn_dotYi[:, None]], axis=1)
+                sol = solve_upper_triangular(LAmm.T, solve_lower_triangular(LAmm, rhs))
                 iBmm = sol[:, :-1]
                 beta_sp = sol[:, -1]
 
                 log_det_K_sp = tt.sum(tt.log(Gamma))
                 log_det_K_sp += 2*tt.sum(tt.log(tt.diag(Amm)))
 
-                loss_sp = Yi.dot(Yi) - Lmn_dotYi.dot(beta_sp)
+                loss_sp = Yi.dot(Yi) - Kmn_dotYi.dot(beta_sp)
                 loss_sp += log_det_K_sp + N*np.log(2*np.pi)
                 loss_sp *= 0.5
 
@@ -239,9 +238,9 @@ class SPGP_UI(SPGP, GP_UI):
         zeta = self.X_sp - mx
 
         # initialize some variables
-        sf2 = tt.exp(2*self.hyp[:, idims])
+        sf2 = self.hyp[:, idims]**2
         eyeE = tt.tile(tt.eye(idims), (odims, 1, 1))
-        lscales = tt.exp(self.hyp[:, :idims])
+        lscales = self.hyp[:, :idims]
         iL = eyeE/lscales.dimshuffle(0, 1, 'x')
 
         # predictive mean
@@ -259,7 +258,7 @@ class SPGP_UI(SPGP, GP_UI):
         V = tt.stack([tiL[i].T.dot(lb[i]) for i in range(odims)]).T*c
 
         # predictive covariance
-        logk = 2*self.hyp[:, None, idims] - 0.5*tt.sum(inp*inp, 2)
+        logk = (tt.log(sf2))[:, None] - 0.5*tt.sum(inp*inp, 2)
         logk_r = logk.dimshuffle(0, 'x', 1)
         logk_c = logk.dimshuffle(0, 1, 'x')
         Lambda = tt.square(iL)
