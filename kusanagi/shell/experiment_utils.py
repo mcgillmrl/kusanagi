@@ -235,7 +235,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     H = params.get('min_steps', 100)
     gamma = params.get('discount', 1.0)
     angle_dims = params.get('angle_dims', [])
-    debug_plot = params.get('debug_plot', 1)
+    debug_plot = int(params.get('debug_plot', 0))
 
     # init callbacks
     # callback executed after every call to env.step
