@@ -79,7 +79,7 @@ class SPGP(GP):
     def get_loss(self, cache_intermediate=True):
         if self.N < self.n_inducing:
             # initialize the training loss function of the GP class
-            return super(SPGP, self).get_loss(cache_intermediate)
+            return super(SPGP, self).get_loss(cache_intermediate=cache_intermediate)
         else:
             utils.print_with_stamp('Building FITC loss', self.name)
             self.should_recompile = False
