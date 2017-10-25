@@ -1,7 +1,7 @@
 #!//usr/bin/env bash
 
-#OPTS="-r True -o /localdata/juan/iclr2018"
-OPTS="-o /localdata/juan/iclr2018"
+OPTS="-r True -o /localdata/juan/iclr2018"
+#OPTS="-o /localdata/juan/iclr2018"
 #EXTRA_OPTS="-k mc_samples 100 -k max_evals 1000 -k learning_rate 1e-3 -k polyak_averaging None -k clip_gradients 1.0 -k heteroscedastic_dyn True -k debug_plot 1 -k n_opt 50"
 EXTRA_OPTS="-k mc_samples 100 -k max_evals 1000 -k learning_rate 1e-3 -k polyak_averaging None -k clip_gradients 1.0 -k heteroscedastic_dyn True -k debug_plot 0 -k n_opt 50"
 
