@@ -93,6 +93,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         scenario_params = experiment1_params(*args, **kwargs)
         learner_setup = experiment_utils.pilco_double_cartpole_experiment
         params = scenario_params[0]
+
         pol = control.RBFPolicy(**params['policy'])
 
     elif experiment_id == 2:
@@ -337,6 +338,7 @@ if __name__ == '__main__':
     scenario_params, pol, dyn, learner_setup = get_scenario(e_id, **kwargs)
 
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
+    params['debug_plot'] = eval(kwargs.get('debug_plot', '0'))
 
     # write the inital configuration to disk
     params_path = os.path.join(output_folder, 'initial_config.dill')
