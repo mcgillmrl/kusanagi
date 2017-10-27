@@ -9,8 +9,8 @@ from kusanagi.ghost.regression.layers import (GaussianDropoutLayer,
 
 
 def gaussian_log_likelihood(targets, pred_mean, pred_std=None):
-    ''' Computes the eempirical expected value of the log likelihood,
-    for a gaussian distributed predictions. This assumes diagonal covariances
+    ''' Computes the log likelihood for gaussian distributed predictions.
+        This assumes diagonal covariances
     '''
     delta = pred_mean - targets
     # note that if we have nois be a 1xD vector, broadcasting
@@ -20,7 +20,7 @@ def gaussian_log_likelihood(targets, pred_mean, pred_std=None):
     else:
         lml = tt.square(delta).sum(-1)
 
-    lml = -0.5*lml
+    lml = -0.5*lml.sum()
 
     return lml
 

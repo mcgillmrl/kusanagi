@@ -323,20 +323,21 @@ class BNN(BaseRegressor):
         # rules apply
         lml = objectives.gaussian_log_likelihood(
             train_targets, train_predictions, sn)
-        loss = -lml.sum()
 
         # compute regularization term
         # this is only for binary dropout layers
-        input_ls = tt.minimum(M/N, input_lengthscale)
-        hidden_ls = tt.minimum(M/N, hidden_lengthscale)
-        loss += objectives.dropout_gp_kl(
+        input_ls = input_lengthscale
+        hidden_ls = hidden_lengthscale
+        reg = objectives.dropout_gp_kl(
             self.network, input_ls, hidden_ls)
         # this is only for gaussian dropout layers
-        loss += objectives.gaussian_dropout_kl(
+        reg += objectives.gaussian_dropout_kl(
             self.network, input_ls, hidden_ls)
         # this is only for log normal dropout layers
-        loss += objectives.log_normal_kl(
+        reg += objectives.log_normal_kl(
             self.network, input_ls, hidden_ls)
+
+        loss = -lml + (M/N)*reg
 
         inputs = [train_inputs, train_targets,
                   input_lengthscale, hidden_lengthscale]
