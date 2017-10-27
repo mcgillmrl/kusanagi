@@ -69,6 +69,8 @@ class NNPolicy(BNN):
         # by default, sample internal params (e.g. dropout masks)
         # at every evaluation
         kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
+        kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', True)
+        kwargs['whiten_outputs'] = kwargs.get('whiten_outputs', False)
         if s is None:
             kwargs['return_samples'] = kwargs.get('return_samples', True)
         kwargs['deterministic'] = kwargs.get('deterministic', False)
