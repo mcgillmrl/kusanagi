@@ -259,7 +259,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
         return utils.gTrig_np(state, angle_dims).flatten()
 
     # collect experience with random controls
-    randpol = control.RandPolicy(maxU=pol.maxU)
+    randpol = control.RandPolicy(maxU=0.25*pol.maxU)
     for i in range(n_rnd):
         exp.new_episode()
         apply_controller(env, randpol, H,

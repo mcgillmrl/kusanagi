@@ -76,7 +76,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
 
 def train_dynamics(dynmodel, data, angle_dims=[],
                    init_episode=0, max_episodes=None,
-                   max_dataset_size=-1,
+                   max_dataset_size=0,
                    wrap_angles=False, append=False):
     ''' Trains a dynamics model using the data dataset '''
     utils.print_with_stamp('Training dynamics model', 'train_dynamics')
