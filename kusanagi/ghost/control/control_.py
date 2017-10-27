@@ -22,11 +22,7 @@ class RBFPolicy(RBFGP):
         self.n_inducing = n_inducing
         self.angle_dims = angle_dims
         self.name = name
-        if state0_dist is None:
-            self.state0_dist = utils.distributions.Gaussian(
-                np.zeros((idims, )), 0.01*np.eye(idims))
-        else:
-            self.state0_dist = state0_dist
+        self.state0_dist = state0_dist
 
         if sat_func:
             # set the model to be a RBF with saturated outputs
@@ -39,7 +35,10 @@ class RBFPolicy(RBFGP):
                 name=self.name, filename=filename)
             # self.load()
         else:
-            idims = state0_dist.mean.size
+            if self.state0_dist is None:
+                self.state0_dist = utils.distributions.Gaussian(
+                    np.zeros((idims, )), 0.01*np.eye(idims))
+            idims = self.state0_dist.mean.size
             odims = len(self.maxU)
             super(RBFPolicy, self).__init__(
                 idims=idims, odims=odims, sat_func=sat_func,
