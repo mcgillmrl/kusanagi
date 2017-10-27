@@ -77,10 +77,11 @@ class SGDOptimizer(object):
                                    self.name)
             grads = theano.grad(loss, params)
             if clip is not None:
+                utils.print_with_stamp(
+                    "Clipping gradients to norm %s" % (str(clip)), self.name)
                 grads = lasagne.updates.total_norm_constraint(grads, clip)
 
         utils.print_with_stamp("Computing parameter update rules", self.name)
-        utils.print_with_stamp("Gradient clipping %s"%(str(clip)), self.name)
         min_method_updt = LASAGNE_MIN_METHODS[self.min_method]
         grad_updates = min_method_updt(grads, params, **kwargs)
 
