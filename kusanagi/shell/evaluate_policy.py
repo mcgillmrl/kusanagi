@@ -6,6 +6,7 @@ from kusanagi.ghost import control
 from kusanagi.shell import experiment_utils
 from kusanagi import utils
 import dill
+import pickle as pkl
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -54,4 +55,4 @@ if __name__=='__main__':
     results_path = os.path.join(odir, 'results_%d_%d'%(last_iteration, n_trials))
     with open(results_path, 'wb+') as f:
         utils.print_with_stamp('Dumping results to [%s]' % (results_path))
-        dill.dump(results, f)
+        pkl.dump(results, f, 2)
