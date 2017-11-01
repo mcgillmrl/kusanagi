@@ -9,7 +9,8 @@ m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
 s_rng = theano.tensor.shared_randomstreams.RandomStreams(randint)
 
 
-def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
+def propagate_particles(latent_x, measured_x, pol, dyn, D, angle_dims=None,
+                        iid_per_eval=False):
     ''' Given a set of input states, this function returns predictions for
         the next states. This is done by 1) evaluating the current pol
         2) using the dynamics model to estimate the next state. If x has
@@ -18,30 +19,33 @@ def propagate_particles(x, pol, dyn, D, angle_dims=None, iid_per_eval=False):
         representing the next states and costs with shape [n, 1]
     '''
     # convert angles from input states to their complex representation
-    xa = utils.gTrig(x, angle_dims, D)
+    xa1 = utils.gTrig(latent_x, angle_dims, D)
+    xa2 = utils.gTrig(measured_x, angle_dims, D)
 
     # compute controls for each sample
-    u = pol.evaluate(xa, symbolic=True,
+    u = pol.evaluate(xa2, symbolic=True,
                      iid_per_eval=iid_per_eval,
                      return_samples=True)
 
     # build state-control vectors
-    xu = tt.concatenate([xa, u], axis=1)
+    xu = tt.concatenate([xa1, u], axis=1)
 
     # predict the change in state given current state-control for each particle
     delta_x, sn_x = dyn.predict_symbolic(xu, iid_per_eval=iid_per_eval,
                                          return_samples=True)
 
     # compute the successor states
-    x_next = x + delta_x
+    x_next = latent_x + delta_x
 
     return x_next, sn_x
 
 
 def rollout(x0, H, gamma0,
             pol, dyn, cost,
-            D, angle_dims=None, resample=True,
-            z=None, truncate_gradient=-1,
+            D, angle_dims=None,
+            z=None, resample=True, mm_cost=True,
+            noisy_policy_input=True, noisy_cost_input=True,
+            truncate_gradient=-1,
             **kwargs):
     ''' Given some initial state particles x0, and a prediction horizon H
     (number of timesteps), returns a set of trajectories sampled from the
@@ -52,29 +56,43 @@ def rollout(x0, H, gamma0,
     utils.print_with_stamp(msg, 'mc_pilco.rollout')
 
     # define internal scan computations
-    def step_rollout(z1, z2, x, gamma, *args):
+    def step_rollout(z1, z2, z2_prev, x, sn, gamma, *args):
         '''
             Single step of rollout.
         '''
+        print(noisy_policy_input)
+        # noisy state measruement for control
+        xn = x + z2_prev*sn if noisy_policy_input else x
+
         # get next state distribution
-        x_next, sn = propagate_particles(x, pol, dyn, D, angle_dims, **kwargs)
-        # noisy state measurement
-        # x_next += z2*sn
+        x_next, sn_next = propagate_particles(
+            x, xn, pol, dyn, D, angle_dims, **kwargs)
+
+        # noisy state measurement for cost
+        print(noisy_policy_input)
+        xn_next = x_next + z2*sn_next if noisy_cost_input else x_next
 
         #  get cost of applying action:
-        n = x_next.shape[0]
+        n = xn_next.shape[0]
         n = n.astype(theano.config.floatX)
-        mx_next = x_next.mean(0)
-        Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
-        c_next = cost(x_next, None)
-        # mc_next = c_next.mean()
-        mc_next = cost(mx_next, Sx_next)[0]
+        mxn_next = xn_next.mean(0)
+        Sxn_next = xn_next.T.dot(xn_next)/n - tt.outer(mxn_next, mxn_next)
+        c_next = cost(xn_next, None)
+        print(mm_cost)
+        mc_next = cost(mxn_next, Sxn_next)[0] if mm_cost else c_next.mean()
 
         # resample if requested
+        print(resample)
         if resample:
+            if noisy_cost_input:
+                mx_next = x_next.mean(0)
+                Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
+            else:
+                mx_next = mxn_next
+                Sx_next = Sxn_next
             x_next = mx_next + z1.dot(tt.slinalg.cholesky(Sx_next).T)
 
-        return [gamma*mc_next, gamma*c_next, x_next, gamma*gamma0]
+        return [gamma*mc_next, gamma*c_next, x_next, sn_next, gamma*gamma0]
 
     # these are the shared variables that will be used in the scan graph.
     # we need to pass them as non_sequences here
@@ -84,15 +102,12 @@ def rollout(x0, H, gamma0,
     nseq.extend(pol.get_intermediate_outputs())
 
     # loop over the planning horizon
-    output = theano.scan(fn=step_rollout,
-                         sequences=[z[0], z[1]],
-                         outputs_info=[None, None, x0, gamma0],
-                         non_sequences=nseq,
-                         n_steps=H,
-                         strict=True,
-                         allow_gc=False,
-                         truncate_gradient=truncate_gradient,
-                         name="mc_pilco>rollout_scan")
+    output = theano.scan(
+        fn=step_rollout, sequences=[z[0, 1:], z[1, 1:], z[1, :-1]],
+        outputs_info=[None, None, x0, 1e-4*tt.ones_like(x0), gamma0],
+        non_sequences=nseq, n_steps=H, strict=True, allow_gc=False,
+        truncate_gradient=truncate_gradient, name="mc_pilco>rollout_scan")
+
     rollout_output, rollout_updts = output
     mcosts, costs, trajectories = rollout_output[:3]
     trajectories.name = 'trajectories'
@@ -107,6 +122,7 @@ def rollout(x0, H, gamma0,
 
 def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
              intermediate_outs=False, resample_particles=True, crn=True,
+             mm_cost=True, noisy_policy_input=True, noisy_cost_input=True,
              resample_dyn=False, average=True, truncate_gradient=-1):
     '''
         Constructs the computation graph for the value function according to
@@ -146,7 +162,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     # how many times we've done a forward pass
     n_evals = theano.shared(0)
     # new samples with every rollout
-    z = m_rng.normal((2, H, n_samples, D))
+    z = m_rng.normal((2, H+1, n_samples, D))
 
     # sample random numbers to be used in the rollout
     updates = theano.updates.OrderedUpdates()
@@ -160,14 +176,14 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         z = theano.shared(z_init)
         updates[z] = theano.ifelse.ifelse(
             tt.eq(n_evals % 500, 0), z_resampled, z)
-        updates[n_evals] = (n_evals + 1) % 1000000
+        updates[n_evals] = n_evals + 1
 
         # now we will make sure that z is has the correct shape
         z = theano.ifelse.ifelse(
             z.shape[1] < H,
             tt.tile(z, (1, tt.ceil(H/z.shape[0]).astype('int64'), 1, 1)),
             z
-        )[:H]
+        )[:H+1]
 
     # draw initial set of particles
     z0 = m_rng.normal((n_samples, D))
@@ -178,10 +194,13 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     r_outs, updts = rollout(x0, H, gamma,
                             pol, dyn, cost,
                             D, angle_dims,
-                            resample=resample_particles,
                             z=z,
+                            resample=resample_particles,
                             iid_per_eval=resample_dyn,
-                            truncate_gradient=truncate_gradient)
+                            mm_cost=mm_cost,
+                            truncate_gradient=truncate_gradient,
+                            noisy_policy_input=noisy_policy_input,
+                            noisy_cost_input=noisy_cost_input)
 
     mean_costs, costs, trajectories = r_outs
 
