@@ -47,7 +47,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        min_method='adam', max_evals=1000,
                        mm_state=True,
                        mm_cost=True,
-                       sim_measurement_noise=False,
+                       noisy_policy_input=False,
+                       noisy_cost_input=False,
                        heteroscedastic_dyn=False,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
@@ -59,7 +60,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
     heteroscedastic_dyn = eval_str_arg(heteroscedastic_dyn)
     mm_state = eval_str_arg(mm_state)
     mm_cost = eval_str_arg(mm_cost)
-    sim_measurement_noise = eval_str_arg(sim_measurement_noise)
+    noisy_policy_input = eval_str_arg(noisy_policy_input)
+    noisy_cost_input = eval_str_arg(noisy_cost_input)
     clip_gradients = eval_str_arg(clip_gradients)
     polyak_averaging = eval_str_arg(polyak_averaging)
 
@@ -74,7 +76,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
     loss_kwargs['n_samples'] = mc_samples
     loss_kwargs['mm_state'] = mm_state
     loss_kwargs['mm_cost'] = mm_cost
-    loss_kwargs['sim_measurement_noise'] = sim_measurement_noise
+    loss_kwargs['noisy_policy_input'] = noisy_policy_input
+    loss_kwargs['noisy_cost_input'] = noisy_cost_input
 
     # init symbolic learning rate parameter
     lr = theano.tensor.scalar('lr')
