@@ -69,7 +69,7 @@ def rollout(x0, H, gamma0,
             x, xn, pol, dyn, D, angle_dims, **kwargs)
 
         # noisy state measurement for cost
-        print(noisy_policy_input)
+        print(noisy_cost_input)
         xn_next = x_next + z2*sn_next if noisy_cost_input else x_next
 
         #  get cost of applying action:
