@@ -16,7 +16,7 @@ from kusanagi import utils
 from kusanagi.ghost import regression, control
 from kusanagi.shell import experiment_utils, cartpole
 
-#np.random.seed(1)
+# np.random.seed(1)
 np.set_printoptions(linewidth=500)
 
 
@@ -24,6 +24,7 @@ def eval_str_arg(arg):
     if type(arg) is str:
         arg = eval(arg)
     return arg
+
 
 def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
                        **kwargs):
@@ -46,7 +47,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        min_method='adam', max_evals=1000,
                        resample_particles=True,
                        mm_cost=True,
-                       sim_measurement_noise=False,
+                       noisy_policy_input=False,
+                       noisy_cost_input=False,
                        heteroscedastic_dyn=False,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
@@ -58,8 +60,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
     heteroscedastic_dyn = eval_str_arg(heteroscedastic_dyn)
     resample_particles = eval_str_arg(resample_particles)
     mm_cost = eval_str_arg(mm_cost)
-    print((sim_measurement_noise,eval_str_arg(sim_measurement_noise)))    
-    sim_measurement_noise = eval_str_arg(sim_measurement_noise)
+    noisy_policy_input = eval_str_arg(noisy_policy_input)
+    noisy_cost_input = eval_str_arg(noisy_cost_input)
     clip_gradients = eval_str_arg(clip_gradients)
     polyak_averaging = eval_str_arg(polyak_averaging)
 
@@ -83,7 +85,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
     loss_kwargs['n_samples'] = mc_samples
     loss_kwargs['resample_particles'] = resample_particles
     loss_kwargs['mm_cost'] = mm_cost
-    loss_kwargs['sim_measurement_noise'] = sim_measurement_noise
+    loss_kwargs['noisy_policy_input'] = noisy_policy_input
+    loss_kwargs['noisy_cost_input'] = noisy_cost_input
 
     # init symbolic learning rate parameter
     lr = theano.tensor.scalar('lr')
@@ -327,6 +330,9 @@ if __name__ == '__main__':
         '-r', '--render', type=bool, default=False,
         help='whether to call env.render')
     parser.add_argument(
+        '-d', '--debug_plot', type=int, default=0,
+        help='whether to plot rollouts and other debugging information')
+    parser.add_argument(
         '-k', '--kwarg', nargs=2, action='append', default=[],
         help='additional arguments for the experiment [name value]')
     args = parser.parse_args()
@@ -377,7 +383,8 @@ if __name__ == '__main__':
     # run pilco
     experiment_utils.run_pilco_experiment(
         scenario, params, loss_kwargs, polopt_kwargs, extra_inps,
-        learning_iteration_cb=iter_cb, render=args.render)
+        learning_iteration_cb=iter_cb, render=args.render,
+        debug_plot=args.debug_plot)
 
     print('Finished experiment')
     sys.exit(0)

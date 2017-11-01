@@ -307,21 +307,24 @@ def get_scenario(experiment_id, *args, **kwargs):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-e', '--exp', type=int,
-                        default=1,
-                        help='id of experiment to run')
-    parser.add_argument('-n', '--name', type=str,
-                        default='double_cartpole',
-                        help='experiment name')
-    parser.add_argument('-o', '--output_folder', type=str,
-                        default=utils.get_output_dir(),
-                        help='where to save the results of the experiment')
-    parser.add_argument('-r', '--render', type=bool,
-                        default=False,
-                        help='whether to call env.render')
-    parser.add_argument('-k', '--kwarg', nargs=2, action='append',
-                        default=[],
-                        help='additional arguments for the experiment [name value]')
+    parser.add_argument(
+        '-e', '--exp', type=int, default=1,
+        help='id of experiment to run')
+    parser.add_argument(
+        '-n', '--name', type=str, default='cartpole',
+        help='experiment name')
+    parser.add_argument(
+        '-o', '--output_folder', type=str, default=utils.get_output_dir(),
+        help='where to save the results of the experiment')
+    parser.add_argument(
+        '-r', '--render', type=bool, default=False,
+        help='whether to call env.render')
+    parser.add_argument(
+        '-d', '--debug_plot', type=int, default=0,
+        help='whether to plot rollouts and other debugging information')
+    parser.add_argument(
+        '-k', '--kwarg', nargs=2, action='append', default=[],
+        help='additional arguments for the experiment [name value]')
     args = parser.parse_args()
 
     e_id = args.exp
@@ -346,7 +349,6 @@ if __name__ == '__main__':
     scenario_params, pol, dyn, learner_setup = get_scenario(e_id, **kwargs)
 
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
-    params['debug_plot'] = eval(kwargs.get('debug_plot', '0'))
 
     # write the inital configuration to disk
     params_path = os.path.join(output_folder, 'initial_config.dill')
@@ -371,7 +373,8 @@ if __name__ == '__main__':
     # run pilco
     experiment_utils.run_pilco_experiment(
         scenario, params, loss_kwargs, polopt_kwargs, extra_inps,
-        learning_iteration_cb=iter_cb, render=args.render)
+        learning_iteration_cb=iter_cb, render=args.render,
+        debug_plot=args.debug_plot)
 
     print('Finished experiment')
     sys.exit(0)

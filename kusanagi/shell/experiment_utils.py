@@ -224,8 +224,8 @@ def mcpilco_double_cartpole_experiment(
 def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                          params=None, loss_kwargs={}, polopt_kwargs={},
                          extra_inps=[], step_cb=None, polopt_cb=None,
-                         learning_iteration_cb=None, max_dataset_size=-1,
-                         render=False):
+                         learning_iteration_cb=None, max_dataset_size=0,
+                         render=False, debug_plot=0):
     # setup experiment
     exp_objs = exp_setup(params)
     p0, D, env, pol, dyn, cost, exp, polopt, learner, params = exp_objs
@@ -235,7 +235,6 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     H = params.get('min_steps', 100)
     gamma = params.get('discount', 1.0)
     angle_dims = params.get('angle_dims', [])
-    debug_plot = int(params.get('debug_plot', 0))
 
     # init callbacks
     # callback executed after every call to env.step
@@ -259,7 +258,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
         return utils.gTrig_np(state, angle_dims).flatten()
 
     # collect experience with random controls
-    randpol = control.RandPolicy(maxU=0.25*pol.maxU)
+    randpol = control.RandPolicy(maxU=pol.maxU)
     for i in range(n_rnd):
         exp.new_episode()
         apply_controller(env, randpol, H,
@@ -267,7 +266,8 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                          callback=step_cb_internal)
 
     # 1. train dynamics once
-    train_dynamics(dyn, exp, angle_dims=angle_dims, max_dataset_size=max_dataset_size)
+    train_dynamics(
+        dyn, exp, angle_dims=angle_dims, max_dataset_size=max_dataset_size)
 
     # build loss function
     loss, inps, updts = learner.get_loss(
@@ -340,7 +340,8 @@ def evaluate_policy(env, pol, exp, params, n_tests=100, render=False):
         return utils.gTrig_np(state, angle_dims).flatten()
 
     def step_cb(*args, **kwargs):
-        env.render()
+        if render:
+            env.render()
 
     results = []
     for i, p in enumerate(exp.policy_parameters):
