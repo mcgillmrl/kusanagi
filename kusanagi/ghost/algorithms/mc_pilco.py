@@ -43,7 +43,7 @@ def propagate_particles(latent_x, measured_x, pol, dyn, D, angle_dims=None,
 def rollout(x0, H, gamma0,
             pol, dyn, cost,
             D, angle_dims=None,
-            z=None, resample=True, mm_cost=True,
+            z=None, mm_state=True, mm_cost=True,
             noisy_policy_input=True, noisy_cost_input=True,
             truncate_gradient=-1,
             **kwargs):
@@ -82,8 +82,8 @@ def rollout(x0, H, gamma0,
         mc_next = cost(mxn_next, Sxn_next)[0] if mm_cost else c_next.mean()
 
         # resample if requested
-        print(resample)
-        if resample:
+        print(mm_state)
+        if mm_state:
             if noisy_cost_input:
                 mx_next = x_next.mean(0)
                 Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
@@ -121,9 +121,9 @@ def rollout(x0, H, gamma0,
 
 
 def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
-             intermediate_outs=False, resample_particles=True, crn=True,
-             mm_cost=True, noisy_policy_input=True, noisy_cost_input=True,
-             resample_dyn=False, average=True, truncate_gradient=-1):
+             intermediate_outs=False, mm_state=True, mm_cost=True,
+             noisy_policy_input=True, noisy_cost_input=True, resample_dyn=False, 
+             crn=True, average=True, truncate_gradient=-1):
     '''
         Constructs the computation graph for the value function according to
         the mc-pilco algorithm:
@@ -195,7 +195,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
                             pol, dyn, cost,
                             D, angle_dims,
                             z=z,
-                            resample=resample_particles,
+                            mm_state=mm_state,
                             iid_per_eval=resample_dyn,
                             mm_cost=mm_cost,
                             truncate_gradient=truncate_gradient,

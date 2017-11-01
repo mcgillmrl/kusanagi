@@ -45,7 +45,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        mc_samples=10, learning_rate=1e-3,
                        polyak_averaging=None,
                        min_method='adam', max_evals=1000,
-                       resample_particles=True,
+                       mm_state=True,
                        mm_cost=True,
                        sim_measurement_noise=False,
                        heteroscedastic_dyn=False,
@@ -57,9 +57,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
     max_evals = int(max_evals)
     learning_rate = float(learning_rate)
     heteroscedastic_dyn = eval_str_arg(heteroscedastic_dyn)
-    resample_particles = eval_str_arg(resample_particles)
+    mm_state = eval_str_arg(mm_state)
     mm_cost = eval_str_arg(mm_cost)
-    print((sim_measurement_noise,eval_str_arg(sim_measurement_noise)))
     sim_measurement_noise = eval_str_arg(sim_measurement_noise)
     clip_gradients = eval_str_arg(clip_gradients)
     polyak_averaging = eval_str_arg(polyak_averaging)
@@ -73,7 +72,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
 
     # parameters for building loss function
     loss_kwargs['n_samples'] = mc_samples
-    loss_kwargs['resample_particles'] = resample_particles
+    loss_kwargs['mm_state'] = mm_state
     loss_kwargs['mm_cost'] = mm_cost
     loss_kwargs['sim_measurement_noise'] = sim_measurement_noise
 

@@ -275,7 +275,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
 
     if debug_plot > 0:
         # build rollout function for plotting
-        loss_kwargs['resample_particles'] = False
+        loss_kwargs['mm_state'] = False
         rollout_fn = learner.build_rollout(
             pol, dyn, cost, D, angle_dims, **loss_kwargs)
         fig, axarr = None, None
