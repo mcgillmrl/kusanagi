@@ -232,6 +232,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     n_rnd = params.get('n_rnd', 1)
     n_opt = params.get('n_opt', 100)
     return_best = params.get('return_best', False)
+    crn_dropout = params.get('crn_dropout', False)
     H = params.get('min_steps', 100)
     gamma = params.get('discount', 1.0)
     angle_dims = params.get('angle_dims', [])
@@ -246,10 +247,11 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
             step_cb(state, action, cost, info)
 
     def polopt_cb_internal(*args, **kwargs):
-        if hasattr(dyn, 'update'):
-            dyn.update()
-        if hasattr(pol, 'update'):
-            pol.update()
+        if not crn_dropout:
+            if hasattr(dyn, 'update'):
+                dyn.update()
+            if hasattr(pol, 'update'):
+                pol.update()
         if callable(polopt_cb):
             polopt_cb(*args, **kwargs)
 
@@ -261,7 +263,13 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     randpol = control.RandPolicy(maxU=pol.maxU)
     for i in range(n_rnd):
         exp.new_episode()
-        apply_controller(env, randpol, H,
+        if n_rnd > 1 and i == n_rnd - 1:
+            p = pol
+            utils.print_with_stamp('Executing initial policy')
+        else:
+            p = randpol
+            utils.print_with_stamp('Executing uniformly-random controls')
+        apply_controller(env, p, H,
                          preprocess=gTrig,
                          callback=step_cb_internal)
 
@@ -290,10 +298,19 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     if callable(learning_iteration_cb):
         learning_iteration_cb(exp, dyn, pol, polopt, params)
 
+    if crn_dropout:
+        utils.print_with_stamp('using common random numbers for dyn and pol', 'experiment_utils')
+    else:
+        utils.print_with_stamp('resampling weights for dyn and pol', 'experiment_utils')        
     for i in range(n_opt):
         total_exp = sum([len(st) for st in exp.states])
         msg = '==== Iteration [%d], experience: [%d steps] ===='
         utils.print_with_stamp(msg % (i+1, total_exp))
+        if crn_dropout:
+            if hasattr(dyn, 'update'):
+                dyn.update()
+            if hasattr(pol, 'update'):
+                pol.update()
 
         # get initial state distribution (assumed gaussian)
         x0 = np.array([st[0] for st in exp.states])

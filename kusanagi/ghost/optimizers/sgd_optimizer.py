@@ -80,6 +80,8 @@ class SGDOptimizer(object):
                 utils.print_with_stamp(
                     "Clipping gradients to norm %s" % (str(clip)), self.name)
                 grads = lasagne.updates.total_norm_constraint(grads, clip)
+            else:
+                utils.print_with_stamp("No gradient clipping", self.name)
 
         utils.print_with_stamp("Computing parameter update rules", self.name)
         min_method_updt = LASAGNE_MIN_METHODS[self.min_method]

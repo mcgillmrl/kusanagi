@@ -50,6 +50,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        noisy_policy_input=False,
                        noisy_cost_input=False,
                        heteroscedastic_dyn=False,
+                       crn=True, crn_dropout=False,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
     mc_samples = int(mc_samples)
@@ -64,15 +65,8 @@ def experiment2_params(n_rnd=1, n_opt=100,
     noisy_cost_input = eval_str_arg(noisy_cost_input)
     clip_gradients = eval_str_arg(clip_gradients)
     polyak_averaging = eval_str_arg(polyak_averaging)
-
-    try:
-        clip_gradients = float(clip_gradients)
-    except:
-        clip_gradients = None
-    try:
-        polyak_averaging = float(polyak_averaging)
-    except:
-        polyak_averaging = None
+    crn = eval_str_arg(crn)
+    crn_dropout = eval_str_arg(crn_dropout)
 
     scenario_params = experiment1_params(n_rnd, n_opt)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
@@ -87,6 +81,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     loss_kwargs['mm_cost'] = mm_cost
     loss_kwargs['noisy_policy_input'] = noisy_policy_input
     loss_kwargs['noisy_cost_input'] = noisy_cost_input
+    loss_kwargs['crn'] = crn
 
     # init symbolic learning rate parameter
     lr = theano.tensor.scalar('lr')
@@ -99,6 +94,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     polopt_kwargs['clip'] = clip_gradients
     polopt_kwargs['polyak_averaging'] = polyak_averaging
     params['learning_rate'] = learning_rate
+    params['crn_dropout'] = crn_dropout
 
     return params, loss_kwargs, polopt_kwargs, extra_inps
 
@@ -146,7 +142,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.05, p_input=0.0,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
@@ -167,7 +163,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.05, p_input=0.0,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
@@ -256,7 +252,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.05, p_input=0.0,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
@@ -269,7 +265,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=pol.D,
             output_dims=pol.E,
             hidden_dims=[200]*2,
-            p=0.05, p_input=0.0,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
@@ -304,7 +300,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=pol.D,
             output_dims=pol.E,
             hidden_dims=[200]*2,
-            p=0.05, p_input=0.0,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,

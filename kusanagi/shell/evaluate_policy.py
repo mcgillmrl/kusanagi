@@ -48,6 +48,8 @@ if __name__=='__main__':
         pol = policy_class(p0.mean, filename=pol_path)
     else:
         pol = policy_class(filename=pol_path)
+    from kusanagi.shell import cartpole
+    env = cartpole.Cartpole()
     env, cost, params = setup_func(params)
     results = experiment_utils.evaluate_policy(env, pol, exp, params, n_trials, render=args.render)
 

@@ -62,7 +62,7 @@ def rollout(x0, H, gamma0,
         '''
         print(noisy_policy_input)
         # noisy state measruement for control
-        xn = x + z2_prev*sn if noisy_policy_input else x
+        xn = x + z2_prev*(0.25*sn) if noisy_policy_input else x
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
@@ -70,7 +70,7 @@ def rollout(x0, H, gamma0,
 
         # noisy state measurement for cost
         print(noisy_cost_input)
-        xn_next = x_next + z2*sn_next if noisy_cost_input else x_next
+        xn_next = x_next + z2*(0.25*sn_next) if noisy_cost_input else x_next
 
         #  get cost of applying action:
         n = xn_next.shape[0]
@@ -167,6 +167,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     # sample random numbers to be used in the rollout
     updates = theano.updates.OrderedUpdates()
     if crn:
+        utils.print_with_stamp("Using CRNs")
         # we reuse samples and resamples every 500 iterations
         # resampling is done to avoid getting stuck with bad solutions
         # when we get unlucky.
@@ -184,6 +185,8 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
             tt.tile(z, (1, tt.ceil(H/z.shape[0]).astype('int64'), 1, 1)),
             z
         )[:H+1]
+    else:
+        utils.print_with_stamp("not using CRNs")
 
     # draw initial set of particles
     z0 = m_rng.normal((n_samples, D))
