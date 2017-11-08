@@ -45,7 +45,7 @@ def rollout(x0, H, gamma0,
             D, angle_dims=None,
             z=None, mm_state=True, mm_cost=True,
             noisy_policy_input=True, noisy_cost_input=True,
-            truncate_gradient=-1,
+            truncate_gradient=-1, extra_shared=[],
             **kwargs):
     ''' Given some initial state particles x0, and a prediction horizon H
     (number of timesteps), returns a set of trajectories sampled from the
@@ -60,17 +60,15 @@ def rollout(x0, H, gamma0,
         '''
             Single step of rollout.
         '''
-        print(noisy_policy_input)
         # noisy state measruement for control
-        xn = x + z2_prev*(0.25*sn) if noisy_policy_input else x
+        xn = x + z2_prev*sn if noisy_policy_input else x
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
             x, xn, pol, dyn, D, angle_dims, **kwargs)
 
         # noisy state measurement for cost
-        print(noisy_cost_input)
-        xn_next = x_next + z2*(0.25*sn_next) if noisy_cost_input else x_next
+        xn_next = x_next + z2*sn_next if noisy_cost_input else x_next
 
         #  get cost of applying action:
         n = xn_next.shape[0]
@@ -78,11 +76,9 @@ def rollout(x0, H, gamma0,
         mxn_next = xn_next.mean(0)
         Sxn_next = xn_next.T.dot(xn_next)/n - tt.outer(mxn_next, mxn_next)
         c_next = cost(xn_next, None)
-        print(mm_cost)
         mc_next = cost(mxn_next, Sxn_next)[0] if mm_cost else c_next.mean()
 
         # resample if requested
-        print(mm_state)
         if mm_state:
             if noisy_cost_input:
                 mx_next = x_next.mean(0)
@@ -100,6 +96,7 @@ def rollout(x0, H, gamma0,
     nseq = [gamma0]
     nseq.extend(dyn.get_intermediate_outputs())
     nseq.extend(pol.get_intermediate_outputs())
+    nseq.extend(extra_shared)
 
     # loop over the planning horizon
     output = theano.scan(
@@ -123,7 +120,7 @@ def rollout(x0, H, gamma0,
 def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=True, resample_dyn=False, 
-             crn=True, average=True, truncate_gradient=-1):
+             crn=True, average=True, truncate_gradient=-1, extra_shared=[]):
     '''
         Constructs the computation graph for the value function according to
         the mc-pilco algorithm:
@@ -203,7 +200,8 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
                             mm_cost=mm_cost,
                             truncate_gradient=truncate_gradient,
                             noisy_policy_input=noisy_policy_input,
-                            noisy_cost_input=noisy_cost_input)
+                            noisy_cost_input=noisy_cost_input,
+                            extra_shared=extra_shared)
 
     mean_costs, costs, trajectories = r_outs
 
