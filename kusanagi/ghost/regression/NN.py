@@ -9,9 +9,7 @@ from lasagne.random import get_rng
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from kusanagi import utils
-from kusanagi.ghost.regression.layers import (
-        DenseDropoutLayer, DenseGaussianDropoutLayer,
-        DenseAdditiveGaussianDropoutLayer, DenseLogNormalDropoutLayer)
+from kusanagi.ghost.regression import layers
 from kusanagi.ghost.optimizers import SGDOptimizer
 from kusanagi.ghost.regression import nonlinearities
 from kusanagi.ghost.regression import BaseRegressor
@@ -65,7 +63,7 @@ def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
                 W_init=lasagne.init.Orthogonal(),
                 b_init=lasagne.init.Constant(0.),
                 p=0.5, p_input=0.2,
-                dropout_class=DenseDropoutLayer,
+                dropout_class=layers.DenseDropoutLayer,
                 name='dropout_mlp'):
     if not isinstance(p, list):
         p = [p]*(len(hidden_dims))
@@ -75,7 +73,7 @@ def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
                        nonlinearities, output_nonlinearity, W_init, b_init,
                        name)
 
-    # first layer is input layer, so we skip that
+    # first layer is input layer, we skip it
     for i in range(len(p)):
         layer_class, layer_args = network_spec[i+1]
         if layer_class == DenseLayer and p[i] != 0:
@@ -249,10 +247,10 @@ class BNN(BaseRegressor):
             idims = self.D
             odims = self.E*2 if self.heteroscedastic else self.E
             network_spec = dropout_mlp(
-                idims, odims, hidden_dims=[200]*3,
+                idims, odims, hidden_dims=[50]*4,
                 p=0.1, p_input=0.0,
                 nonlinearities=nonlinearities.rectify,
-                dropout_class=DenseLogNormalDropoutLayer)
+                dropout_class=layers.DenseConcreteDropoutLayer)
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
 

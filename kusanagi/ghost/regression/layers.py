@@ -498,7 +498,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
                  num_leading_axes=1, logit_posterior_mean=None,
-                 logit_posterior_std=None, interval=[-10.0, 0.0],
+                 logit_posterior_std=None, interval=[-5.0, 5.0],
                  shared_axes=(), noise_samples=None,
                  **kwargs):
         super(DenseLogNormalDropoutLayer, self).__init__(
@@ -514,21 +514,20 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         logit_posterior_mean = self.logit_posterior_mean
         logit_posterior_std = self.logit_posterior_std
         a, b = self.interval
-        s_interval = [1e-4, np.sqrt(((b-a)**2)/12.0)]
+        uniform_std = np.sqrt(((b-a)**2)/12.0)
+        s_interval = [1e-4, uniform_std]
         s_min, s_max = np.array(s_interval).astype(floatX).tolist()
         self.s_interval = [s_min, s_max]
 
         if logit_posterior_mean is None:
-            # set posterior mean close to b and constrain it to the
-            # interval [a, b]
-            mu0 = b - 1e-2*(b-a)
+            # initialize close to 0 (weights close to 1), but within range (a, b)
+            mu0 = max(a + 1e-2*(b-a), 0) + min(b - 1e-2*(b-a), 0)
             logit_mu0 = -np.log((b-a)/(mu0 - a) - 1).astype(floatX)
             logit_posterior_mean = lasagne.init.Constant(logit_mu0)
 
         if logit_posterior_std is None:
-            s0 = s_min + 0.1*(s_max-s_min)
-            logit_s0 = -np.log((s_max-s_min)/(s0 - s_min) - 1).astype(floatX)
-            logit_posterior_std = lasagne.init.Constant(logit_s0)
+            # set posterior_std close to the minimum
+            logit_posterior_std = lasagne.init.Uniform((-3.0, -2.0))
 
         # add the posterior parameters as trainable parameters
         if isinstance(logit_posterior_mean, Number):
@@ -568,6 +567,8 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         # posterior params
         self.mu = (b-a)*sigmoid(self.logit_posterior_mean) + a
         self.sigma = (s_max-s_min)*sigmoid(self.logit_posterior_std) + s_min
+        print((self.mu.min().eval(), self.mu.max().eval()))
+        print((self.sigma.min().eval(), self.sigma.max().eval()))
 
         # transform noise  to truncated lognormal samples
         self.alpha = (a - self.mu)/self.sigma
@@ -591,7 +592,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         return [self.mu, self.sigma, self.alpha, self.beta, 
                 self.phi_alpha, self.Z]
 
-    def sample_noise(self, input, a=1e-6, b=1-1e-6):
+    def sample_noise(self, input, a=1e-5, b=1-1e-5):
         # get noise_shape
         noise_shape = input.shape
 
@@ -624,3 +625,81 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         
         # only keep neurons with high signal to noise ratio
         return input*noise
+
+
+class DenseConcreteDropoutLayer(DenseDropoutLayer):
+    '''
+        Dense layer with concrete binary dropout
+        "Concrete Dropout"
+        by Gal et. al, 2017
+    '''
+    def __init__(self, incoming, num_units, W=init.GlorotUniform(),
+                 b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
+                 num_leading_axes=1, p=0.5, logit_p=None, temp=0.1, shared_axes=(),
+                 noise_samples=None, **kwargs):
+        super(DenseConcreteDropoutLayer, self).__init__(
+            incoming, num_units, W, b, nonlinearity,
+            num_leading_axes, p, shared_axes=(), noise_samples=None,
+            **kwargs)
+
+        self.temp = temp
+        self.logit_p = logit_p
+        self.init_params()
+
+    def init_params(self):
+        p = self.p
+        logit_p = self.logit_p
+
+        if logit_p is None:
+            if isinstance(p, Number):
+                p = np.atleast_1d(p)
+            if callable(p):
+                p_shape = self.input_shape[1:]
+            else:
+                p_shape = p.shape
+            p = lasagne.utils.create_param(p, p_shape, name='p')
+            p = p.get_value()
+            # we will constrain p between [0, 1]
+            logit_p = -np.log(1.0/p - 1.0).astype(floatX)
+
+        # add alpha as trainable parameter
+        if isinstance(logit_p, Number):
+            logit_p = np.atleast_1d(logit_p)
+        if callable(logit_p):
+            logit_p_shape = self.input_shape[1:]
+        elif isinstance(logit_p, tt.sharedvar.SharedVariable):
+            logit_p_shape = logit_p.get_value().shape
+        else:
+            logit_p_shape = logit_p.shape
+
+        self.logit_p = self.add_param(
+            logit_p, logit_p_shape, name='logit_p',
+            regularizable=False)
+        
+        # p is the dropout probability ( 1-p_bernoulli)
+        self.p = 1-tt.nnet.sigmoid(self.logit_p)
+        eps = np.finfo(np.__dict__[floatX]).eps
+        self.logp = tt.log(self.p + eps)
+        self.log1mp = tt.log(1.0 - self.p + eps)
+
+    def sample_noise(self, input, a=0, b=1):
+        # get noise_shape
+        noise_shape = input.shape
+
+        # respect shared axes
+        if self.shared_axes:
+            shared_axes = tuple(a if a >= 0 else a + input.ndim
+                                for a in self.shared_axes)
+            noise_shape = tuple(1 if a in shared_axes else s
+                                for a, s in enumerate(noise_shape))
+
+        u = self._srng.uniform(
+            noise_shape, low=a, high=b, dtype=floatX)
+        concrete_p = self.logp - self.log1mp + tt.log(u) - tt.log(1-u)
+        noise =  tt.nnet.sigmoid(concrete_p/self.temp)
+
+        if self.shared_axes:
+            bcast = tuple(bool(s == 1) for s in noise_shape)
+            noise = tt.patternbroadcast(noise, bcast)
+
+        return noise

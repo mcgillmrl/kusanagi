@@ -30,6 +30,7 @@ def dropout_gp_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
         KL divergence approximation for the dropout uncertainty model from
         Gal and Ghahrammani, 2015
     '''
+    eps = np.finfo(np.__dict__[theano.config.floatX]).eps
     layers = lasagne.layers.get_all_layers(output_layer)
 
     reg = []
@@ -59,14 +60,18 @@ def dropout_gp_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
         # if this layer has a weight layer and the previous layer
         # is a DropoutLayer
         if hasattr(layers[i], 'W'):
+            p = 1.0
             if i > 1 and is_dropout:
-                p = layers[ind].p
-                if p > 0:
-                    reg_weight *= (1-p)
-            reg.append(reg_weight*lasagne.regularization.l2(layers[i].W))
+                if layers[ind].p != 0:
+                    p = 1 - layers[ind].p
+            W = layers[i].W
+            W_reg = reg_weight*tt.sum(p*W*W)
+            p_reg = -tt.sum(p*tt.log(p + eps))
+            reg.append(W_reg + p_reg)
 
         if hasattr(layers[i], 'b') and layers[i].b is not None:
-            reg.append(reg_weight*lasagne.regularization.l2(layers[i].b))
+            b = layers[i].b
+            reg.append(reg_weight*tt.sum(b**2))
 
     return sum(reg)
 
