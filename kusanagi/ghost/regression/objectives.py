@@ -61,6 +61,7 @@ def dropout_gp_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):
         # if this layer has a weight layer and the previous layer
         # is a DropoutLayer
         if hasattr(layers[i], 'W'):
+            # this p is the parameter of bernoulli (not dropout prob)
             p = 1.0
             if i > 1 and is_dropout:
                 if layers[ind].p != 0:
@@ -97,9 +98,6 @@ def gaussian_dropout_kl(output_layer, input_lengthscale=1.0,
         if is_dropout_a or is_dropout_b:
             log_alpha = layers[i].log_alpha
             # there should be one log_alpha per weight
-            print(layers[i].name)
-            print(layers[i].W.get_value().shape)
-            print(log_alpha.shape.eval())
             log_alpha_shape = tuple(log_alpha.shape.eval())
             W_shape = tuple(layers[i].W.get_value().shape)
             if log_alpha_shape != W_shape:
@@ -108,7 +106,6 @@ def gaussian_dropout_kl(output_layer, input_lengthscale=1.0,
                 # output or per layer
                 # TODO make this compatible with conv layers
                 log_alpha = (log_alpha*tt.ones_like(layers[i].W.T)).T
-            print(log_alpha.shape.eval())
             kl = -(k1*sigmoid(k2+k3*log_alpha)
                    - 0.5*tt.log1p(tt.exp(-log_alpha))
                    + C)

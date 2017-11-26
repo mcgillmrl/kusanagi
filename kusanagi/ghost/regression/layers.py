@@ -676,11 +676,12 @@ class DenseConcreteDropoutLayer(DenseDropoutLayer):
             logit_p, logit_p_shape, name='logit_p',
             regularizable=False)
 
-        # p is the dropout probability ( 1-p_bernoulli)
-        self.p = 1-tt.nnet.sigmoid(self.logit_p)
+        # p is the dropout probability ( 1-p_bin)
+        self.p = tt.nnet.sigmoid(self.logit_p)
         eps = np.finfo(np.__dict__[floatX]).eps
-        self.logp = tt.log(self.p + eps)
-        self.log1mp = tt.log(1.0 - self.p + eps)
+        p_bin = 1 - self.p
+        self.logp = tt.log(p_bin + eps)
+        self.log1mp = tt.log(1.0 - p_bin + eps)
 
     def sample_noise(self, input, a=0, b=1):
         # get noise_shape
