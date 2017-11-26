@@ -417,16 +417,11 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
 
         s2 = tt.exp(self.log_sigma2)
         a = s2.eval()
-        print((a.min(), a.mean(), a.max()))
         a = (self.W.get_value()+1e-6)**2
-        print((a.min(), a.mean(), a.max()))
         alpha = s2/(self.W**2)
         a = alpha.eval()
-        print((a.min(), a.mean(), a.max()))
         p = alpha/(1+alpha)
         p = p.eval()
-        print((p.min(), p.mean(), p.max()))
-        print(self.params)
 
     def init_noise(self, noise):
         # initalize noise param
@@ -567,8 +562,6 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         # posterior params
         self.mu = (b-a)*sigmoid(self.logit_posterior_mean) + a
         self.sigma = (s_max-s_min)*sigmoid(self.logit_posterior_std) + s_min
-        print((self.mu.min().eval(), self.mu.max().eval()))
-        print((self.sigma.min().eval(), self.sigma.max().eval()))
 
         # transform noise  to truncated lognormal samples
         self.alpha = (a - self.mu)/self.sigma
