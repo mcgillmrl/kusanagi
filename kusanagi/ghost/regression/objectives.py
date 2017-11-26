@@ -16,13 +16,14 @@ def gaussian_log_likelihood(targets, pred_mean, pred_std=None):
     # note that if we have nois be a 1xD vector, broadcasting
     # rules apply
     if pred_std:
-        lml = tt.square(delta/pred_std).sum(-1) + tt.log(pred_std).sum(-1)
+        # sum over output dimensions
+        lml = -tt.square(delta/pred_std).sum(-1)*0.5 - tt.log(pred_std).sum(-1)
     else:
-        lml = tt.square(delta).sum(-1)
+        # sum ove output dimensions
+        lml = -tt.square(delta).sum(-1)*0.5
 
-    lml = -0.5*lml.sum()
-
-    return lml
+    # sum over all examples
+    return lml.sum()
 
 
 def dropout_gp_kl(output_layer, input_lengthscale=1.0, hidden_lengthscale=1.0):

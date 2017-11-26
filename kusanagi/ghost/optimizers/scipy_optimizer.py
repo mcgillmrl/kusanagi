@@ -46,7 +46,7 @@ class ScipyOptimizer(object):
                 self.alt_min_methods.append(method)
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      diff_mode=0):
+                      diff_mode=0, **kwargs):
         '''
             Changes the objective function to be optimized
             @param loss theano graph representing the loss to be optimized

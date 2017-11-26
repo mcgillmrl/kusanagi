@@ -622,7 +622,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         p = self.phi_alpha + self.Z*noise
         iphi = inv_phi(p)
         noise = tt.exp(mu + sigma*iphi)
-        
+
         # only keep neurons with high signal to noise ratio
         return input*noise
 
@@ -675,7 +675,7 @@ class DenseConcreteDropoutLayer(DenseDropoutLayer):
         self.logit_p = self.add_param(
             logit_p, logit_p_shape, name='logit_p',
             regularizable=False)
-        
+
         # p is the dropout probability ( 1-p_bernoulli)
         self.p = 1-tt.nnet.sigmoid(self.logit_p)
         eps = np.finfo(np.__dict__[floatX]).eps
@@ -693,13 +693,16 @@ class DenseConcreteDropoutLayer(DenseDropoutLayer):
             noise_shape = tuple(1 if a in shared_axes else s
                                 for a, s in enumerate(noise_shape))
 
-        u = self._srng.uniform(
+        noise = self._srng.uniform(
             noise_shape, low=a, high=b, dtype=floatX)
-        concrete_p = self.logp - self.log1mp + tt.log(u) - tt.log(1-u)
-        noise =  tt.nnet.sigmoid(concrete_p/self.temp)
 
         if self.shared_axes:
             bcast = tuple(bool(s == 1) for s in noise_shape)
             noise = tt.patternbroadcast(noise, bcast)
 
         return noise
+
+    def apply_noise(self, input, noise):
+        concrete_p = self.logp - self.log1mp + tt.log(noise) - tt.log(1-noise)
+        concrete_noise = tt.nnet.sigmoid(concrete_p/self.temp)
+        return input * concrete_noise

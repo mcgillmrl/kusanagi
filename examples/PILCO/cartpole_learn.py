@@ -322,7 +322,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=True, p_input=True,
+            p=0.1, p_input=0.01,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseConcreteDropoutLayer,
