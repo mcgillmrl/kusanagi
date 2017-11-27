@@ -416,12 +416,8 @@ class DenseAdditiveGaussianDropoutLayer(DenseGaussianDropoutLayer):
         self.log_alpha = self.log_sigma2 + np.log(1e-6) - tt.log(self.W**2+1e-6)
 
         s2 = tt.exp(self.log_sigma2)
-        a = s2.eval()
-        a = (self.W.get_value()+1e-6)**2
         alpha = s2/(self.W**2)
-        a = alpha.eval()
         p = alpha/(1+alpha)
-        p = p.eval()
 
     def init_noise(self, noise):
         # initalize noise param
@@ -493,7 +489,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
                  num_leading_axes=1, logit_posterior_mean=None,
-                 logit_posterior_std=None, interval=[-5.0, 5.0],
+                 logit_posterior_std=None, interval=[-10.0, 0.1],
                  shared_axes=(), noise_samples=None,
                  **kwargs):
         super(DenseLogNormalDropoutLayer, self).__init__(
@@ -515,7 +511,8 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         self.s_interval = [s_min, s_max]
 
         if logit_posterior_mean is None:
-            # initialize close to 0 (weights close to 1), but within range (a, b)
+            # initialize close to 0 (weights close to 1),
+            # but within range (a, b)
             mu0 = max(a + 1e-2*(b-a), 0) + min(b - 1e-2*(b-a), 0)
             logit_mu0 = -np.log((b-a)/(mu0 - a) - 1).astype(floatX)
             logit_posterior_mean = lasagne.init.Constant(logit_mu0)
@@ -535,7 +532,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
             logit_posterior_mean_shape = logit_posterior_mean.shape
 
         self.logit_posterior_mean = self.add_param(
-            logit_posterior_mean, logit_posterior_mean_shape, 
+            logit_posterior_mean, logit_posterior_mean_shape,
             name='logit_posterior_mean', regularizable=False)
 
         if isinstance(logit_posterior_std, Number):
@@ -570,11 +567,11 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         self.Z = phi(self.beta) - self.phi_alpha
 
         # compute SNR
-        #Z1 = phi(sigma-alpha) - phi(sigma-beta)
-        #Z2 = phi(2*sigma-alpha) - phi(2*sigma-beta)
-        #Enoise = (Z1)/tt.sqrt(Z)
-        #Varnoise = tt.sqrt(tt.exp(sigma**2)*Z2 - Z1**2)
-        #snr = Enoise/Varnoise
+        # Z1 = phi(sigma-alpha) - phi(sigma-beta)
+        # Z2 = phi(2*sigma-alpha) - phi(2*sigma-beta)
+        # Enoise = (Z1)/tt.sqrt(Z)
+        # Varnoise = tt.sqrt(tt.exp(sigma**2)*Z2 - Z1**2)
+        # snr = Enoise/Varnoise
 
     def get_intermediate_outputs(self):
         ''' returns variables that do not depend on the input;
@@ -582,7 +579,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
             so that we can pass these intermediate variable to calls
             to scan (so they're not recomputed at every loop iteration
         '''
-        return [self.mu, self.sigma, self.alpha, self.beta, 
+        return [self.mu, self.sigma, self.alpha, self.beta,
                 self.phi_alpha, self.Z]
 
     def sample_noise(self, input, a=1e-5, b=1-1e-5):
@@ -628,8 +625,8 @@ class DenseConcreteDropoutLayer(DenseDropoutLayer):
     '''
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
-                 num_leading_axes=1, p=0.5, logit_p=None, temp=0.1, shared_axes=(),
-                 noise_samples=None, **kwargs):
+                 num_leading_axes=1, p=0.5, logit_p=None, temp=0.1,
+                 shared_axes=(), noise_samples=None, **kwargs):
         super(DenseConcreteDropoutLayer, self).__init__(
             incoming, num_units, W, b, nonlinearity,
             num_leading_axes, p, shared_axes=(), noise_samples=None,
