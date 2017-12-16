@@ -119,8 +119,9 @@ def rollout(x0, H, gamma0,
 
 def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
-             noisy_policy_input=True, noisy_cost_input=True, resample_dyn=False, 
-             crn=True, average=True, truncate_gradient=-1, extra_shared=[]):
+             noisy_policy_input=True, noisy_cost_input=True,
+             resample_dyn=False, crn=True, average=True,
+             truncate_gradient=-1, extra_shared=[]):
     '''
         Constructs the computation graph for the value function according to
         the mc-pilco algorithm:
