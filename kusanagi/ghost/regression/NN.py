@@ -21,8 +21,8 @@ floatX = theano.config.floatX
 def mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
         nonlinearities=nonlinearities.rectify,
         output_nonlinearity=nonlinearities.linear,
-        W_init=lasagne.init.Orthogonal(),
-        b_init=lasagne.init.Constant(0.),
+        W_init=lasagne.init.GlorotUniform(),
+        b_init=lasagne.init.Uniform(0.05),
         name='mlp', **kwargs):
     if not isinstance(nonlinearities, list):
         nonlinearities = [nonlinearities]*len(hidden_dims)
@@ -60,8 +60,8 @@ def mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
 def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
                 nonlinearities=nonlinearities.rectify,
                 output_nonlinearity=nonlinearities.linear,
-                W_init=lasagne.init.Orthogonal(),
-                b_init=lasagne.init.Constant(0.),
+                W_init=lasagne.init.GlorotUniform(),
+                b_init=lasagne.init.Uniform(0.05),
                 p=0.5, p_input=0.2,
                 dropout_class=layers.DenseDropoutLayer,
                 name='dropout_mlp'):
@@ -103,11 +103,6 @@ class BNN(BaseRegressor):
         self.network_spec = None
         self.network_params = None
 
-        sn = (np.ones((self.E,))*1e-3).astype(floatX)
-        sn = np.log(np.exp(sn)-1)
-        self.unconstrained_sn = theano.shared(sn, name='%s_sn' % (self.name))
-        eps = np.finfo(np.__dict__[floatX]).eps
-        self.sn = tt.nnet.softplus(self.unconstrained_sn) + eps
         samples = np.array(n_samples).astype('int32')
         samples_name = "%s>n_samples" % (self.name)
         self.n_samples = theano.shared(samples, name=samples_name)
@@ -247,10 +242,10 @@ class BNN(BaseRegressor):
             idims = self.D
             odims = self.E*2 if self.heteroscedastic else self.E
             network_spec = dropout_mlp(
-                idims, odims, hidden_dims=[50]*4,
+                idims, odims, hidden_dims=[100]*4,
                 p=0.1, p_input=0.0,
                 nonlinearities=nonlinearities.rectify,
-                dropout_class=layers.DenseConcreteDropoutLayer)
+                dropout_class=layers.DenseLogNormalDropoutLayer)
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
 
@@ -390,7 +385,7 @@ class BNN(BaseRegressor):
                                         deterministic=deterministic,
                                         fixed_noise_samples=not iid_per_eval)
         y = ret[:, :self.E]
-        sn = (tt.nnet.softplus(ret[:, self.E:])
+        sn = (tt.exp(ret[:, self.E:])
               if self.heteroscedastic
               else tt.tile(self.sn, (y.shape[0], 1)))
         # fudge factor
@@ -399,8 +394,8 @@ class BNN(BaseRegressor):
         if whiten_outputs and hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
             y = y.dot(self.Ys) + self.Ym
-            # rescale variances (I don't think this is necessary)
-            # sn = sn.dot(self.Ys)
+            # rescale variances
+            # sn = sn*tt.diag(self.Ys)
 
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
