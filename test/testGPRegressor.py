@@ -25,6 +25,8 @@ def test_func1(X,ftype=0):
     elif ftype==2:
         a, b, c, d, e, f = 0.6, -1.8, -0.5, -0.5, 1.7, 0
         ret = a*np.sin(b*X.sum(1)+c) + d*np.sin(e*X.sum(1)+f)
+    elif ftype==3:
+        ret = np.sin(X.sum(1)) + np.cos(X.sum(1))
     else:
         ret = X[:,0]
     return ret
@@ -34,7 +36,9 @@ def build_dataset(idims=9,odims=6,angi=[],f=test_func1,n_train=500,n_test=50, in
         np.random.seed(rand_seed)
     #  ================== train dataset ==================
     # sample training points
-    x_train = 15*(np.random.rand(n_train,idims) - 0.25)
+    x_train = 5*(np.random.rand(int(n_train/2), idims) - 1.25)
+    x_train2 = 5*(np.random.rand(int(n_train/2), idims) + 1.25)
+    x_train = np.concatenate([x_train, x_train2], axis=0)
     # generate the output at the training points
     y_train = np.empty((n_train,odims))
     for i in range(odims):
@@ -162,5 +166,20 @@ if __name__=='__main__':
             plt.fill_between(Xts.squeeze(), lower_bound, upper_bound, alpha=alpha)
 
         plt.plot(Xts,Ypred)
+
+        # plot samples from NN
+        import theano
+        x = theano.tensor.matrix()
+        y = gp.predict_symbolic(
+            x, return_samples=True, iid_per_eval=False, deterministic=False)
+        fpred = theano.function([x], y, allow_input_downcast=True)
+        gp.update(n_samples=10)
+        rets = []
+        for xt in Xts:
+            ret = fpred(np.tile(xt, (10, 1)))
+            rets.append(ret[0])
+        rets = np.array(rets)
+        plt.plot(Xts.squeeze(), rets.squeeze(), alpha=0.5)
+
         plt.show()
 
