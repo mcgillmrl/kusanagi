@@ -117,7 +117,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         params = scenario_params[0]
         p0 = params['state0_dist']
 
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -171,7 +171,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -227,7 +227,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -260,7 +260,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -295,7 +295,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -330,7 +330,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
