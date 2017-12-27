@@ -119,7 +119,8 @@ class ExperienceDataset(Loadable):
 
     def get_dynmodel_dataset(self, deltas=True, filter_episodes=None,
                              angle_dims=None, x_steps=1,
-                             u_steps=1, output_steps=1, stack=False):
+                             u_steps=1, output_steps=1, return_costs=False,
+                             stack=False):
         '''
         Returns a dataset where the inputs are state_actions and the outputs are next steps.
         Parameters:
@@ -134,6 +135,7 @@ class ExperienceDataset(Loadable):
         x_steps: how many steps in the past to concatenate as input
         u_steps: how many steps in the past to concatenate as input
         output_steps: how many steps in the future to concatenate as output
+        return_costs: whether to append the cost feedback to the output
         stack: whether to stack or concatenate the multi step data
         Returns:
         --------
@@ -184,9 +186,18 @@ class ExperienceDataset(Loadable):
             ostates = join(
                 [states[i:H-(output_steps-i-1), :] for i in range(output_steps)],
                 axis=1)
+
             #  create output vector
             tgt = ostates[1:, :] - ostates[:-1, :]\
             if deltas else ostates[1:, :]
+
+            # append costs if requested
+            if return_costs:
+                costs = np.array(self.costs[epi])[:, None]
+                ocosts = join(
+                    [costs[i:H-(output_steps-i-1), :] for i in range(output_steps)],
+                    axis=1)
+                tgt = np.concatenate([tgt, ocosts[1:, :]], axis=-1)
 
             inputs.append(inp)
             targets.append(tgt)
