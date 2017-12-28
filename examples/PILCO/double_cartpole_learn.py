@@ -32,6 +32,9 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
     params = double_cartpole.default_params()
     params['n_rnd'] = int(n_rnd)
     params['n_opt'] = int(n_opt)
+    for key in kwargs:
+        if key in params:
+            params[key] = eval(kwargs[key])
     params['dynmodel_class'] = dynmodel_class
 
     loss_kwargs = {}
