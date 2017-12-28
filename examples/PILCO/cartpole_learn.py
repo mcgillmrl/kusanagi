@@ -53,7 +53,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        noisy_policy_input=False,
                        noisy_cost_input=False,
                        heteroscedastic_dyn=False,
-                       crn=True, crn_dropout=False,
+                       crn=True, crn_dropout=True,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
     mc_samples = int(mc_samples)
