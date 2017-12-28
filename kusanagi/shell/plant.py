@@ -286,7 +286,6 @@ class PlantDraw(object):
             self.fig.canvas.restore_region(self.bg)
             for artist in updts:
                 self.ax.draw_artist(artist)
-            #self.fig.canvas.blit(self.ax.bbox)
             self.fig.canvas.update()
             # sleep to guarantee the desired frame rate
             exec_time = time() - self.exec_time

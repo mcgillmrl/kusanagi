@@ -52,7 +52,9 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
         # plot experience
         axarr[d].plot(
             np.arange(T-1), np.array(exp.states[-1])[1:T, d], color='red')
-    plt.show(block=False)
+
+    fig.canvas.update()
+    plt.show(False)
     plt.waitforbuttonpress(0.1)
 
     return fig, axarr
