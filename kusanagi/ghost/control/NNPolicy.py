@@ -9,10 +9,10 @@ from functools import partial
 
 # NN controller
 class NNPolicy(BNN):
-    def __init__(self, m0, maxU=[10], angle_dims=[], sat_func=sat,
+    def __init__(self, input_dims, maxU=[10], angle_dims=[], sat_func=sat,
                  name='NNPolicy', filename=None, **kwargs):
         self.maxU = np.array(maxU, dtype=theano.config.floatX)
-        self.D = np.array(m0).size + len(angle_dims)
+        self.D = input_dims + len(angle_dims)
         self.E = len(maxU)
 
         if sat_func:

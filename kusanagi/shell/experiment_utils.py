@@ -52,7 +52,9 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
         # plot experience
         axarr[d].plot(
             np.arange(T-1), np.array(exp.states[-1])[1:T, d], color='red')
-    plt.show(block=False)
+
+    fig.canvas.update()
+    plt.show(False)
     plt.waitforbuttonpress(0.1)
 
     return fig, axarr
@@ -232,7 +234,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
     n_rnd = params.get('n_rnd', 1)
     n_opt = params.get('n_opt', 100)
     return_best = params.get('return_best', False)
-    crn_dropout = params.get('crn_dropout', False)
+    crn_dropout = params.get('crn_dropout', True)
     H = params.get('min_steps', 100)
     gamma = params.get('discount', 1.0)
     angle_dims = params.get('angle_dims', [])

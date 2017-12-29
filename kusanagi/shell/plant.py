@@ -225,17 +225,17 @@ class PlantDraw(object):
 
     def init_ui(self):
         self.fig = plt.figure(self.name)
-        plt.xlim([-1.5, 1.5])
-        plt.ylim([-1.5, 1.5])
         self.ax = plt.gca()
+        self.ax.set_xlim([-1.5, 1.5])
+        self.ax.set_ylim([-1.5, 1.5])
         self.ax.set_aspect('equal', 'datalim')
         self.ax.grid(True)
         self.fig.canvas.draw()
         self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
         self.cursor = Cursor(self.ax, useblit=True, color='red', linewidth=2)
         self.init_artists()
-        plt.ion()
-        plt.show()
+        #plt.ion()
+        plt.show(False)
 
     def drawing_loop(self, drawing_pipe):
         # start the matplotlib plotting
@@ -263,7 +263,7 @@ class PlantDraw(object):
 
     def close(self):
         # close the matplotlib windows, clean up
-        plt.ioff()
+        #plt.ioff()
         plt.close(self.fig)
 
     def update(self, *args, **kwargs):
@@ -286,7 +286,7 @@ class PlantDraw(object):
             self.fig.canvas.restore_region(self.bg)
             for artist in updts:
                 self.ax.draw_artist(artist)
-            self.fig.canvas.blit(self.ax.bbox)
+            self.fig.canvas.update()
             # sleep to guarantee the desired frame rate
             exec_time = time() - self.exec_time
             plt.waitforbuttonpress(max(self.dt-exec_time, 1e-9))

@@ -32,6 +32,9 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
     params = cartpole.default_params()
     params['n_rnd'] = int(n_rnd)
     params['n_opt'] = int(n_opt)
+    for key in kwargs:
+        if key in params:
+            params[key] = eval(kwargs[key])
     params['dynmodel_class'] = dynmodel_class
 
     loss_kwargs = {}
@@ -50,7 +53,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        noisy_policy_input=False,
                        noisy_cost_input=False,
                        heteroscedastic_dyn=False,
-                       crn=True, crn_dropout=False,
+                       crn=True, crn_dropout=True,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
     mc_samples = int(mc_samples)
@@ -68,7 +71,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     crn = eval_str_arg(crn)
     crn_dropout = eval_str_arg(crn_dropout)
 
-    scenario_params = experiment1_params(n_rnd, n_opt)
+    scenario_params = experiment1_params(n_rnd, n_opt, **kwargs)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
     # params for the dynamics model
@@ -117,7 +120,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         params = scenario_params[0]
         p0 = params['state0_dist']
 
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -171,7 +174,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -227,7 +230,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -260,7 +263,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -295,7 +298,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
@@ -330,7 +333,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn.network = dyn.build_network(dyn_spec)
 
         # init policy
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(p0.mean.size, **params['policy'])
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
