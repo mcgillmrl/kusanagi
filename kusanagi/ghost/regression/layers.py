@@ -519,7 +519,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
 
         if logit_posterior_std is None:
             # set posterior_std close to the minimum
-            logit_posterior_std = lasagne.init.Uniform((-4.0, -3.0))
+            logit_posterior_std = lasagne.init.Uniform((-3.0, -2.0))
 
         # add the posterior parameters as trainable parameters
         if isinstance(logit_posterior_mean, Number):
@@ -582,7 +582,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         return [self.mu, self.sigma, self.alpha, self.beta,
                 self.phi_alpha, self.Z]
 
-    def sample_noise(self, input, a=1e-6, b=1-1e-6):
+    def sample_noise(self, input, a=1e-5, b=1-1e-5):
         # get noise_shape
         noise_shape = input.shape
 

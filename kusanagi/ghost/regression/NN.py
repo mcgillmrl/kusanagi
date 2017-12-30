@@ -22,7 +22,7 @@ def mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
         nonlinearities=nonlinearities.rectify,
         output_nonlinearity=nonlinearities.linear,
         W_init=lasagne.init.GlorotUniform(),
-        b_init=lasagne.init.Uniform(0.05),
+        b_init=lasagne.init.Uniform(0.01),
         name='mlp', **kwargs):
     if not isinstance(nonlinearities, list):
         nonlinearities = [nonlinearities]*len(hidden_dims)
@@ -61,7 +61,7 @@ def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
                 nonlinearities=nonlinearities.rectify,
                 output_nonlinearity=nonlinearities.linear,
                 W_init=lasagne.init.GlorotUniform(),
-                b_init=lasagne.init.Uniform(0.05),
+                b_init=lasagne.init.Uniform(0.01),
                 p=0.5, p_input=0.2,
                 dropout_class=layers.DenseDropoutLayer,
                 name='dropout_mlp'):
