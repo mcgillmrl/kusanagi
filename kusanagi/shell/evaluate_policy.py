@@ -45,11 +45,10 @@ if __name__=='__main__':
     p0 = params['state0_dist']
     exp = ExperienceDataset(filename=exp_path)
     if args.policy_class == 'NNPolicy':
-        pol = policy_class(p0.mean, filename=pol_path)
+        pol = policy_class(p0.mean.size, filename=pol_path)
     else:
         pol = policy_class(filename=pol_path)
-    from kusanagi.shell import cartpole
-    #env = cartpole.Cartpole()
+
     env, cost, params = setup_func(params)
     results = experiment_utils.evaluate_policy(env, pol, exp, params, n_trials, render=args.render)
 
