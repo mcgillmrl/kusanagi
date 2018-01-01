@@ -55,7 +55,8 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
 
     fig.canvas.update()
     plt.show(False)
-    plt.waitforbuttonpress(0.1)
+    fig.canvas.update()
+    plt.waitforbuttonpress(0.5)
 
     return fig, axarr
 

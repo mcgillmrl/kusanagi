@@ -1,4 +1,6 @@
 import numpy as np
+
+
 class Distribution(object):
     '''
         Base class for distribution. Useful for estimating and sampling initial state distributions
@@ -17,11 +19,14 @@ class Distribution(object):
     def dim(self, dim):
         self.__dim = dim
 
+
 class Delta(Distribution):
     def __init__(self, a):
         self.a = a
+
     def sample(self, n_samples=1):
         return np.tile(self.a, (n_samples, 1))
+
 
 class Gaussian(Distribution):
     def __init__(self, mean, cov):
@@ -41,4 +46,5 @@ class Gaussian(Distribution):
             self.cov_chol = np.linalg.cholesky(cov)
 
     def sample(self, n_samples=1):
-        return self.mean + np.random.randn(n_samples, self.mean.size).dot(self.cov_chol)
+        return self.mean + np.random.randn(
+            n_samples, self.mean.size).dot(self.cov_chol)
