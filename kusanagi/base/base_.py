@@ -2,20 +2,21 @@
 from kusanagi import utils
 import numpy as np
 
+
 def preprocess_angles(x_t, angle_dims=[]):
     x_t_ = utils.gTrig_np(x_t[None, :], angle_dims).flatten()
     return x_t_
 
+
 def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
     '''
-    Starts the env and applies the current policy to the env for a duration specified by H
-    (in seconds). If  H is not set, it will run for self.H seconds. If the random_controls
-    parameter is set to True, the current policy is ignored and random controls between
-    [-self.policy.maxU, self.policy.maxU ] will be sent to the env
-    @param env interface to the system being controller
-    @param policy Interface to the controller to be applied to the system
-    @param max_steps Horizon for applying controller (in seconds)
-    @param callback Callable object to be called after every time step
+        Starts the env and applies the current policy to the env for a duration
+        specified by H (in seconds). If  H is not set, it will run for self.H
+        seconds.
+        @param env interface to the system being controller
+        @param policy Interface to the controller to be applied to the system
+        @param max_steps Horizon for applying controller (in seconds)
+        @param callback Callable object to be called after every time step
     '''
     fnname = 'apply_controller'
     # initialize policy if needed
@@ -28,17 +29,18 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
     utils.print_with_stamp('Starting run', fnname)
     if hasattr(env, 'dt'):
         H = max_steps*env.dt
-        utils.print_with_stamp('Running for %f seconds'%(H), fnname)
+        utils.print_with_stamp('Running for %f seconds' % (H), fnname)
     else:
-        utils.print_with_stamp('Running for %d steps'%(max_steps), fnname)
+        utils.print_with_stamp('Running for %d steps' % (max_steps), fnname)
     x_t = env.reset()
 
-    # data corresponds to state at time t, action at time t, reward after applying action at time t
+    # data corresponds to state at time t, action at time t, reward after
+    # applying action at time t
     data = []
 
     # do rollout
     for t in range(max_steps):
-        #preprocess state
+        # preprocess state
         x_t_ = preprocess(x_t) if callable(preprocess) else x_t
 
         #  get command from policy
@@ -64,9 +66,12 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
 
     states, actions, costs, infos = zip(*data)
 
-    run_value = np.array(costs)
-    utils.print_with_stamp('Done. Stopping robot. Value of run [%f]'%(run_value.sum()),
-                           fnname)
+    msg = 'Done. Stopping robot.'
+    if all([v is not None for v in costs]):
+        run_value = np.array(costs).sum()
+        msg += ' Value of run [%f]' % run_value
+    utils.print_with_stamp(msg, fnname)
+
     # stop robot
     if hasattr(env, 'stop'):
         env.stop()
