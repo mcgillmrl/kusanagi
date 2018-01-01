@@ -52,41 +52,65 @@ def rollout(x0, H, gamma0,
     dynamics model and the discounted costs for each step in the
     trajectory.
     '''
-    msg = 'Building computation graph for state particles propagation'
+    msg = 'Building computation graph for rollout'
     utils.print_with_stamp(msg, 'mc_pilco.rollout')
+    msg = 'Moment-matching [state: %s, cost:%s]'
+    msg += ', State measurement noise [policy: %s, cost: %s]'
+    opts = (mm_state, mm_cost, noisy_policy_input, noisy_cost_input)
+    utils.print_with_stamp(msg % opts, 'mc_pilco.rollout')
 
     # define internal scan computations
     def step_rollout(z1, z2, z2_prev, x, sn, gamma, *args):
         '''
             Single step of rollout.
         '''
+        n = x.shape[0]
+        n = n.astype(theano.config.floatX)
+
         # noisy state measruement for control
-        xn = x + z2_prev*sn if noisy_policy_input else x
+        xn = x + z2_prev*(0.5*sn) if noisy_policy_input else x
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
             x, xn, pol, dyn, D, angle_dims, **kwargs)
 
-        # noisy state measurement for cost
-        xn_next = x_next + z2*sn_next if noisy_cost_input else x_next
-
-        #  get cost of applying action:
-        n = xn_next.shape[0]
-        n = n.astype(theano.config.floatX)
-        mxn_next = xn_next.mean(0)
-        Sxn_next = xn_next.T.dot(xn_next)/n - tt.outer(mxn_next, mxn_next)
-        c_next = cost(xn_next, None)
-        mc_next = cost(mxn_next, Sxn_next)[0] if mm_cost else c_next.mean()
-
-        # resample if requested
-        if mm_state:
-            if noisy_cost_input:
-                mx_next = x_next.mean(0)
-                Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
+        def eval_cost(xn, mxn=None, Sxn=None):
+            c = cost(xn, None)
+            # moment-matching for cost
+            if mm_cost:
+                # compute input moments
+                if mxn is None:
+                    mxn = xn.mean(0)
+                if Sxn is None:
+                    Sxn = (xn.T.dot(xn)/n
+                           - tt.outer(mxn, mxn))
+                # propagate gaussian through cost (should be implemented in
+                # cost func)
+                mc = cost(mxn, Sxn)[0]
+            # no moment-matching
             else:
-                mx_next = mxn_next
-                Sx_next = Sxn_next
+                mc = c.sum()/n
+            return mc, c
+
+        # if resampling (moment-matching for state)
+        if mm_state:
+            mx_next = x_next.mean(0)
+            Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
             x_next = mx_next + z1.dot(tt.slinalg.cholesky(Sx_next).T)
+            # noisy state measurement for cost
+            xn_next = x_next
+            if noisy_cost_input:
+                xn_next += z2*sn_next
+                #  get cost of applying action:
+                mc_next, c_next = eval_cost(xn_next)
+            else:
+                mc_next, c_next = eval_cost(xn_next, mx_next, Sx_next)
+        # no moment-matching for state
+        else:
+            # noisy state measurement for cost
+            xn_next = x_next + z2*sn_next if noisy_cost_input else x_next
+            #  get cost of applying action:
+            mc_next, c_next = eval_cost(xn_next)
 
         return [gamma*mc_next, gamma*c_next, x_next, sn_next, gamma*gamma0]
 
@@ -165,7 +189,9 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     # sample random numbers to be used in the rollout
     updates = theano.updates.OrderedUpdates()
     if crn:
-        utils.print_with_stamp("Using CRNs")
+        utils.print_with_stamp(
+            "Using common random numbers for moment matching",
+            'mc_pilco.rollout')
         # we reuse samples and resamples every 500 iterations
         # resampling is done to avoid getting stuck with bad solutions
         # when we get unlucky.
@@ -183,8 +209,6 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
             tt.tile(z, (1, tt.ceil(H/z.shape[0]).astype('int64'), 1, 1)),
             z
         )[:H+1]
-    else:
-        utils.print_with_stamp("not using CRNs")
 
     # draw initial set of particles
     z0 = m_rng.normal((n_samples, D))
