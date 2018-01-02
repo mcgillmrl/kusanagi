@@ -158,29 +158,35 @@ def kmeanspp(X, k):
     return np.array(c)
 
 
-def gTrig(x, angi, D):
+def gTrig(x, angi, D=None):
     '''
     Replaces angle dimensions with their complex representation.
     i.e. if x[i] is an angle ( i in angi ), then x[i] will be replaced
     with cos[x[i]] and sin[x[i]]
     '''
-    Da = 2*len(angi)
+    if x.ndim == 1:
+        x = x[None, :]
+    if D is None:
+        D = x.shape[1]
+    if isinstance(angi, list) or isinstance(angi, tuple):
+        angi = np.array(angi, dtype=np.int32)
+
+    Da = 2*angi.size
     n = x.shape[0]
     xang = tt.zeros((n, Da))
     xi = x[:, angi]
     xang = tt.set_subtensor(xang[:, ::2], tt.sin(xi))
     xang = tt.set_subtensor(xang[:, 1::2], tt.cos(xi))
 
-    na_dims = list(set(range(D)).difference(angi))
-    if na_dims:
-        xnang = x[:, na_dims]
-        m = tt.concatenate([xnang, xang], axis=1)
-    else:
-        m = xang
+    idx = tt.arange(D)
+    na_dims = (1-tt.eq(idx, angi[:, None])).prod(0).nonzero()[0]
+    xnang = x[:, na_dims]
+
+    m = tt.concatenate([xnang, xang], axis=1)
     return m
 
 
-def gTrig2(m, v, angi, D):
+def gTrig2(m, v, angi, D=None):
     '''
     Replaces angle dimensions with their complex representation.
     i.e. if x[i] is an angle ( i in angi ), then x[i] will be replaced
@@ -188,13 +194,15 @@ def gTrig2(m, v, angi, D):
     Since the input is a gaussian distribution, the output mean and covariance
     are computed via moment matching
     '''
-    if len(angi) < 1:
-        return m, v, None
+    if D is None:
+        D = m.shape[0]
+    if isinstance(angi, list) or isinstance(angi, tuple):
+        angi = np.array(angi, dtype=np.int32)
 
-    # TODO make this a symbolic operation
-    na_dims = list(set(range(D)).difference(angi))
-    Da = 2*len(angi)
-    Dna = len(na_dims)
+    idx = tt.arange(D)
+    na_dims = (1-tt.eq(idx, angi[:, None])).prod(0).nonzero()[0]
+    Da = 2*angi.size
+    Dna = na_dims.size
     Ma = tt.zeros((Da,))
     Va = tt.zeros((Da, Da))
     Ca = tt.zeros((D, Da))
@@ -230,7 +238,7 @@ def gTrig2(m, v, angi, D):
     Va = 0.5*Va
 
     # inv times input output covariance
-    Is = 2*np.arange(len(angi))
+    Is = 2*tt.arange(angi.size)
     Ic = Is + 1
     Ca = tt.set_subtensor(Ca[angi, Is], Ma[1::2])
     Ca = tt.set_subtensor(Ca[angi, Ic], -Ma[::2])
