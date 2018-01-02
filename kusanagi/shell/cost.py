@@ -114,12 +114,13 @@ def distance_based_cost(mx, Sx, target, Q,
     '''
     if isinstance(target, list) or isinstance(target, tuple):
         target = np.array(target)
-    if len(angle_dims) > 0:
-        # convert angle dimensions
+
+    # convert angle dimensions
+    if angle_dims:
         if isinstance(target, np.ndarray):
             target = utils.gTrig_np(target, angle_dims).flatten()
         else:
-            target = utils.gTrig(target.atl, angle_dims).flatten()
+            target = utils.gTrig(target, angle_dims).flatten()
         mx, Sx = convert_angle_dimensions(mx, Sx, angle_dims)
 
     Q = Q.astype(theano.config.floatX)
