@@ -77,7 +77,6 @@ def gTrig(state, angle_dims=[]):
 def setup_pilco_experiment(params, pol=None, dyn=None):
     # initial state distribution
     p0 = params['state0_dist']
-    D = p0.mean.size
 
     # init policy
     if pol is None:
@@ -98,7 +97,7 @@ def setup_pilco_experiment(params, pol=None, dyn=None):
     # (can also be a class)
     learner = algorithms.pilco
 
-    return p0, D, pol, dyn, exp, polopt, learner
+    return p0, pol, dyn, exp, polopt, learner
 
 
 def setup_mc_pilco_experiment(params, pol=None, dyn=None):
@@ -110,7 +109,7 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
 
     # init policy
     if pol is None:
-        pol = control.NNPolicy(p0.mean, **params['policy'])
+        pol = control.NNPolicy(D, **params['policy'])
         if pol_spec is None:
             pol_spec = regression.mlp(
                 input_dims=pol.D,
@@ -148,7 +147,7 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
     # (can also be a class)
     learner = algorithms.mc_pilco
 
-    return p0, D, pol, dyn, exp, polopt, learner
+    return p0, pol, dyn, exp, polopt, learner
 
 
 def setup_cartpole_experiment(params=None):
@@ -171,9 +170,9 @@ def pilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
 
     # init policy and dynamics model
     ret = setup_pilco_experiment(params, policy, dynmodel)
-    p0, D, pol, dyn, exp, polopt, learner = ret
+    p0, pol, dyn, exp, polopt, learner = ret
 
-    return p0, D, env, pol, dyn, cost, exp, polopt, learner, params
+    return p0, env, pol, dyn, cost, exp, polopt, learner, params
 
 
 def mcpilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
@@ -182,9 +181,9 @@ def mcpilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
 
     # init policy and dynamics model
     ret = setup_mc_pilco_experiment(params, policy, dynmodel)
-    p0, D, pol, dyn, exp, polopt, learner = ret
+    p0, pol, dyn, exp, polopt, learner = ret
 
-    return p0, D, env, pol, dyn, cost, exp, polopt, learner, params
+    return p0, env, pol, dyn, cost, exp, polopt, learner, params
 
 
 def setup_double_cartpole_experiment(params=None):
@@ -207,9 +206,9 @@ def pilco_double_cartpole_experiment(params=None, policy=None, dynmodel=None):
 
     # init policy and dynamics model
     ret = setup_pilco_experiment(params, policy, dynmodel)
-    p0, D, pol, dyn, exp, polopt, learner = ret
+    p0, pol, dyn, exp, polopt, learner = ret
 
-    return p0, D, env, pol, dyn, cost, exp, polopt, learner, params
+    return p0, env, pol, dyn, cost, exp, polopt, learner, params
 
 
 def mcpilco_double_cartpole_experiment(
@@ -219,9 +218,9 @@ def mcpilco_double_cartpole_experiment(
 
     # init policy and dynamics model
     ret = setup_mc_pilco_experiment(params, policy, dynmodel)
-    p0, D, pol, dyn, exp, polopt, learner = ret
+    p0, pol, dyn, exp, polopt, learner = ret
 
-    return p0, D, env, pol, dyn, cost, exp, polopt, learner, params
+    return p0, env, pol, dyn, cost, exp, polopt, learner, params
 
 
 def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
@@ -231,7 +230,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
                          render=False, debug_plot=0):
     # setup experiment
     exp_objs = exp_setup(params)
-    p0, D, env, pol, dyn, cost, exp, polopt, learner, params = exp_objs
+    p0, env, pol, dyn, cost, exp, polopt, learner, params = exp_objs
     n_rnd = params.get('n_rnd', 1)
     n_opt = params.get('n_opt', 100)
     return_best = params.get('return_best', False)
@@ -282,13 +281,13 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
 
     # build loss function
     loss, inps, updts = learner.get_loss(
-        pol, dyn, cost, D, angle_dims, **loss_kwargs)
+        pol, dyn, cost, angle_dims, **loss_kwargs)
 
     if debug_plot > 0:
         # build rollout function for plotting
         loss_kwargs['mm_state'] = False
         rollout_fn = learner.build_rollout(
-            pol, dyn, cost, D, angle_dims, **loss_kwargs)
+            pol, dyn, cost, angle_dims, **loss_kwargs)
         fig, axarr = None, None
 
     # set objective of policy optimizer

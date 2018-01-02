@@ -80,18 +80,15 @@ def default_params():
 
 
 def cartpole_loss(mx, Sx,
+                  target=np.array([0, 0, 0, np.pi]),
                   angle_dims=[3],
                   pole_length=0.5,
                   cw=[0.25],
-                  target=np.array([0, 0, 0, np.pi]),
                   *args, **kwargs):
-    target = np.array(target)
-    D = target.size
-
-    # convert angle dimensions
-    targeta = utils.gTrig_np(target, angle_dims).flatten()
-    mxa, Sxa = cost.convert_angle_dimensions(mx, Sx, D, angle_dims)
-    Da = targeta.size
+    # size of target vector (and mx) after replacing angles with their
+    # (sin, cos) representation:
+    # [x1,x2,..., angle,...,xn] -> [x1,x2,...,xn, sin(angle), cos(angle)]
+    Da = np.array(target).size + len(angle_dims)
 
     # build cost scaling function
     Q = np.zeros((Da, Da))
@@ -101,7 +98,8 @@ def cartpole_loss(mx, Sx,
     Q[-2, -2] = pole_length**2
     Q[-1, -1] = pole_length**2
 
-    return cost.generic_loss(mxa, Sxa, targeta, Q, cw, *args, **kwargs)
+    return cost.distance_based_cost(
+        mx, Sx, target, Q, cw, angle_dims=angle_dims, *args, **kwargs)
 
 
 class Cartpole(plant.ODEPlant):

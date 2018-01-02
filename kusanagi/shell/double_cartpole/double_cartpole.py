@@ -84,19 +84,17 @@ def default_params():
 
 
 def double_cartpole_loss(mx, Sx,
+                         target=np.array([0, 0, 0, 0, 0, 0]),
                          angle_dims=[4, 5],
                          link1_length=0.5,
                          link2_length=0.5,
                          cw=[0.5],
-                         target=np.array([0, 0, 0, 0, 0, 0]),
                          *args, **kwargs):
-    target = np.array(target)
-    D = target.size
 
-    # convert angle dimensions
-    targeta = utils.gTrig_np(target, angle_dims).flatten()
-    mxa, Sxa = cost.convert_angle_dimensions(mx, Sx, D, angle_dims)
-    Da = targeta.size
+    # size of target vector (and mx) after replacing angles with their
+    # (sin, cos) representation:
+    # [x1,x2,..., angle,...,xn] -> [x1,x2,...,xn, sin(angle), cos(angle)]
+    Da = np.array(target).size + len(angle_dims)
 
     # build cost scaling function
     Q = np.zeros((Da, Da))
@@ -107,7 +105,8 @@ def double_cartpole_loss(mx, Sx,
                   [0, 0, link1_length, 0, link2_length]])
     Q[cost_dims, cost_dims.T] = C.T.dot(C)
 
-    return cost.generic_loss(mxa, Sxa, targeta, Q, cw, *args, **kwargs)
+    return cost.distance_based_cost(
+        mx, Sx, target, Q, cw, angle_dims=angle_dims, *args, **kwargs)
 
 
 class DoubleCartpole(plant.ODEPlant):

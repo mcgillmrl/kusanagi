@@ -86,13 +86,13 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
         return 1.0 + m_cost, s_cost
 
 
-def convert_angle_dimensions(mx, Sx, D, angle_dims=[]):
+def convert_angle_dimensions(mx, Sx, angle_dims=[]):
     if Sx is None:
         flatten = False
         if mx.ndim == 1:
             flatten = True
             mx = mx[None, :]
-        mxa = utils.gTrig(mx, angle_dims, D)
+        mxa = utils.gTrig(mx, angle_dims)
         if flatten:
             # since we are dealing with one input vector at a time
             mxa = mxa.flatten()
@@ -100,20 +100,31 @@ def convert_angle_dimensions(mx, Sx, D, angle_dims=[]):
     else:
         # angle dimensions are removed, and their complex
         # representation is appended
-        mxa, Sxa = utils.gTrig2(mx, Sx, angle_dims, D)[:2]
+        mxa, Sxa = utils.gTrig2(mx, Sx, angle_dims)[:2]
 
     return mxa, Sxa
 
 
-def generic_loss(mx, Sx, target, Q,
-                 cw=[1], expl=None,
-                 loss_func=quadratic_saturating_loss,
-                 *args, **kwargs):
+def distance_based_cost(mx, Sx, target, Q,
+                        cw=[1], expl=None, angle_dims=[],
+                        loss_func=quadratic_saturating_loss,
+                        *args, **kwargs):
     '''
         Loss function that depends on a quadratic function of state
     '''
+    if isinstance(target, list) or isinstance(target, tuple):
+        target = np.array(target)
+    if len(angle_dims) > 0:
+        # convert angle dimensions
+        if isinstance(target, np.ndarray):
+            target = utils.gTrig_np(target, angle_dims).flatten()
+        else:
+            target = utils.gTrig(target.atl, angle_dims).flatten()
+        mx, Sx = convert_angle_dimensions(mx, Sx, angle_dims)
+
     Q = Q.astype(theano.config.floatX)
     target = target.astype(theano.config.floatX)
+
     if not isinstance(cw, list):
         cw = [cw]
     if Sx is None:
@@ -138,12 +149,15 @@ def generic_loss(mx, Sx, target, Q,
         return sum(M_cost)/len(cw), sum(S_cost)/(len(cw)**2)
 
 
-def build_loss_func(loss_func, uncertain_inputs=False, name='loss_func', *args, **kwargs):
+def build_loss_func(loss_func, uncertain_inputs=False, name='loss_func',
+                    *args, **kwargs):
     '''
-        Utility function to compiling a theano graph corresponding to aloss function
+        Utility function to compiling a theano graph corresponding to a loss
+        function
     '''
     mx = tt.vector('mx')
     Sx = tt.matrix('Sx') if uncertain_inputs else None
     inputs = [mx, Sx] if uncertain_inputs else [mx]
     outputs = loss_func(mx, Sx, *args, **kwargs)
-    return theano.function(inputs, outputs, name=name, allow_input_downcast=True)
+    return theano.function(inputs, outputs, name=name,
+                           allow_input_downcast=True)
