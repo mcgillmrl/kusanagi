@@ -9,7 +9,7 @@ m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
 s_rng = theano.tensor.shared_randomstreams.RandomStreams(randint)
 
 
-def propagate_particles(latent_x, measured_x, pol, dyn, D, angle_dims=None,
+def propagate_particles(latent_x, measured_x, pol, dyn, angle_dims=[],
                         iid_per_eval=False):
     ''' Given a set of input states, this function returns predictions for
         the next states. This is done by 1) evaluating the current pol
@@ -19,8 +19,8 @@ def propagate_particles(latent_x, measured_x, pol, dyn, D, angle_dims=None,
         representing the next states and costs with shape [n, 1]
     '''
     # convert angles from input states to their complex representation
-    xa1 = utils.gTrig(latent_x, angle_dims, D)
-    xa2 = utils.gTrig(measured_x, angle_dims, D)
+    xa1 = utils.gTrig(latent_x, angle_dims)
+    xa2 = utils.gTrig(measured_x, angle_dims)
 
     # compute controls for each sample
     u = pol.evaluate(xa2, symbolic=True,
@@ -42,7 +42,7 @@ def propagate_particles(latent_x, measured_x, pol, dyn, D, angle_dims=None,
 
 def rollout(x0, H, gamma0,
             pol, dyn, cost,
-            D, angle_dims=None,
+            angle_dims=[],
             z=None, mm_state=True, mm_cost=True,
             noisy_policy_input=True, noisy_cost_input=True,
             truncate_gradient=-1, extra_shared=[],
@@ -72,7 +72,7 @@ def rollout(x0, H, gamma0,
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
-            x, xn, pol, dyn, D, angle_dims, **kwargs)
+            x, xn, pol, dyn, angle_dims, **kwargs)
 
         def eval_cost(xn, mxn=None, Sxn=None):
             c = cost(xn, None)
@@ -141,7 +141,7 @@ def rollout(x0, H, gamma0,
     return [mcosts, costs, trajectories], rollout_updts
 
 
-def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
+def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=True,
              resample_dyn=False, crn=True, average=True,
@@ -158,7 +158,6 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         @param pol
         @param dyn
         @param cost
-        @param D number of state dimensions, must be a python integer
         @param angle_dims angle dimensions that should be converted to complex
                           representation
         @param crn wheter to use common random numbers.
@@ -184,7 +183,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
     # how many times we've done a forward pass
     n_evals = theano.shared(0)
     # new samples with every rollout
-    z = m_rng.normal((2, H+1, n_samples, D))
+    z = m_rng.normal((2, H+1, n_samples, mx0.shape[0]))
 
     # sample random numbers to be used in the rollout
     updates = theano.updates.OrderedUpdates()
@@ -197,7 +196,7 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         # when we get unlucky.
         z_resampled = z
         z_init = np.random.normal(
-            size=(2, 1000, n_samples, D)).astype(theano.config.floatX)
+            size=(2, 1000, n_samples, dyn.E)).astype(theano.config.floatX)
         z = theano.shared(z_init)
         updates[z] = theano.ifelse.ifelse(
             tt.eq(n_evals % 500, 0), z_resampled, z)
@@ -211,14 +210,14 @@ def get_loss(pol, dyn, cost, D, angle_dims, n_samples=50,
         )[:H+1]
 
     # draw initial set of particles
-    z0 = m_rng.normal((n_samples, D))
+    z0 = m_rng.normal((n_samples, mx0.shape[0]))
     Lx0 = tt.slinalg.cholesky(Sx0)
     x0 = mx0 + z0.dot(Lx0.T)
 
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma,
                             pol, dyn, cost,
-                            D, angle_dims,
+                            angle_dims,
                             z=z,
                             mm_state=mm_state,
                             iid_per_eval=resample_dyn,

@@ -1,11 +1,12 @@
 # pylint: disable=C0103
+import numpy as np
 import theano
 import theano.tensor as tt
 from kusanagi import utils
 from kusanagi.ghost import regression
 
 
-def propagate_belief(mx, Sx, policy, dynmodel, D, angle_dims=None):
+def propagate_belief(mx, Sx, policy, dynmodel, angle_dims=None):
     ''' Given the input variables mx (tt.vector) and Sx (tt.matrix),
         representing the mean and variance of the system's state x, this
         function returns the next state distribution, and the mean and
@@ -27,9 +28,12 @@ def propagate_belief(mx, Sx, policy, dynmodel, D, angle_dims=None):
     '''
     if angle_dims is None:
         angle_dims = []
+    if isinstance(angle_dims, list) or isinstance(angle_dims, tuple):
+        angle_dims = np.array(angle_dims, dtype=np.int32)
+    D = mx.size
 
     # convert angles from input distribution to their complex representation
-    mxa, Sxa, Ca = utils.gTrig2(mx, Sx, angle_dims, D)
+    mxa, Sxa, Ca = utils.gTrig2(mx, Sx, angle_dims)
 
     # compute distribution of control signal
     mu, Su, Cu = policy.evaluate(mxa, Sxa, symbolic=True)
@@ -60,28 +64,26 @@ def propagate_belief(mx, Sx, policy, dynmodel, D, angle_dims=None):
     else:
         Sxu_deltax = Sxu.dot(C_deltax)
 
-    if Ca is not None:
-        Da = D+len(angle_dims)
-        Dna = D-len(angle_dims)
-        non_angle_dims = list(set(range(D)).difference(angle_dims))
-        # this contains the covariance between the previous state (with angles
-        # as [sin,cos]), and the next state (with angles in radians)
-        Sxa_deltax = Sxu_deltax[:Da]
-        # first come the non angle dimensions  [D-len(angi)] x [D]
-        sxna_deltax = Sxa_deltax[:Dna]
-        # then angles as [sin,cos]             [2*len(angi)] x [D]
-        sxsc_deltax = Sxa_deltax[Dna:]
-        # here we undo the [sin,cos] parametrization for the angle dimensions
-        Sx_sc = Sx.dot(Ca)[angle_dims]
-        Sa = Sxa[Dna:, Dna:]
-        sxa_deltax = Sx_sc.dot(tt.slinalg.solve(Sa, sxsc_deltax))
-        # now we create Sx_deltax and fill it with the appropriate values
-        # (i.e. in the correct order)
-        Sx_deltax = tt.zeros((D, D))
-        Sx_deltax = tt.set_subtensor(Sx_deltax[non_angle_dims, :], sxna_deltax)
-        Sx_deltax = tt.set_subtensor(Sx_deltax[angle_dims, :], sxa_deltax)
-    else:
-        Sx_deltax = Sxu_deltax[:D]
+    idx = tt.arange(D)
+    non_angle_dims = (1-tt.eq(idx, angle_dims[:, None])).prod(0).nonzero()[0]
+    Da = D+angle_dims.size
+    Dna = D-angle_dims.size
+    # this contains the covariance between the previous state (with angles
+    # as [sin,cos]), and the next state (with angles in radians)
+    Sxa_deltax = Sxu_deltax[:Da]
+    # first come the non angle dimensions  [D-len(angle_dims)] x [D]
+    sxna_deltax = Sxa_deltax[:Dna]
+    # then angles as [sin,cos]             [2*len(angle_dims)] x [D]
+    sxsc_deltax = Sxa_deltax[Dna:]
+    # here we undo the [sin,cos] parametrization for the angle dimensions
+    Sx_sc = Sx.dot(Ca)[angle_dims]
+    Sa = Sxa[Dna:, Dna:]
+    sxa_deltax = Sx_sc.dot(tt.slinalg.solve(Sa, sxsc_deltax))
+    # now we create Sx_deltax and fill it with the appropriate values
+    # (i.e. in the correct order)
+    Sx_deltax = tt.zeros((D, D))
+    Sx_deltax = tt.set_subtensor(Sx_deltax[non_angle_dims, :], sxna_deltax)
+    Sx_deltax = tt.set_subtensor(Sx_deltax[angle_dims, :], sxa_deltax)
 
     Sx_next = Sx + S_deltax + Sx_deltax + Sx_deltax.T
 
@@ -93,7 +95,7 @@ def propagate_belief(mx, Sx, policy, dynmodel, D, angle_dims=None):
 
 def rollout(mx0, Sx0, H, gamma,
             policy, dynmodel, cost,
-            D, angle_dims=None):
+            angle_dims=None):
     ''' Given some initial state distribution Normal(mx0,Sx0), and a
     prediction horizon H (number of timesteps), returns the predicted state
     distribution and discounted cost for every timestep. The discounted cost
@@ -108,7 +110,7 @@ def rollout(mx0, Sx0, H, gamma,
         '''
         # get next state distribution
         b_out, updates = propagate_belief(mx, Sx, policy, dynmodel,
-                                          D, angle_dims)
+                                          angle_dims)
         mx_next, Sx_next = b_out
 
         #  get cost of applying action:
@@ -144,7 +146,7 @@ def rollout(mx0, Sx0, H, gamma,
     return [mean_costs, var_costs, mean_states, cov_states], updts
 
 
-def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False,
+def get_loss(policy, dynmodel, cost, angle_dims, intermediate_outs=False,
              **kwargs):
     '''
         Constructs the computation graph for the value function according to
@@ -178,7 +180,7 @@ def get_loss(policy, dynmodel, cost, D, angle_dims, intermediate_outs=False,
     # get rollout output
     r_outs, updts = rollout(mx0, Sx0, H, gamma,
                             policy, dynmodel, cost,
-                            D, angle_dims)
+                            angle_dims)
 
     mean_costs = r_outs[0]
 
