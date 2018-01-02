@@ -3,7 +3,8 @@ import numpy as np
 
 class Distribution(object):
     '''
-        Base class for distribution. Useful for estimating and sampling initial state distributions
+        Base class for distribution. Useful for estimating and sampling
+        initial state distributions
     '''
     def fit(data):
         raise NotImplementedError
@@ -48,3 +49,10 @@ class Gaussian(Distribution):
     def sample(self, n_samples=1):
         return self.mean + np.random.randn(
             n_samples, self.mean.size).dot(self.cov_chol)
+
+    def __call__(self, mean=None, cov=None, n_samples=1):
+        if mean is not None:
+            self.mean = mean
+        if cov is not None:
+            self.cov = cov
+        return self.sample(n_samples)

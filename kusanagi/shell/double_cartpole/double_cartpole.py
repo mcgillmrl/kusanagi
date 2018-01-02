@@ -199,7 +199,7 @@ class DoubleCartpole(plant.ODEPlant):
         return dz
 
     def _reset(self):
-        state0 = self.state0_dist.sample()
+        state0 = self.state0_dist()
         self.set_state(state0)
         return self.state
 
