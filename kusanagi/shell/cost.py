@@ -132,6 +132,7 @@ def distance_based_cost(mx, Sx, target, Q,
         # deterministic case
         cost = []
         # total cost is the sum of costs with different widths
+        # TODO this can be vecotrized
         for c in cw:
             cost_c = loss_func(mx, None, target, Q/c**2, *args, **kwargs)
             cost.append(cost_c)
@@ -140,6 +141,7 @@ def distance_based_cost(mx, Sx, target, Q,
         M_cost = []
         S_cost = []
         # total cost is the sum of costs with different widths
+        # TODO this can be vectorized
         for c in cw:
             m_cost, s_cost = loss_func(mx, Sx, target, Q/c**2, *args, **kwargs)
             # add UCB  exploration term
@@ -150,7 +152,7 @@ def distance_based_cost(mx, Sx, target, Q,
         return sum(M_cost)/len(cw), sum(S_cost)/(len(cw)**2)
 
 
-def build_loss_func(loss_func, uncertain_inputs=False, name='loss_func',
+def build_loss_func(loss, uncertain_inputs=False, name='loss_fn',
                     *args, **kwargs):
     '''
         Utility function to compiling a theano graph corresponding to a loss
@@ -159,6 +161,26 @@ def build_loss_func(loss_func, uncertain_inputs=False, name='loss_func',
     mx = tt.vector('mx')
     Sx = tt.matrix('Sx') if uncertain_inputs else None
     inputs = [mx, Sx] if uncertain_inputs else [mx]
-    outputs = loss_func(mx, Sx, *args, **kwargs)
+    outputs = loss(mx, Sx, *args, **kwargs)
+    return theano.function(inputs, outputs, name=name,
+                           allow_input_downcast=True)
+
+
+def build_distance_based_cost(uncertain_inputs=False, name='loss_fn',
+                              *args, **kwargs):
+    '''
+        Utility function to compiling a theano graph corresponding to a loss
+        function
+    '''
+    mx = tt.vector('mx') if uncertain_inputs else tt.matrix('mx')
+    Sx = tt.matrix('Sx') if uncertain_inputs else None
+    Q = kwargs.pop('Q', tt.matrix('Q'))
+    target = kwargs.pop('target', tt.vector('target'))
+    inputs = [mx, Sx] if uncertain_inputs else [mx]
+    if type(target) is tt.TensorVariable and len(target.get_parents()) == 0:
+        inputs += [target]
+    if type(Q) is tt.TensorVariable and len(Q.get_parents()) == 0:
+        inputs += [Q]    
+    outputs = distance_based_cost(mx, Sx, target=target, Q=Q, *args, **kwargs)
     return theano.function(inputs, outputs, name=name,
                            allow_input_downcast=True)
