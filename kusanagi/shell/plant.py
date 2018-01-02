@@ -101,7 +101,7 @@ class ODEPlant(Plant):
         cost = None
         if self.loss_func is not None:
             cost = self.loss_func(self.state)
-        return self.state, cost, False, {}
+        return self.get_state()[0], cost, False, {}
 
     def dynamics(self, *args, **kwargs):
         msg = "You need to implement self.dynamics in the ODEPlant subclass."
@@ -296,7 +296,7 @@ class PlantDraw(object):
         current_t = -1
         while self.running.is_set():
             exec_time = time()
-            state, t = self.plant.get_state()
+            state, t = self.plant.get_state(noisy=False)
             if t != current_t:
                 polling_pipe.send((state, t))
 
@@ -339,7 +339,7 @@ class LivePlot(PlantDraw):
         self.H = H
         self.angi = angi
         # get first measurement
-        state, t = plant.get_state()
+        state, t = plant.get_state(noisy=False)
         self.data = np.array([state])
         self.t_labels = np.array([t])
 
