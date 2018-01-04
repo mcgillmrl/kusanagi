@@ -86,7 +86,7 @@ class BNN(BaseRegressor):
     ''' Bayesian neural net regressor '''
     def __init__(self, idims, odims, n_samples=100,
                  heteroscedastic=False, name='BNN',
-                 filename=None, **kwargs):
+                 filename=None, network_spec=None, **kwargs):
         self.D = idims
         self.E = odims
         self.name = name
@@ -100,7 +100,16 @@ class BNN(BaseRegressor):
         self.sn = tt.nnet.softplus(self.unconstrained_sn) + eps
 
         self.network = None
-        self.network_spec = None
+        if type(network_spec) is list:
+            self.network_spec = network_spec
+        elif type(network_spec) is dict:
+            network_spec['input_dims'] = idims
+            network_spec['output_dims'] = odims
+            build_fn = network_spec.pop('build_fn', dropout_mlp)
+            self.network_spec = build_fn(**network_spec)
+        else:
+            self.network_spec = None
+
         self.network_params = None
 
         samples = np.array(n_samples).astype('int32')
@@ -218,7 +227,7 @@ class BNN(BaseRegressor):
             self.Ys.set_value(Ys)
 
     def build_network(self, network_spec=None, input_shape=None,
-                      params={}, name=None):
+                      params={}, return_net=True, name=None):
         ''' Builds a network according to the specification in the
         network_spec argument. network_spec should be a list containing
         tuples where the first element is a class in lasagne.layers and the
@@ -281,7 +290,10 @@ class BNN(BaseRegressor):
         self.predict_fn = None
         self.predict_ic_fn = None
 
-        return network
+        if return_net:
+            return network
+        else:
+            self.network = network
 
     def get_loss(self):
         ''' initializes the loss function for training '''
@@ -363,6 +375,14 @@ class BNN(BaseRegressor):
         neural network. If Sx is specified, the output will correspond to the
         mean, covariance and input-output covariance of the network
         predictions'''
+        # build the network if nedded
+        if self.network is None:
+            params = self.network_params\
+                     if self.network_params is not None\
+                     else {}
+            self.network = self.build_network(self.network_spec,
+                                              params=params,
+                                              name=self.name)
         if Sx is not None:
             # generate random samples from input (assuming gaussian
             # distributed inputs)

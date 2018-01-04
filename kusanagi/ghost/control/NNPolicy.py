@@ -17,6 +17,10 @@ class NNPolicy(BNN):
 
         if sat_func:
             self.sat_func = partial(sat_func, e=self.maxU)
+        network_spec = kwargs.pop('network_spec', None)
+        if type(network_spec) is dict:
+            network_spec['output_nonlinearity'] = self.sat_func
+        kwargs['network_spec'] = network_spec
 
         super(NNPolicy, self).__init__(self.D, self.E, name=name,
                                        filename=filename, **kwargs)
@@ -69,7 +73,7 @@ class NNPolicy(BNN):
         # by default, sample internal params (e.g. dropout masks)
         # at every evaluation
         kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
-        kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', True)
+        kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', False)
         kwargs['whiten_outputs'] = kwargs.get('whiten_outputs', False)
         if s is None:
             kwargs['return_samples'] = kwargs.get('return_samples', True)
@@ -77,5 +81,5 @@ class NNPolicy(BNN):
         if symbolic:
             ret = self.predict_symbolic(m, s, **kwargs)
         else:
-            ret = self.predict(m, s)
+            ret = self.predict(m, s, **kwargs)
         return ret

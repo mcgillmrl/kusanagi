@@ -164,12 +164,12 @@ class BaseRegressor(Loadable):
     def get_dataset(self):
         return self.X.get_value(), self.Y.get_value()
 
-    def init_predict(self, input_covariance=False, batch_predict=False,
+    def init_predict(self, input_covariance=False, input_ndim=1,
                      *args, **kwargs):
         ''' Compiles a prediction function for the operation specified in
         self.predict_symbolic'''
         # input variables
-        mx = tt.vector('mx')
+        mx = tt.TensorType(floatX, (False,)*input_ndim)('mx')
         Sx = tt.matrix('Sx') if input_covariance else None
 
         # initialize variable for input covariance
@@ -191,6 +191,8 @@ class BaseRegressor(Loadable):
 
         fn_name = ('%s>predict_ui' % (self.name)
                    if input_covariance else '%s>predict' % (self.name))
+        if len(prediction) == 1:
+            prediction = prediction[0]
         predict_fn = theano.function(input_vars, prediction,
                                      on_unused_input='ignore',
                                      name=fn_name,
@@ -208,13 +210,15 @@ class BaseRegressor(Loadable):
         if Sx is None:
             if not hasattr(self, 'predict_fn') or self.predict_fn is None:
                 self.predict_fn = self.init_predict(
-                    input_covariance=False, *args, **kwargs)
+                    input_covariance=False, input_ndim=mx.ndim,
+                    *args, **kwargs)
                 self.state_changed = True  # for saving
             predict = self.predict_fn
         else:
             if not hasattr(self, 'predict_ic_fn') or self.predict_ic_fn is None:
                 self.predict_ic_fn = self.init_predict(
-                    input_covariance=True, *args, **kwargs)
+                    input_covariance=True, input_ndim=mx.ndim,
+                    *args, **kwargs)
                 self.state_changed = True  # for saving
             predict = self.predict_ic_fn
 
