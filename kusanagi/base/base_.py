@@ -24,7 +24,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
         p = policy.get_params()
         if len(p) == 0:
             policy.init_params()
-    
+
     # start robot
     utils.print_with_stamp('Starting run', fnname)
     if hasattr(env, 'dt'):
@@ -114,7 +114,7 @@ def train_dynamics(dynmodel, data, angle_dims=[],
 
     i_shp = dynmodel.X.get_value(borrow=True).shape
     o_shp = dynmodel.Y.get_value(borrow=True).shape
-    msg = 'Dataset size:: Inputs: [ %s ], Targets: [ %s ]  '%(i_shp, o_shp)
+    msg = 'Dataset size:: Inputs: [ %s ], Targets: [ %s ] '%(i_shp, o_shp)
     utils.print_with_stamp(msg, 'train_dynamics')
 
     # finally, train the dynamics model

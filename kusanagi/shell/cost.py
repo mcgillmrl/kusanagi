@@ -176,11 +176,15 @@ def build_distance_based_cost(uncertain_inputs=False, name='loss_fn',
     Sx = tt.matrix('Sx') if uncertain_inputs else None
     Q = kwargs.pop('Q', tt.matrix('Q'))
     target = kwargs.pop('target', tt.vector('target'))
+    angi = kwargs.pop('angle_dims', [])
     inputs = [mx, Sx] if uncertain_inputs else [mx]
     if type(target) is tt.TensorVariable and len(target.get_parents()) == 0:
         inputs += [target]
     if type(Q) is tt.TensorVariable and len(Q.get_parents()) == 0:
-        inputs += [Q]    
-    outputs = distance_based_cost(mx, Sx, target=target, Q=Q, *args, **kwargs)
+        inputs += [Q]
+    if type(angi) is tt.TensorVariable and len(angi.get_parents()) == 0:
+        inputs += [angi]
+    outputs = distance_based_cost(mx, Sx, target=target, Q=Q, angle_dims=angi,
+                                  *args, **kwargs)
     return theano.function(inputs, outputs, name=name,
                            allow_input_downcast=True)
