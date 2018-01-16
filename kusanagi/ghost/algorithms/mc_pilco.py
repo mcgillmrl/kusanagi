@@ -10,7 +10,7 @@ s_rng = theano.tensor.shared_randomstreams.RandomStreams(randint)
 
 
 def propagate_particles(latent_x, measured_x, pol, dyn, angle_dims=[],
-                        iid_per_eval=False):
+                        iid_per_eval=False, **kwargs):
     ''' Given a set of input states, this function returns predictions for
         the next states. This is done by 1) evaluating the current pol
         2) using the dynamics model to estimate the next state. If x has
@@ -145,7 +145,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=True,
              resample_dyn=False, crn=True, average=True,
-             truncate_gradient=-1, extra_shared=[]):
+             truncate_gradient=-1, extra_shared=[], **kwargs):
     '''
         Constructs the computation graph for the value function according to
         the mc-pilco algorithm:
@@ -225,7 +225,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
                             truncate_gradient=truncate_gradient,
                             noisy_policy_input=noisy_policy_input,
                             noisy_cost_input=noisy_cost_input,
-                            extra_shared=extra_shared)
+                            extra_shared=extra_shared, **kwargs)
 
     mean_costs, costs, trajectories = r_outs
 
