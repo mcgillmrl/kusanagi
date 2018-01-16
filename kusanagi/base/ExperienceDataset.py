@@ -78,6 +78,18 @@ class ExperienceDataset(Loadable):
         self.curr_episode += 1
         self.state_changed = True
 
+    def append_episode(self, states, actions, costs,
+                        infos=None, policy_params=None, ts=None):
+        if policy_params is not None:
+            self.policy_parameters.append(policy_params)
+        if infos is not None:
+            self.info.append(infos)
+        if ts is not None:
+            self.time_stamps.append(ts)
+        self.states.append(states)
+        self.actions.append(actions)
+        self.costs.append(costs)
+
     def n_samples(self):
         ''' Returns the total number of samples in this dataset '''
         return sum([len(s) for s in self.states])
