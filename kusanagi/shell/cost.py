@@ -158,9 +158,17 @@ def build_loss_func(loss, uncertain_inputs=False, name='loss_fn',
         Utility function to compiling a theano graph corresponding to a loss
         function
     '''
-    mx = tt.vector('mx')
+    mx = tt.vector('mx') if uncertain_inputs else tt.matrix('mx')
     Sx = tt.matrix('Sx') if uncertain_inputs else None
     inputs = [mx, Sx] if uncertain_inputs else [mx]
+    # add extra input variables
+    inputs += [a for a in args
+               if type(a) is theano.tensor.TensorVariable
+               and len(a.get_parents()) == 0]
+    inputs += [k for k in kwargs.values()
+               if type(k) is theano.tensor.TensorVariable
+               and len(k.get_parents()) == 0]
+    print(inputs)
     outputs = loss(mx, Sx, *args, **kwargs)
     return theano.function(inputs, outputs, name=name,
                            allow_input_downcast=True)
