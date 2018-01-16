@@ -100,7 +100,7 @@ class ODEPlant(Plant):
         self.t = self.solver.t
         cost = None
         if self.loss_func is not None:
-            cost = self.loss_func(self.state)
+            cost = self.loss_func(np.array(self.state)[None, :])
         return self.get_state()[0], cost, False, {}
 
     def dynamics(self, *args, **kwargs):

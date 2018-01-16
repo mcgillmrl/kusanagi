@@ -114,7 +114,7 @@ def train_dynamics(dynmodel, data, angle_dims=[],
 
     i_shp = dynmodel.X.get_value(borrow=True).shape
     o_shp = dynmodel.Y.get_value(borrow=True).shape
-    msg = 'Dataset size:: Inputs: [ %s ], Targets: [ %s ] '%(i_shp, o_shp)
+    msg = 'Dataset size:: Inputs: [ %s ], Targets: [ %s ] ' % (i_shp, o_shp)
     utils.print_with_stamp(msg, 'train_dynamics')
 
     # finally, train the dynamics model

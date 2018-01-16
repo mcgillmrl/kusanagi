@@ -347,7 +347,6 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
         if debug_plot > 0:
             fig, axarr = plot_rollout(
                 rollout_fn, exp, m0, S0, H, gamma, fig=fig, axarr=axarr)
-
     env.close()
 
 
@@ -364,7 +363,7 @@ def evaluate_policy(env, pol, exp, params, n_tests=100, render=False):
 
     results = []
     for i, p in enumerate(exp.policy_parameters):
-        utils.print_with_stamp('Evaluating policy at iteration %d'%(i))
+        utils.print_with_stamp('Evaluating policy at iteration %d' % i)
         if p:
             pol.set_params(p)
         else:

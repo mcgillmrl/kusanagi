@@ -206,7 +206,7 @@ class BNN(BaseRegressor):
 
     def update_dataset_statistics(self, X_dataset, Y_dataset):
         Xm = X_dataset.mean(0).astype(floatX)
-        Xc = np.cov(X_dataset, rowvar=False, ddof=1).astype(floatX)
+        Xc = np.cov(X_dataset-Xm, rowvar=False, ddof=1).astype(floatX)
         iXs = np.linalg.cholesky(
             np.linalg.inv(np.atleast_2d(Xc))).astype(floatX)
         if self.Xm is None:
@@ -217,7 +217,7 @@ class BNN(BaseRegressor):
             self.iXs.set_value(iXs)
 
         Ym = Y_dataset.mean(0).astype(floatX)
-        Yc = np.cov(Y_dataset, rowvar=False, ddof=1).astype(floatX)
+        Yc = np.cov(Y_dataset-Ym, rowvar=False, ddof=1).astype(floatX)
         Ys = np.linalg.cholesky(np.atleast_2d((Yc))).T.astype(floatX)
         if self.Ym is None:
             self.Ym = theano.shared(Ym, name='%s>Ym' % (self.name))
@@ -474,7 +474,6 @@ class BNN(BaseRegressor):
               optimizer=None, callback=None):
         if optimizer is None:
             optimizer = self.optimizer
-
         if optimizer.loss_fn is None or self.should_recompile:
             loss, inps, updts = self.get_loss()
             # we pass the learning rate as an input, and as a parameter to the
