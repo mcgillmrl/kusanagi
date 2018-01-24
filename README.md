@@ -4,7 +4,7 @@
 
 Install the Miniconda 3 distribution: https://conda.io/miniconda.html
 
-    conda install numpy scipy mkl mkl-service jupyter
+    conda install numpy scipy mkl mkl-rt mkl-service jupyter
     conda install pygpu libgpuarray -c mila-udem
     pip install --upgrade git+https://github.com/Theano/Theano
     pip install --upgrade git+https://github.com/Lasagne/Lasagne
@@ -13,7 +13,8 @@ Install the Miniconda 3 distribution: https://conda.io/miniconda.html
     cd <KUSANAGI_ROOT>
     pip install -e .
 
-
+If you use the Miniconda 2 distribution (python 2.7.x), then you need to install gym 0.5.7
+    pip install gym==0.5.7
 
 ## Example to reproduce some of the results:
 
