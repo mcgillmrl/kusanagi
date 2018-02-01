@@ -52,7 +52,7 @@ class SGDOptimizer(object):
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
                       polyak_averaging=None, clip=None, trust_input=True,
-                      **kwargs):
+                      compilation_mode=None, **kwargs):
         '''
             Changes the objective function to be optimized
             @param loss theano graph representing the loss to be optimized
@@ -123,10 +123,12 @@ class SGDOptimizer(object):
                                            name=inp.name) for inp in inputs]
 
         givens_dict = dict(zip(inputs, self.shared_inpts))
-        self.loss_fn = theano.function([], loss, updates=updts,
-                                       on_unused_input='ignore',
-                                       allow_input_downcast=True,
-                                       givens=givens_dict)
+        self.loss_fn = theano.function(
+            [], loss, updates=updts,
+            on_unused_input='ignore',
+            allow_input_downcast=True,
+            givens=givens_dict,
+            mode=compilation_mode)
         self.loss_fn.trust_input = trust_input
 
         utils.print_with_stamp("Compiling parameter updates", self.name)
@@ -136,7 +138,8 @@ class SGDOptimizer(object):
             updates=grad_updates,
             on_unused_input='ignore',
             allow_input_downcast=True,
-            givens=givens_dict)
+            givens=givens_dict,
+            mode=compilation_mode)
         self.update_params_fn.trust_input = trust_input
 
         self.n_evals = 0

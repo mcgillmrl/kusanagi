@@ -46,7 +46,7 @@ class ScipyOptimizer(object):
                 self.alt_min_methods.append(method)
 
     def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
-                      diff_mode=0, **kwargs):
+                      compilation_mode=None, **kwargs):
         '''
             Changes the objective function to be optimized
             @param loss theano graph representing the loss to be optimized
@@ -72,11 +72,13 @@ class ScipyOptimizer(object):
 
         utils.print_with_stamp('Compiling function for loss', self.name)
         self.loss_fn = theano.function(
-            inputs, loss, updates=updts, allow_input_downcast=True)
+            inputs, loss, updates=updts, allow_input_downcast=True,
+            mode=compilation_mode)
         utils.print_with_stamp('Compiling function for loss+gradients',
                                self.name)
         self.grads_fn = theano.function(
-            inputs, [loss, ]+grads, updates=updts, allow_input_downcast=True)
+            inputs, [loss, ]+grads, updates=updts, allow_input_downcast=True,
+            mode=compilation_mode)
 
         self.n_evals = 0
         self.start_time = 0
