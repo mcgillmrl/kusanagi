@@ -463,8 +463,11 @@ class BNN(BaseRegressor):
             # create a function to update the masks manually. Here the dropout
             # masks should be shared variables
             updts = self.get_updates()
+            # compile optimmized
+            mode = theano.compile.mode.get_mode('FAST_RUN')
             self.update_fn = theano.function([], [], updates=updts,
-                                             allow_input_downcast=True)
+                                             allow_input_downcast=True,
+                                             mode=mode)
 
         # draw samples from the networks
         self.update_fn()

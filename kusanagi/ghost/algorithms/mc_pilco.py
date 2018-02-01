@@ -123,11 +123,13 @@ def rollout(x0, H, gamma0,
     nseq.extend(extra_shared)
 
     # loop over the planning horizon
+    mode = theano.compile.mode.get_mode('FAST_RUN')
     output = theano.scan(
         fn=step_rollout, sequences=[z[0, 1:], z[1, 1:], z[1, :-1]],
         outputs_info=[None, None, x0, 1e-4*tt.ones_like(x0), gamma0],
         non_sequences=nseq, n_steps=H, strict=True, allow_gc=False,
-        truncate_gradient=truncate_gradient, name="mc_pilco>rollout_scan")
+        truncate_gradient=truncate_gradient, name="mc_pilco>rollout_scan",
+        mode=mode)
 
     rollout_output, rollout_updts = output
     mcosts, costs, trajectories = rollout_output[:3]
