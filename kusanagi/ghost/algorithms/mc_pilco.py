@@ -168,6 +168,9 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
                 any.
                 By default, the only output variable is the value.
     '''
+    # get angle dims from policy, if any
+    if len(angle_dims) == 0 and hasattr(pol, 'angle_dims'):
+        angle_dims = pol.angle_dims
     # make sure that the dynamics model has the same number of samples
     if hasattr(dyn, 'update'):
         dyn.update(n_samples)
