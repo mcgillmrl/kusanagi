@@ -149,7 +149,8 @@ class SGDOptimizer(object):
         self.optimizer_state = [s for s in grad_updates.keys()]
 
     def minibatch_minimize(self, X, Y, *inputs, **kwargs):
-        callback = kwargs.get('callback')
+        callback = kwargs.get('callback', None)
+        print(callback)
         return_best = kwargs.get('return_best', False)
         batch_size = kwargs.get('batch_size', 100)
         batch_size = min(batch_size, X.shape[0])

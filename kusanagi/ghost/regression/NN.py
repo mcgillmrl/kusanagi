@@ -342,7 +342,7 @@ class BNN(BaseRegressor):
         reg += objectives.log_normal_kl(
             self.network, input_ls, hidden_ls)
 
-        loss = -lml + (M/N)*reg
+        loss = -lml/M + reg/N
 
         inputs = [train_inputs, train_targets,
                   input_lengthscale, hidden_lengthscale]
@@ -494,6 +494,7 @@ class BNN(BaseRegressor):
 
         optimizer.minibatch_minimize(self.X.get_value(), self.Y.get_value(),
                                      input_ls, hidden_ls, lr,
-                                     batch_size=batch_size)
+                                     batch_size=batch_size,
+                                     callback=callback)
         self.trained = True
         self.update()
