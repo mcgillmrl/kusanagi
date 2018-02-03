@@ -342,7 +342,7 @@ class BNN(BaseRegressor):
         reg += objectives.log_normal_kl(
             self.network, input_ls, hidden_ls)
 
-        loss = -lml/M + reg/N
+        loss = -lml + (M/N)*reg
 
         inputs = [train_inputs, train_targets,
                   input_lengthscale, hidden_lengthscale]

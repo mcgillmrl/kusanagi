@@ -168,7 +168,6 @@ def build_loss_func(loss, uncertain_inputs=False, name='loss_fn',
     inputs += [k for k in kwargs.values()
                if type(k) is theano.tensor.TensorVariable
                and len(k.get_parents()) == 0]
-    print(inputs)
     outputs = loss(mx, Sx, *args, **kwargs)
     return theano.function(inputs, outputs, name=name,
                            allow_input_downcast=True)
