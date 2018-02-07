@@ -46,7 +46,7 @@ def rollout(x0, H, gamma0,
             z=None, mm_state=True, mm_cost=True,
             noisy_policy_input=True, noisy_cost_input=True,
             truncate_gradient=-1, extra_shared=[],
-            **kwargs):
+            split_H=2, **kwargs):
     ''' Given some initial state particles x0, and a prediction horizon H
     (number of timesteps), returns a set of trajectories sampled from the
     dynamics model and the discounted costs for each step in the
@@ -124,15 +124,30 @@ def rollout(x0, H, gamma0,
 
     # loop over the planning horizon
     mode = theano.compile.mode.get_mode('FAST_RUN')
-    output = theano.scan(
-        fn=step_rollout, sequences=[z[0, 1:], z[1, 1:], z[1, :-1]],
-        outputs_info=[None, None, x0, 1e-4*tt.ones_like(x0), gamma0],
-        non_sequences=nseq, n_steps=H, strict=True, allow_gc=False,
-        truncate_gradient=truncate_gradient, name="mc_pilco>rollout_scan",
-        mode=mode)
+    mcosts, costs, trajectories = [], [] ,[]
+    H_ = tt.ceil(H*1.0/split_H).astype('int32') # if split_H > 1, this results in truncated BPTT
+    for i in range(1, split_H+1):
+        start_idx = (i-1)*H_ + 1
+        end_idx = start_idx + H_
+        output = theano.scan(
+            fn=step_rollout, sequences=[z[0, start_idx:end_idx], z[1, start_idx:end_idx], z[1, -end_idx:-start_idx]],
+            outputs_info=[None, None, x0, 1e-4*tt.ones_like(x0), gamma0],
+            non_sequences=nseq, strict=True, allow_gc=False,
+            truncate_gradient=truncate_gradient, name="mc_pilco>rollout_scan_%d"%(i),
+            mode=mode)
 
-    rollout_output, rollout_updts = output
-    mcosts, costs, trajectories = rollout_output[:3]
+        rollout_output, rollout_updts = output
+        mcosts_i, costs_i, trajectories_i = rollout_output[:3]
+        mcosts.append(mcosts_i)
+        costs.append(costs_i)
+        trajectories.append(trajectories_i)
+        x0 = trajectories_i[-1, :, :]
+        x0 = theano.gradient.disconnected_grad(x0) # this causes truncated backprop
+    
+    mcosts = tt.concatenate(mcosts)
+    costs = tt.concatenate(costs)
+    trajectories = tt.concatenate(trajectories)
+
     trajectories.name = 'trajectories'
 
     # first axis: batch, second axis: time step
@@ -147,7 +162,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=True,
              resample_dyn=False, crn=True, average=True,
-             truncate_gradient=-1, extra_shared=[], **kwargs):
+             truncate_gradient=-1, split_H=2, extra_shared=[], **kwargs):
     '''
         Constructs the computation graph for the value function according to
         the mc-pilco algorithm:
@@ -228,6 +243,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
                             iid_per_eval=resample_dyn,
                             mm_cost=mm_cost,
                             truncate_gradient=truncate_gradient,
+                            split_H=split_H,
                             noisy_policy_input=noisy_policy_input,
                             noisy_cost_input=noisy_cost_input,
                             extra_shared=extra_shared, **kwargs)
