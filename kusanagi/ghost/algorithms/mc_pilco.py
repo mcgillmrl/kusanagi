@@ -162,7 +162,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=True,
              resample_dyn=False, crn=True, average=True,
-             truncate_gradient=-1, split_H=2, extra_shared=[], **kwargs):
+             truncate_gradient=-1, split_H=1, extra_shared=[], **kwargs):
     '''
         Constructs the computation graph for the value function according to
         the mc-pilco algorithm:
