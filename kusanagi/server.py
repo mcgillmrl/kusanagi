@@ -1,88 +1,71 @@
 #!/usr/bin/env python
-from flask import Flask, request
+import os
+import sys
 import socket
-from kusanagi.ghost.algorithms import mc_pilco
+from flask import Flask, request, redirect, url_for
+from werkzeug.utils import secure_filename
+#from kusanagi.ghost.algorithms import mc_pilco
 
+UPLOAD_FOLDER = '/home/automation/nikhil/workspace/roughwork_ws/robot_learning_server/uploads' #TODO: Check whether the folder exists
+ALLOWED_EXTENSIONS = set(['txt'])
 
-def mc_pilco_polopt():
-    '''
-    executes one iteration of mc_pilco (model updating and policy optimization)
-    '''
-    # get task specific variables
-    n_samples = task_spec['n_samples']
-    dyn = task_spec['transition_model']
-    exp = task_spec.get('experience_data', ExperienceDataset())
-    pol = task_spec['policy']
-    plant_params = task_spec['plant']
-    immediate_cost = task_spec['cost']['graph']
-
-    # append new experrience to dataset
-    task_state[task_name] = 'update_dyn'
-    states, actions, costs, infos = experience
-    ts = [info.get('t', None) for info in infos]
-    exp.append_episode(states, actions, costs, infos,
-                       pol.get_params(symbolic=False), ts)
-    task_spec['experience_data'] = exp
-
-    # train dynamics model. TODO block if training multiple tasks with
-    # the same model
-    train_dynamics(dyn, exp, pol.angle_dims,
-                   wrap_angles=task_spec['wrap_angles'])
-
-    # init policy optimizer if needed
-    optimizer = task_spec['optimizer']
-    if optimizer.loss_fn is None:
-        task_state[task_name] = 'compile_polopt'
-        import theano.tensor as tt
-        ex_in = OrderedDict([(k, v) for k, v in immediate_cost.keywords.items()
-                             if type(v) is tt.TensorVariable
-                             and len(v.get_parents()) == 0])
-        task_spec['extra_in'] = ex_in
-        loss, inps, updts = mc_pilco.get_loss(
-            pol, dyn, immediate_cost, n_samples=n_samples, **ex_in)
-        inps += ex_in.values()
-        optimizer.set_objective(
-            loss, pol.get_params(symbolic=True), inps, updts)
-
-    # train policy # TODO block if learning a multitask policy
-    task_state[task_name] = 'update_polopt'
-    # build inputs to optimizer
-    p0 = plant_params['state0_dist']
-    H = int(np.ceil(task_spec['horizon_secs']/plant_params['dt']))
-    gamma = task_spec['discount']
-    polopt_args = [p0.mean, p0.cov, H, gamma]
-    extra_in = task_spec.get('extra_in', OrderedDict)
-    if len(extra_in) > 0:
-        polopt_args += [task_spec['cost']['params'][k] for k in extra_in]
-    # update dyn and pol (resampling)
-    if hasattr(dyn, 'update'):
-        dyn.update(n_samples)
-    if hasattr(pol, 'update'):
-        pol.update(n_samples)
-    # call minimize
-    optimizer.minimize(*polopt_args,
-                       return_best=task_spec['return_best'])
-
-    # put task in the queue for execution
-    task_state[task_name] = 'ready'
-    task_queue.put((task_name, task_spec))
-
-    return
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 @app.route("/optimize/<task_id>", methods=['GET','POST'])
 def optimize(task_id):
+
     if request.method == "GET":
-        # return status of current task _id
-    elif request.method == "POST":
+        # return status of current task_id
+        ret = "GET"+str(task_id)
+
+    if request.method == "POST":
         ret = "POST"+str(task_id)
-    
-    html = "<h3>kusanagi web {task_id}</h3>"\
-           "<b>host: </b> {host} <br>"\
-           "<b>request: </b> {ret} <br>"
-    return html.format(task_id=task_id, host=socket.gethostname(), ret=ret)
+
+        # check if the post request has the file part
+        sys.stderr.write(str(request.files))
+
+        print(request.files)
+        if 'file1' not in request.files:
+            print('file1 missing')
+            return redirect(request.url) 
+        if 'file2' not in request.files:
+            print('file2 missing')
+            return redirect(request.url) 
+
+        f1 = request.files['file1']
+        f2 = request.files['file2']
+
+        if f1.filename == '':
+            print('file1 not selected')
+            return redirect(request.url)
+        if f2.filename == '':
+            print('file2 not selected')
+            return redirect(request.url)
+
+        if f1 and f2 and allowed_file(f1.filename) and allowed_file(f2.filename):
+            filename1 = secure_filename(f1.filename)
+            filename2 = secure_filename(f2.filename)
+            print(filename1, filename2)
+            f1.save(os.path.join(app.config['UPLOAD_FOLDER'], filename1))
+            f2.save(os.path.join(app.config['UPLOAD_FOLDER'], filename2))
+            return redirect(url_for('optimize', task_id=task_id))
+
+    return '''
+    <!doctype html>
+    <title>Upload new File</title>
+    <h1>Upload new File</h1>
+    <form method=post enctype=multipart/form-data>
+      <p><input type=file name=file>
+         <input type=submit value=Upload>
+    </form>
+    '''
+
 
 if __name__=="__main__":
-    app.run(host='0.0.0.0', port=8008)
+    app.run(host="0.0.0.0", port=8008)
