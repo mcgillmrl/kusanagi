@@ -142,7 +142,7 @@ def rollout(x0, H, gamma0,
         costs.append(costs_i)
         trajectories.append(trajectories_i)
         x0 = trajectories_i[-1, :, :]
-        x0 = theano.gradient.disconnected_grad(x0) # this causes truncated backprop
+        #x0 = theano.gradient.disconnected_grad(x0) # this causes truncated backprop
     
     mcosts = tt.concatenate(mcosts)
     costs = tt.concatenate(costs)
