@@ -24,46 +24,67 @@ def mc_pilco_polopt(task_name, task_spec):
     executes one iteration of mc_pilco (model updating and policy optimization)
     '''
     # get task specific variables
-    n_samples = task_spec['n_samples']
     dyn = task_spec['transition_model']
     exp = task_spec['experience']
     pol = task_spec['policy']
     plant_params = task_spec['plant']
     immediate_cost = task_spec['cost']['graph']
+    H = int(np.ceil(task_spec['horizon_secs']/plant_params['dt']))
+    n_samples = task_spec.get('n_samples', 100)
 
-    # if state != 'init':
-        # train dynamics model. TODO block if training multiple tasks with
-        # the same model
-    train_dynamics(dyn, exp, pol.angle_dims,
-                wrap_angles=task_spec['wrap_angles'])
+    #if state != 'init':
+    # train dynamics model. TODO block if training multiple tasks with
+    # the same model
+    train_dynamics(
+        dyn, exp, pol.angle_dims, wrap_angles=task_spec['wrap_angles'])
 
     # init policy optimizer if needed
     optimizer = task_spec['optimizer']
     if optimizer.loss_fn is None:
-        # task_state[task_name] = 'compile_polopt'
+        #task_state[task_name] = 'compile_polopt'
+
+        # get policy optimizer options
+        split_H = task_spec.get('split_H', 1)
+        noisy_policy_input = task_spec.get('noisy_policy_input', False)
+        noisy_cost_input = task_spec.get('noisy_cost_input', False)
+        truncate_gradient = task_spec.get('truncate_gradient', -1)
+        learning_rate = task_spec.get('learning_rate', 1e-3)
+        gradient_clip = task_spec.get('gradient_clip', 1.0)
+
+        # get extra inputs, if needed
         import theano.tensor as tt
         ex_in = OrderedDict([(k, v) for k, v in immediate_cost.keywords.items()
                             if type(v) is tt.TensorVariable
                             and len(v.get_parents()) == 0])
         task_spec['extra_in'] = ex_in
+
+        # build loss function
         loss, inps, updts = mc_pilco.get_loss(
-            pol, dyn, immediate_cost, n_samples=n_samples, lr=1e-3,
-            noisy_cost_input=False, noisy_policy_input=True,
-             **ex_in)
+            pol, dyn, immediate_cost,
+            n_samples=n_samples,
+            noisy_cost_input=noisy_cost_input, 
+            noisy_policy_input=noisy_policy_input,
+            split_H=split_H,
+            truncate_gradient=(H/split_H)-truncate_gradient,
+            crn=100,
+                **ex_in)
         inps += ex_in.values()
+
+        # add loss function as objective for optimizer
         optimizer.set_objective(
-            loss, pol.get_params(symbolic=True), inps, updts, clip=1.0)
+            loss, pol.get_params(symbolic=True), inps, updts,
+            clip=gradient_clip, learning_rate=learning_rate)
 
     # train policy # TODO block if learning a multitask policy
-    # task_state[task_name] = 'update_polopt'
+    #task_state[task_name] = 'update_polopt'
     # build inputs to optimizer
     p0 = plant_params['state0_dist']
-    H = int(np.ceil(task_spec['horizon_secs']/plant_params['dt']))
     gamma = task_spec['discount']
     polopt_args = [p0.mean, p0.cov, H, gamma]
     extra_in = task_spec.get('extra_in', OrderedDict)
     if len(extra_in) > 0:
         polopt_args += [task_spec['cost']['params'][k] for k in extra_in]
+
     # update dyn and pol (resampling)
     def callback(*args,**kwargs):
         if hasattr(dyn, 'update'):
@@ -72,10 +93,14 @@ def mc_pilco_polopt(task_name, task_spec):
             pol.update(n_samples)
     # call minimize
     callback()
-    optimizer.minimize(*polopt_args,
-                    return_best=task_spec['return_best'])
-    # task_state[task_name] = 'ready'
+    optimizer.minimize(
+        *polopt_args, return_best=task_spec['return_best'])
+    #task_state[task_name] = 'ready'
 
+    # check if task is done
+    n_polopt_iters = len([p for p in exp.policy_parameters if len(p) > 0])
+    #if n_polopt_iters >= task_spec['n_opt']:
+    #    task_state[task_name] = 'done'
     return pol.get_params(symbolic=False)
 
 def allowed_file(filename):
@@ -126,7 +151,6 @@ def init_task(task_id):
 
 @app.route("/optimize/<task_id>", methods=['POST'])
 def optimize(task_id):
-
     sys.stderr.write("POST REQUEST: optimize/%s" % task_id+"\n")
 
     response = "FAILED"
