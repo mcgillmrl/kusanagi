@@ -3,6 +3,7 @@ import os
 import sys
 import socket
 import pickle
+import numpy as np
 from collections import OrderedDict
 from flask import Flask, request, redirect, url_for
 from werkzeug.utils import secure_filename
@@ -12,7 +13,7 @@ from kusanagi import utils
 from kusanagi.base import (apply_controller, train_dynamics,
                            preprocess_angles, ExperienceDataset)
 
-UPLOAD_FOLDER = '/home/automation/nikhil/workspace/roughwork_ws/robot_learning_server/uploads' #TODO: Check whether the folder exists
+
 ALLOWED_EXTENSIONS = set(['zip', 'pkl'])
 DEBUG = True
 
@@ -30,50 +31,50 @@ def mc_pilco_polopt(task_name, task_spec):
     plant_params = task_spec['plant']
     immediate_cost = task_spec['cost']['graph']
 
-    if state != 'init':
+    # if state != 'init':
         # train dynamics model. TODO block if training multiple tasks with
         # the same model
-        train_dynamics(dyn, exp, pol.angle_dims,
-                    wrap_angles=task_spec['wrap_angles'])
+    train_dynamics(dyn, exp, pol.angle_dims,
+                wrap_angles=task_spec['wrap_angles'])
 
-        # init policy optimizer if needed
-        optimizer = task_spec['optimizer']
-        if optimizer.loss_fn is None:
-            task_state[task_name] = 'compile_polopt'
-            import theano.tensor as tt
-            ex_in = OrderedDict([(k, v) for k, v in immediate_cost.keywords.items()
-                                if type(v) is tt.TensorVariable
-                                and len(v.get_parents()) == 0])
-            task_spec['extra_in'] = ex_in
-            loss, inps, updts = mc_pilco.get_loss(
-                pol, dyn, immediate_cost, n_samples=n_samples, lr=1e-3,
-                noisy_cost_input=False, noisy_policy_input=True,
-                 **ex_in)
-            inps += ex_in.values()
-            optimizer.set_objective(
-                loss, pol.get_params(symbolic=True), inps, updts, clip=1.0)
+    # init policy optimizer if needed
+    optimizer = task_spec['optimizer']
+    if optimizer.loss_fn is None:
+        # task_state[task_name] = 'compile_polopt'
+        import theano.tensor as tt
+        ex_in = OrderedDict([(k, v) for k, v in immediate_cost.keywords.items()
+                            if type(v) is tt.TensorVariable
+                            and len(v.get_parents()) == 0])
+        task_spec['extra_in'] = ex_in
+        loss, inps, updts = mc_pilco.get_loss(
+            pol, dyn, immediate_cost, n_samples=n_samples, lr=1e-3,
+            noisy_cost_input=False, noisy_policy_input=True,
+             **ex_in)
+        inps += ex_in.values()
+        optimizer.set_objective(
+            loss, pol.get_params(symbolic=True), inps, updts, clip=1.0)
 
-        # train policy # TODO block if learning a multitask policy
-        task_state[task_name] = 'update_polopt'
-        # build inputs to optimizer
-        p0 = plant_params['state0_dist']
-        H = int(np.ceil(task_spec['horizon_secs']/plant_params['dt']))
-        gamma = task_spec['discount']
-        polopt_args = [p0.mean, p0.cov, H, gamma]
-        extra_in = task_spec.get('extra_in', OrderedDict)
-        if len(extra_in) > 0:
-            polopt_args += [task_spec['cost']['params'][k] for k in extra_in]
-        # update dyn and pol (resampling)
-        def callback(*args,**kwargs):
-            if hasattr(dyn, 'update'):
-                dyn.update(n_samples)
-            if hasattr(pol, 'update'):
-                pol.update(n_samples)
-        # call minimize
-        callback()
-        optimizer.minimize(*polopt_args,
-                        return_best=task_spec['return_best'])
-        task_state[task_name] = 'ready'
+    # train policy # TODO block if learning a multitask policy
+    # task_state[task_name] = 'update_polopt'
+    # build inputs to optimizer
+    p0 = plant_params['state0_dist']
+    H = int(np.ceil(task_spec['horizon_secs']/plant_params['dt']))
+    gamma = task_spec['discount']
+    polopt_args = [p0.mean, p0.cov, H, gamma]
+    extra_in = task_spec.get('extra_in', OrderedDict)
+    if len(extra_in) > 0:
+        polopt_args += [task_spec['cost']['params'][k] for k in extra_in]
+    # update dyn and pol (resampling)
+    def callback(*args,**kwargs):
+        if hasattr(dyn, 'update'):
+            dyn.update(n_samples)
+        if hasattr(pol, 'update'):
+            pol.update(n_samples)
+    # call minimize
+    callback()
+    optimizer.minimize(*polopt_args,
+                    return_best=task_spec['return_best'])
+    # task_state[task_name] = 'ready'
 
     return pol.get_params(symbolic=False)
 
@@ -82,112 +83,81 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+@app.route("/get_task_init_status/<string:task_id>", methods=['GET'])
+def get_task_init_status(task_id):
+
+    sys.stderr.write("GET REQUEST: get_task_init_status/%s" % task_id+"\n")
+
+    response = "NOT FOUND"
+    if task_id in task_spec_dict:
+        response = "INITIALISED"
+
+    return "get_task_init_status/%s: %s" % (task_id, response)
 
 
-@app.route("/check/<task_id>", methods=['GET'])
-def check(task_id):
-    if request.method == "GET":
-        # return status of current task_id
-        ret = str( task_spec_dict.get(task_id, "NOT FOUND") )
-    else:
-        ret = ""
-    return ret
+@app.route("/init_task/<string:task_id>", methods=['POST'])
+def init_task(task_id):
 
-@app.route("/init/<task_id>", methods=['POST'])
-def init(task_id):
-    sys.stderr.write(str(request.files)+"\n")
+    sys.stderr.write("POST REQUEST: init_task/%s" % task_id+"\n")
+
+    response = "FAILED"
+
     if 'tspec_file' not in request.files:
-        sys.stderr.write('tspec_file missing\n')
+        response = "tspec_file missing"
+        sys.stderr.write(response + "\n")
 
-    f_tspec = request.files['tspec_file']
-    if f_tspec.filename == '':
-        sys.stderr.write('tspec_file not selected\n')
+    else:
+        f_tspec = request.files['tspec_file']
+        if f_tspec.filename == '':
+            response = "tspec_file not selected"
+            sys.stderr.write(response + "\n")
 
+        elif f_tspec and allowed_file(f_tspec.filename):
+            tspec_filename = secure_filename(f_tspec.filename)
+            task_spec_dict[task_id] = pickle.load(f_tspec)
 
-    if f_tspec and allowed_file(f_tspec.filename):
-        tspec_filename = secure_filename(f_tspec.filename)
-        sys.stderr.write("Received file:\t" + tspec_filename + "\t")
-        task_spec_dict[task_id] = pickle.load(f_tspec)
+            sys.stderr.write("Received file:\t" + tspec_filename + "\t")
 
-    return "DONE"
+            response = "DONE"
 
-@app.route("/optimize/<task_id>", methods=['GET','POST'])
+    return "init_task/%s: %s" % (task_id, response)
+
+@app.route("/optimize/<task_id>", methods=['POST'])
 def optimize(task_id):
-    '''
-    Serves a http [GET, POST] request
-    '''
-    if request.method == "POST":
-        ret = "POST"+str(task_id) #TODO: Use the task_id more meaningfully
 
-        if task_id not in task_spec_dict:
-            return "NOT FOUND"
+    sys.stderr.write("POST REQUEST: optimize/%s" % task_id+"\n")
 
-        if DEBUG: sys.stderr.write(str(request.files)+"\n")
+    response = "FAILED"
 
-        # check if the post request has the file part
-        print(request.files)
-        if 'dyn_file' not in request.files:
-            sys.stderr.write('dyn_file missing\n')
-            return redirect(request.url)
-        if 'exp_file' not in request.files:
-            sys.stderr.write('exp_file missing\n')
-            return redirect(request.url)
-        if 'pol_file' not in request.files:
-            sys.stderr.write('pol_file missing\n')
-            return redirect(request.url)
+    if task_id not in task_spec_dict:
+        response = "TASK NOT INITIALIZED"
 
-        f_dyn = request.files['dyn_file']
+    elif 'exp_file' not in request.files:
+        response = "exp_file missing"
+        sys.stderr.write(response + "\n")
+
+    else:
         f_exp = request.files['exp_file']
-        f_pol = request.files['pol_file']
-
-        if f_dyn.filename == '':
-            sys.stderr.write('dyn_file not selected\n')
-            return redirect(request.url)
         if f_exp.filename == '':
-            sys.stderr.write('exp_file not selected\n')
-            return redirect(request.url)
-        if f_pol.filename == '':
-            sys.stderr.write('pol_file not selected\n')
-            return redirect(request.url)
+            response = "exp_file not selected"
+            sys.stderr.write(response + '\n')
 
-        if f_dyn and allowed_file(f_dyn.filename) and\
-           f_exp and allowed_file(f_exp.filename) and\
-           f_pol and allowed_file(f_pol.filename):
-
-            dyn_filename = secure_filename(f_dyn.filename)
+        elif f_exp and allowed_file(f_exp.filename):
             exp_filename = secure_filename(f_exp.filename)
-            pol_filename = secure_filename(f_pol.filename)
+            sys.stderr.write("Recieved files:\t" + exp_filename + "\n")
 
-            sys.stderr.write("Recieved files:\t" + dyn_filename + "\t"
-                                                 + exp_filename + "\t"
-                                                 + pol_filename + "\n"
-                            )
+            exp_filepath = os.path.join("/tmp", exp_filename)
+            f_exp.save(exp_filepath)
+            task_spec_dict[task_id]['experience'].load("/tmp", exp_filename)
+            f_exp.close()
 
-            task_spec = task_spec_dict[task_id]
+            pol_params = mc_pilco_polopt(task_id, task_spec_dict[task_id])
 
-            dyn = task_spec['transition_model']
-            exp = task_spec['experience']
-            pol = task_spec['policy']
+            response = pickle.dumps(pol_params)
 
-            f_dyn.save(os.path.join(app.config['UPLOAD_FOLDER'], dyn_filename))
-            f_exp.save(os.path.join(app.config['UPLOAD_FOLDER'], exp_filename))
-            f_pol.save(os.path.join(app.config['UPLOAD_FOLDER'], pol_filename))
-
-            exp.load(os.path.join(app.config['UPLOAD_FOLDER'], exp_filename))
-            dyn.load(os.path.join(app.config['UPLOAD_FOLDER'], dyn_filename))
-            pol.load(os.path.join(app.config['UPLOAD_FOLDER'], pol_filename))
-
-            pol_params = mc_pilco_polopt(task_id, task_spec)
-
-            return pol_params
-
-            # return redirect(url_for('optimize', task_id=task_id))
-
-        sys.stderr.write("ERROR: Parse error")
-
-
-    return ret
+    return response #"optimize/%s: %s" % (task_id, response)
 
 
 if __name__=="__main__":
