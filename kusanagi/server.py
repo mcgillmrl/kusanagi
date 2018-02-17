@@ -1,23 +1,21 @@
 #!/usr/bin/env python
-import os
 import sys
-import socket
 import pickle
 import numpy as np
 from collections import OrderedDict
-from flask import Flask, request, redirect, url_for
+from flask import Flask, request
 from werkzeug.utils import secure_filename
 
 from kusanagi.ghost.algorithms import mc_pilco
 from kusanagi import utils
-from kusanagi.base import (apply_controller, train_dynamics,
-                           preprocess_angles, ExperienceDataset)
+from kusanagi.base import train_dynamics
 
 
 ALLOWED_EXTENSIONS = set(['zip', 'pkl'])
 DEBUG = True
 
 task_spec_dict = {}
+
 
 def mc_pilco_polopt(task_name, task_spec):
     '''
@@ -32,7 +30,7 @@ def mc_pilco_polopt(task_name, task_spec):
     H = int(np.ceil(task_spec['horizon_secs']/plant_params['dt']))
     n_samples = task_spec.get('n_samples', 100)
 
-    #if state != 'init':
+    # if state != 'init':
     # train dynamics model. TODO block if training multiple tasks with
     # the same model
     train_dynamics(
@@ -41,7 +39,7 @@ def mc_pilco_polopt(task_name, task_spec):
     # init policy optimizer if needed
     optimizer = task_spec['optimizer']
     if optimizer.loss_fn is None:
-        #task_state[task_name] = 'compile_polopt'
+        # task_state[task_name] = 'compile_polopt'
 
         # get policy optimizer options
         split_H = task_spec.get('split_H', 1)
@@ -67,7 +65,7 @@ def mc_pilco_polopt(task_name, task_spec):
             split_H=split_H,
             truncate_gradient=(H/split_H)-truncate_gradient,
             crn=100,
-                **ex_in)
+            **ex_in)
         inps += ex_in.values()
 
         # add loss function as objective for optimizer
@@ -76,7 +74,7 @@ def mc_pilco_polopt(task_name, task_spec):
             clip=gradient_clip, learning_rate=learning_rate)
 
     # train policy # TODO block if learning a multitask policy
-    #task_state[task_name] = 'update_polopt'
+    # task_state[task_name] = 'update_polopt'
     # build inputs to optimizer
     p0 = plant_params['state0_dist']
     gamma = task_spec['discount']
@@ -86,7 +84,7 @@ def mc_pilco_polopt(task_name, task_spec):
         polopt_args += [task_spec['cost']['params'][k] for k in extra_in]
 
     # update dyn and pol (resampling)
-    def callback(*args,**kwargs):
+    def callback(*args, **kwargs):
         if hasattr(dyn, 'update'):
             dyn.update(n_samples)
         if hasattr(pol, 'update'):
@@ -95,20 +93,23 @@ def mc_pilco_polopt(task_name, task_spec):
     callback()
     optimizer.minimize(
         *polopt_args, return_best=task_spec['return_best'])
-    #task_state[task_name] = 'ready'
+    # task_state[task_name] = 'ready'
 
     # check if task is done
-    n_polopt_iters = len([p for p in exp.policy_parameters if len(p) > 0])
-    #if n_polopt_iters >= task_spec['n_opt']:
-    #    task_state[task_name] = 'done'
+    # n_polopt_iters = len([p for p in exp.policy_parameters if len(p) > 0])
+    # if n_polopt_iters >= task_spec['n_opt']:
+    #     task_state[task_name] = 'done'
     return pol.get_params(symbolic=False)
+
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
 app = Flask(__name__)
 # app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 
 @app.route("/get_task_init_status/<string:task_id>", methods=['GET'])
 def get_task_init_status(task_id):
@@ -149,9 +150,10 @@ def init_task(task_id):
 
     return "init_task/%s: %s" % (task_id, response)
 
+
 @app.route("/optimize/<task_id>", methods=['POST'])
 def optimize(task_id):
-    utils.set_logfile("%s.log"%task_id, base_path="/tmp")
+    utils.set_logfile("%s.log" % task_id, base_path="/tmp")
     sys.stderr.write("POST REQUEST: optimize/%s" % task_id+"\n")
 
     response = "FAILED"
@@ -180,15 +182,16 @@ def optimize(task_id):
                                                  + pol_params_filename + "\n")
 
             task_spec_dict[task_id]['experience'] = pickle.loads(f_exp.read())
-            task_spec_dict[task_id]['policy'].set_params(pickle.loads(f_pol_params.read()))
+            task_spec_dict[task_id]['policy'].set_params(
+                pickle.loads(f_pol_params.read()))
             f_exp.close(), f_pol_params.close()
 
             pol_params = mc_pilco_polopt(task_id, task_spec_dict[task_id])
 
             response = pickle.dumps(pol_params)
 
-    return response #"optimize/%s: %s" % (task_id, response)
+    return response  # "optimize/%s: %s" % (task_id, response)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8008)

@@ -124,16 +124,20 @@ def rollout(x0, H, gamma0,
 
     # loop over the planning horizon
     mode = theano.compile.mode.get_mode('FAST_RUN')
-    mcosts, costs, trajectories = [], [] ,[]
-    H_ = tt.ceil(H*1.0/split_H).astype('int32') # if split_H > 1, this results in truncated BPTT
+    mcosts, costs, trajectories = [], [], []
+    # if split_H > 1, this results in truncated BPTT
+    H_ = tt.ceil(H*1.0/split_H).astype('int32')
     for i in range(1, split_H+1):
         start_idx = (i-1)*H_ + 1
         end_idx = start_idx + H_
         output = theano.scan(
-            fn=step_rollout, sequences=[z[0, start_idx:end_idx], z[1, start_idx:end_idx], z[1, -end_idx:-start_idx]],
+            fn=step_rollout, sequences=[z[0, start_idx:end_idx],
+                                        z[1, start_idx:end_idx],
+                                        z[1, -end_idx:-start_idx]],
             outputs_info=[None, None, x0, 1e-4*tt.ones_like(x0), gamma0],
             non_sequences=nseq, strict=True, allow_gc=False,
-            truncate_gradient=truncate_gradient, name="mc_pilco>rollout_scan_%d"%(i),
+            truncate_gradient=truncate_gradient,
+            name="mc_pilco>rollout_scan_%d" % i,
             mode=mode)
 
         rollout_output, rollout_updts = output
@@ -142,8 +146,8 @@ def rollout(x0, H, gamma0,
         costs.append(costs_i)
         trajectories.append(trajectories_i)
         x0 = trajectories_i[-1, :, :]
-        #x0 = theano.gradient.disconnected_grad(x0) # this causes truncated backprop
-    
+        # x0 = theano.gradient.disconnected_grad(x0)
+
     mcosts = tt.concatenate(mcosts)
     costs = tt.concatenate(costs)
     trajectories = tt.concatenate(trajectories)
