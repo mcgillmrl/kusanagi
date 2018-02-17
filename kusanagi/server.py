@@ -62,7 +62,7 @@ def mc_pilco_polopt(task_name, task_spec):
         loss, inps, updts = mc_pilco.get_loss(
             pol, dyn, immediate_cost,
             n_samples=n_samples,
-            noisy_cost_input=noisy_cost_input, 
+            noisy_cost_input=noisy_cost_input,
             noisy_policy_input=noisy_policy_input,
             split_H=split_H,
             truncate_gradient=(H/split_H)-truncate_gradient,
@@ -141,7 +141,7 @@ def init_task(task_id):
 
         elif f_tspec and allowed_file(f_tspec.filename):
             tspec_filename = secure_filename(f_tspec.filename)
-            task_spec_dict[task_id] = pickle.load(f_tspec)
+            task_spec_dict[task_id] = pickle.loads(f_tspec.read())
 
             sys.stderr.write("Received file:\t" + tspec_filename + "\t")
 
@@ -172,9 +172,10 @@ def optimize(task_id):
             exp_filename = secure_filename(f_exp.filename)
             sys.stderr.write("Recieved files:\t" + exp_filename + "\n")
 
-            exp_filepath = os.path.join("/tmp", exp_filename)
-            f_exp.save(exp_filepath)
-            task_spec_dict[task_id]['experience'].load("/tmp", exp_filename)
+            # exp_filepath = os.path.join("/tmp", exp_filename)
+            # f_exp.save(exp_filepath)
+            # task_spec_dict[task_id]['experience'].load("/tmp", exp_filename)
+            task_spec_dict[task_id]['experience'] = pickle.loads(f_exp.read())
             f_exp.close()
 
             pol_params = mc_pilco_polopt(task_id, task_spec_dict[task_id])
