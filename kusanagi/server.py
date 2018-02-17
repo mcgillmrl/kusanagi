@@ -178,7 +178,7 @@ def optimize(task_id):
 
             exp_filename = secure_filename(f_exp.filename)
             pol_params_filename = secure_filename(f_pol_params.filename)
-            sys.stderr.write("Recieved files:\t" + exp_filename + "\t"
+            sys.stderr.write("Received files:\t" + exp_filename + "\t"
                                                  + pol_params_filename + "\n")
 
             task_spec_dict[task_id]['experience'] = pickle.loads(f_exp.read())
