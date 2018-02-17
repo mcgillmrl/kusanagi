@@ -151,6 +151,7 @@ def init_task(task_id):
 
 @app.route("/optimize/<task_id>", methods=['POST'])
 def optimize(task_id):
+    utils.set_logfile("%s.log"%task_id, base_path="/tmp")
     sys.stderr.write("POST REQUEST: optimize/%s" % task_id+"\n")
 
     response = "FAILED"
@@ -162,21 +163,25 @@ def optimize(task_id):
         response = "exp_file missing"
         sys.stderr.write(response + "\n")
 
+    elif 'pol_params_file' not in request.files:
+        response = "pol_params_file missing"
+        sys.stderr.write(response + "\n")
+
     else:
         f_exp = request.files['exp_file']
-        if f_exp.filename == '':
-            response = "exp_file not selected"
-            sys.stderr.write(response + '\n')
+        f_pol_params = request.files['pol_params_file']
 
-        elif f_exp and allowed_file(f_exp.filename):
+        if f_exp and allowed_file(f_exp.filename) and \
+           f_pol_params and allowed_file(f_pol_params.filename):
+
             exp_filename = secure_filename(f_exp.filename)
-            sys.stderr.write("Recieved files:\t" + exp_filename + "\n")
+            pol_params_filename = secure_filename(f_pol_params.filename)
+            sys.stderr.write("Recieved files:\t" + exp_filename + "\t"
+                                                 + pol_params_filename + "\n")
 
-            # exp_filepath = os.path.join("/tmp", exp_filename)
-            # f_exp.save(exp_filepath)
-            # task_spec_dict[task_id]['experience'].load("/tmp", exp_filename)
             task_spec_dict[task_id]['experience'] = pickle.loads(f_exp.read())
-            f_exp.close()
+            task_spec_dict[task_id]['policy'].set_params(pickle.loads(f_pol_params.read()))
+            f_exp.close(), f_pol_params.close()
 
             pol_params = mc_pilco_polopt(task_id, task_spec_dict[task_id])
 
