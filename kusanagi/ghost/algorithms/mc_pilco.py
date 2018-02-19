@@ -215,15 +215,19 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
         utils.print_with_stamp(
             "Using common random numbers for moment matching",
             'mc_pilco.rollout')
-        # we reuse samples and resamples every 500 iterations
+        # we reuse samples and resamples every crn iterations
         # resampling is done to avoid getting stuck with bad solutions
         # when we get unlucky.
+        crn = 500 if type(crn) is not int else crn
+        utils.print_with_stamp(
+            "CRNs will be resampled every %d rollouts" % crn,
+            "mc_pilco.rollout")
         z_resampled = z
         z_init = np.random.normal(
             size=(2, 1000, n_samples, dyn.E)).astype(theano.config.floatX)
         z = theano.shared(z_init)
         updates[z] = theano.ifelse.ifelse(
-            tt.eq(n_evals % 500, 0), z_resampled, z)
+            tt.eq(n_evals % crn, 0), z_resampled, z)
         updates[n_evals] = n_evals + 1
 
         # now we will make sure that z is has the correct shape
