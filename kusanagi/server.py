@@ -153,7 +153,7 @@ def init_task(task_id):
 
 @app.route("/optimize/<task_id>", methods=['POST'])
 def optimize(task_id):
-    utils.set_logfile("%s.log" % task_id, base_path="/tmp")
+    utils.set_logfile("%s.log" % task_id, base_path="/localdata")
     sys.stderr.write("POST REQUEST: optimize/%s" % task_id+"\n")
 
     response = "FAILED"
