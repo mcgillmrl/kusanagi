@@ -127,7 +127,8 @@ class RandPolicy:
         if self.random_walk:
             new_u = ((2*np.random.random(self.maxU.size)-1.0))
             new_u = new_u.reshape(self.maxU.shape)*self.maxU
-            ret = self.last_u + 0.2*new_u if t is None or t != 0 else new_u
+            delta_u = new_u - self.last_u
+            ret = self.last_u + 0.3*delta_u if t is None or t != 0 else new_u
             ret = np.min((ret.flatten(), self.maxU.flatten()), axis=0)
             ret = np.max((ret.flatten(), -self.maxU.flatten()), axis=0)
             ret = ret.reshape(self.maxU.shape)
