@@ -122,13 +122,15 @@ class RandPolicy:
         self.maxU = np.array(maxU)
         # self.last_u = np.zeros_like(np.array(maxU))
         self.random_walk = random_walk
+        self.last_u = None
 
     def evaluate(self, m, s=None, t=None, symbolic=False):
         if self.random_walk:
             new_u = ((2*np.random.random(self.maxU.size)-1.0))
             new_u = new_u.reshape(self.maxU.shape)*self.maxU
-            delta_u = new_u - self.last_u
-            ret = self.last_u + 0.3*delta_u if t is None or t != 0 else new_u
+            ret = (self.last_u + 0.2*(new_u - self.last_u)
+                   if self.last_u is not None
+                   else new_u)
             ret = np.min((ret.flatten(), self.maxU.flatten()), axis=0)
             ret = np.max((ret.flatten(), -self.maxU.flatten()), axis=0)
             ret = ret.reshape(self.maxU.shape)
