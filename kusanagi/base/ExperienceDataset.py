@@ -37,7 +37,7 @@ class ExperienceDataset(Loadable):
     def load(self, output_folder=None, output_filename=None):
         ''' Loads the state from file, and initializes additional variables'''
         # load state
-        super(ExperienceDataset, self).load(output_folder, output_filename)
+        ret = super(ExperienceDataset, self).load(output_folder, output_filename)
 
         # if the policy parameters were saved as shared variables
         for i in range(len(self.policy_parameters)):
@@ -46,6 +46,7 @@ class ExperienceDataset(Loadable):
                 pij = self.policy_parameters[i][j]
                 if isinstance(pij, theano.tensor.sharedvar.SharedVariable):
                     self.policy_parameters[i][j] = pij.get_value()
+        return ret
 
     def add_sample(self, x_t=None, u_t=None, c_t=None, info=None, t=None):
         '''

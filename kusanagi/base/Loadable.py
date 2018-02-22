@@ -105,6 +105,8 @@ class Loadable(object):
         except IOError as err:
             utils.print_with_stamp('Unable to load state from %s'%(path), self.name)
             print(err)
+            return False
+        return True
 
     def save(self, output_folder=None, output_filename=None):
         '''
