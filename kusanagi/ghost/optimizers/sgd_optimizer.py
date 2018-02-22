@@ -181,6 +181,9 @@ class SGDOptimizer(object):
             for x, y in b_iter:
                 start_time = time.time()
 
+                # add small amount of noise for smoothing
+                x += 1e-4*(x.max()-x.min())*np.random.randn(*x.shape)
+
                 # mini batch update
                 self.shared_inpts[0].set_value(x)
                 self.shared_inpts[1].set_value(y)
