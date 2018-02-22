@@ -60,7 +60,7 @@ def rollout(x0, H, gamma0,
     utils.print_with_stamp(msg % opts, 'mc_pilco.rollout')
 
     # define internal scan computations
-    def step_rollout(z1, z2, z2_prev, x, sn, gamma, *args):
+    def step_rollout(z1, z2, z2_prev, cumm_cost, x, sn, gamma, *args):
         '''
             Single step of rollout.
         '''
@@ -68,7 +68,7 @@ def rollout(x0, H, gamma0,
         n = n.astype(theano.config.floatX)
 
         # noisy state measruement for control
-        xn = x + z2_prev*(0.5*sn) if noisy_policy_input else x
+        xn = x + z2_prev*(0.25*sn) if noisy_policy_input else x
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
@@ -112,7 +112,10 @@ def rollout(x0, H, gamma0,
             #  get cost of applying action:
             mc_next, c_next = eval_cost(xn_next)
 
-        return [gamma*mc_next, gamma*c_next, x_next, sn_next, gamma*gamma0]
+        c_next = gamma*c_next
+        mc_next = gamma*mc_next
+        cumm_cost += mc_next
+        return [c_next, cumm_cost, x_next, sn_next, gamma*gamma0]
 
     # these are the shared variables that will be used in the scan graph.
     # we need to pass them as non_sequences here
@@ -124,7 +127,8 @@ def rollout(x0, H, gamma0,
 
     # loop over the planning horizon
     mode = theano.compile.mode.get_mode('FAST_RUN')
-    mcosts, costs, trajectories = [], [], []
+    accum_cost = tt.constant(0, dtype=x0.dtype)
+    costs, trajectories = [], []
     # if split_H > 1, this results in truncated BPTT
     H_ = tt.ceil(H*1.0/split_H).astype('int32')
     for i in range(1, split_H+1):
@@ -134,21 +138,21 @@ def rollout(x0, H, gamma0,
             fn=step_rollout, sequences=[z[0, start_idx:end_idx],
                                         z[1, start_idx:end_idx],
                                         z[1, -end_idx:-start_idx]],
-            outputs_info=[None, None, x0, 1e-4*tt.ones_like(x0), gamma0],
+            outputs_info=[None, accum_cost, x0,
+                          1e-4*tt.ones_like(x0), gamma0],
             non_sequences=nseq, strict=True, allow_gc=False,
             truncate_gradient=truncate_gradient,
             name="mc_pilco>rollout_scan_%d" % i,
             mode=mode)
 
         rollout_output, rollout_updts = output
-        mcosts_i, costs_i, trajectories_i = rollout_output[:3]
-        mcosts.append(mcosts_i)
+        costs_i, accum_cost, trajectories_i = rollout_output[:3]
+        accum_cost = accum_cost[-1]
         costs.append(costs_i)
         trajectories.append(trajectories_i)
         x0 = trajectories_i[-1, :, :]
         # x0 = theano.gradient.disconnected_grad(x0)
 
-    mcosts = tt.concatenate(mcosts)
     costs = tt.concatenate(costs)
     trajectories = tt.concatenate(trajectories)
 
@@ -159,7 +163,7 @@ def rollout(x0, H, gamma0,
     # first axis; batch, second axis: time step
     trajectories = trajectories.transpose(1, 0, 2)
 
-    return [mcosts, costs, trajectories], rollout_updts
+    return [accum_cost, costs, trajectories], rollout_updts
 
 
 def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
@@ -256,11 +260,12 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
                             noisy_cost_input=noisy_cost_input,
                             extra_shared=extra_shared, **kwargs)
 
-    mean_costs, costs, trajectories = r_outs
+    accum_cost, costs, trajectories = r_outs
 
     # loss is E_{dyns}((1/H)*sum c(x_t))
     #          = (1/H)*sum E_{x_t}(c(x_t))
-    loss = mean_costs.mean() if average else mean_costs.sum()
+    #loss = mean_costs.mean() if average else mean_costs.sum()
+    loss = accum_cost/H if average else accum_cost
 
     inps = [mx0, Sx0, H, gamma]
     updates += updts
