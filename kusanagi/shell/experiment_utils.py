@@ -10,7 +10,7 @@ from kusanagi.shell import cartpole, double_cartpole
 from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 
 
-def plot_rollout(rollout_fn, exp, *args, **kwargs):
+def plot_rollout(rollout_fn, exp, n_exp=0, *args, **kwargs):
     fig = kwargs.get('fig')
     axarr = kwargs.get('axarr')
 
@@ -45,10 +45,11 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
                 np.arange(T-1), m_states[:-1, d],
                 1.96*np.sqrt(s_states[:-1, d, d]), color='steelblue', alpha=0.3)
 
-        # for i in range(len(exp.states)):
-        #    axarr[d].plot(
-        #         np.arange(T-1), exp_states[i,1:,d],
-        #         color='orange', alpha=0.3)
+        total_exp = len(exp_states)
+        for i in range(n_exp):
+            axarr[d].plot(
+                 np.arange(T-1), exp_states[total_exp - n_exp + i][1:T, d],
+                 color='orange', alpha=0.3)
         # plot experience
         axarr[d].plot(
             np.arange(T-1), np.array(exp.states[-1])[1:T, d], color='red')
