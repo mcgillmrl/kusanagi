@@ -202,9 +202,11 @@ class BNN(BaseRegressor):
                                         Y_dataset.astype(floatX))
 
         # extra operations when setting the dataset (specific to this class)
-        self.update_dataset_statistics(X_dataset, Y_dataset)
+        self.update_dataset_statistics(self.X.get_value(), self.Y.get_value())
 
     def update_dataset_statistics(self, X_dataset, Y_dataset):
+        # add small amount of noise for smoothing
+        X_dataset += 1e-6*np.random.randn(*X_dataset.shape)
         Xm = X_dataset.mean(0).astype(floatX)
         Xc = np.cov(X_dataset-Xm, rowvar=False, ddof=1).astype(floatX)
         iXs = np.linalg.cholesky(
