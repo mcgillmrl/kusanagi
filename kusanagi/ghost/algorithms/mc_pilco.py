@@ -68,7 +68,7 @@ def rollout(x0, H, gamma0,
         n = n.astype(theano.config.floatX)
 
         # noisy state measruement for control
-        xn = x + z2_prev*(0.25*sn) if noisy_policy_input else x
+        xn = x + z2_prev*(0.5*sn) if noisy_policy_input else x
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
