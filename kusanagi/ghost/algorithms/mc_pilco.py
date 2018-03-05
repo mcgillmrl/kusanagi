@@ -23,9 +23,9 @@ def propagate_particles(latent_x, measured_x, pol, dyn, angle_dims=[],
     xa2 = utils.gTrig(measured_x, angle_dims)
 
     # compute controls for each sample
-    u = pol.evaluate(xa2, symbolic=True,
-                     iid_per_eval=iid_per_eval,
-                     return_samples=True)
+    u, sn_u = pol.evaluate(xa2, symbolic=True,
+                           iid_per_eval=iid_per_eval,
+                           return_samples=True)
 
     # build state-control vectors
     xu = tt.concatenate([xa1, u], axis=1)

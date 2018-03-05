@@ -129,7 +129,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
             name=pol.name)
-        pol.network = pol.build_network(pol_spec)
+        pol.build_network(pol_spec)
 
     elif experiment_id == 3:
         # mc PILCO with RBF controller and dropout mlp dynamics
@@ -150,7 +150,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
-        dyn.network = dyn.build_network(dyn_spec)
+        dyn.build_network(dyn_spec)
 
     elif experiment_id == 4:
         # mc PILCO with NN controller and dropout mlp dynamics
@@ -171,7 +171,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
-        dyn.network = dyn.build_network(dyn_spec)
+        dyn.build_network(dyn_spec)
 
         # init policy
         pol = control.NNPolicy(p0.mean.size, **params['policy'])
@@ -183,7 +183,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
             name=pol.name)
-        pol.network = pol.build_network(pol_spec)
+        pol.build_network(pol_spec)
 
     elif experiment_id == 5:
         # mc PILCO with RBF controller and log normal dropout dynamics
@@ -206,7 +206,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
-        dyn.network = dyn.build_network(dyn_spec)
+        dyn.build_network(dyn_spec)
 
     elif experiment_id == 6:
         # mc PILCO with NN controller and dropout mlp dynamics
@@ -227,7 +227,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
-        dyn.network = dyn.build_network(dyn_spec)
+        dyn.build_network(dyn_spec)
 
         # init policy
         pol = control.NNPolicy(p0.mean.size, **params['policy'])
@@ -239,7 +239,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             output_nonlinearity=pol.sat_func,
             name=pol.name)
-        pol.network = pol.build_network(pol_spec)
+        pol.build_network(pol_spec)
 
     elif experiment_id == 7:
         # mc PILCO with dropout controller and dropout mlp dynamics
@@ -260,7 +260,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             name=dyn.name)
-        dyn.network = dyn.build_network(dyn_spec)
+        dyn.build_network(dyn_spec)
 
         # init policy
         pol = control.NNPolicy(p0.mean.size, **params['policy'])
@@ -274,7 +274,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
-        pol.network = pol.build_network(pol_spec)
+        pol.build_network(pol_spec)
 
     elif experiment_id == 8:
         # mc PILCO with dropout controller and log-normal dropout dynamics
@@ -295,7 +295,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             name=dyn.name)
-        dyn.network = dyn.build_network(dyn_spec)
+        dyn.build_network(dyn_spec)
 
         # init policy
         pol = control.NNPolicy(p0.mean.size, **params['policy'])
@@ -309,7 +309,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
-        pol.network = pol.build_network(pol_spec)
+        pol.build_network(pol_spec)
 
     elif experiment_id == 9:
         # mc PILCO with dropout controller and log-normal dropout dynamics
@@ -330,7 +330,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseConcreteDropoutLayer,
             name=dyn.name)
-        dyn.network = dyn.build_network(dyn_spec)
+        dyn.build_network(dyn_spec)
 
         # init policy
         pol = control.NNPolicy(p0.mean.size, **params['policy'])
@@ -344,7 +344,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
-        pol.network = pol.build_network(pol_spec)
+        pol.build_network(pol_spec)
 
     return scenario_params, pol, dyn, learner_setup
 

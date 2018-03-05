@@ -154,10 +154,10 @@ class BNN(BaseRegressor):
         if self.network_params is None:
             self.network_params = {}
 
-        if self.network_spec is not None:
-            self.network = self.build_network(self.network_spec,
-                                              params=self.network_params,
-                                              name=self.name)
+        if self.network_spec is not None:            
+            self.build_network(self.network_spec,
+                               params=self.network_params,
+                               name=self.name)
         if hasattr(self, 'unconstrained_sn'):
             eps = np.finfo(np.__dict__[floatX]).eps
             self.sn = tt.nnet.softplus(self.unconstrained_sn) + eps
@@ -229,7 +229,7 @@ class BNN(BaseRegressor):
             self.Ys.set_value(Ys)
 
     def build_network(self, network_spec=None, input_shape=None,
-                      params={}, return_net=True, name=None):
+                      params={}, return_net=False, name=None):
         ''' Builds a network according to the specification in the
         network_spec argument. network_spec should be a list containing
         tuples where the first element is a class in lasagne.layers and the
@@ -295,6 +295,13 @@ class BNN(BaseRegressor):
         if return_net:
             return network
         else:
+            if self.network:
+                # remove old network params from this class params
+                params = lasagne.layers.get_all_params(self.network, trainable=True)
+                self.remove_params([p.name for p in params if p.name is not None])
+            # add network parameters to this class params
+            params = lasagne.layers.get_all_params(network, trainable=True)
+            self.set_params(dict([(p.name, p) for p in params]))
             self.network = network
 
     def get_loss(self):
@@ -304,9 +311,9 @@ class BNN(BaseRegressor):
             params = self.network_params\
                      if self.network_params is not None\
                      else {}
-            self.network = self.build_network(self.network_spec,
-                                              params=params,
-                                              name=self.name)
+            self.build_network(self.network_spec,
+                               params=params,
+                               name=self.name)
 
         utils.print_with_stamp('Initialising loss function', self.name)
 
@@ -382,9 +389,9 @@ class BNN(BaseRegressor):
             params = self.network_params\
                      if self.network_params is not None\
                      else {}
-            self.network = self.build_network(self.network_spec,
-                                              params=params,
-                                              name=self.name)
+            self.build_network(self.network_spec,
+                               params=params,
+                               name=self.name)
         if Sx is not None:
             # generate random samples from input (assuming gaussian
             # distributed inputs)
@@ -400,7 +407,6 @@ class BNN(BaseRegressor):
         if (whiten_inputs and hasattr(self, 'Xm') and self.Xm is not None):
             # standardize inputs
             x = (x - self.Xm).dot(self.iXs)
-
         # unless we set the shared_axes parameter on the dropout layers,
         # the noise samples should be different per input sample
         ret = lasagne.layers.get_output(self.network, x,
@@ -412,18 +418,15 @@ class BNN(BaseRegressor):
               else tt.tile(self.sn, (y.shape[0], 1)))
         # fudge factor
         sn += 1e-6
-
         if whiten_outputs and hasattr(self, 'Ym') and self.Ym is not None:
             # scale and center outputs
             y = y.dot(self.Ys) + self.Ym
             # rescale variances
             # sn = sn*tt.diag(self.Ys)
-
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
             # nothing else to do!
             return y, sn
-
         n = tt.cast(y.shape[0], dtype=theano.config.floatX)
         # empirical mean
         M = y.mean(axis=0)
@@ -431,13 +434,11 @@ class BNN(BaseRegressor):
         S = y.T.dot(y)/n - tt.outer(M, M)
         # noise
         S += tt.diag((sn**2).mean(axis=0))
-
         # empirical input output covariance
         if Sx is not None:
             C = x.T.dot(y)/n - tt.outer(mx, M)
         else:
             C = tt.zeros((self.D, self.E))
-
         return [M, S, C]
 
     def update(self, n_samples=None):

@@ -98,6 +98,10 @@ class BaseRegressor(Loadable):
         if as_dict:
             params = dict(list(zip(self.param_names, params)))
         return params
+    
+    def remove_params(names):
+        for pname in names:
+            self.__dict__.pop(pname)
 
     def set_dataset(self, X_dataset, Y_dataset, **kwargs):
         # ensure we don't change the number of input and output dimensions

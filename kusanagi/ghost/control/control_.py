@@ -16,22 +16,27 @@ floatX = theano.config.floatX
 # GP based controller
 class RBFPolicy(RBFGP):
     def __init__(self, idims=None, odims=None, sat_func=gSat, state0_dist=None,
-                 maxU=[10], n_inducing=10, angle_dims=[], name='RBFPolicy',
+                 maxU=[10], minU=None, n_inducing=10, angle_dims=[], name='RBFPolicy',
                  filename=None, max_evals=750, *kwargs):
         self.maxU = np.array(maxU)
+        self.minU = np.array(minU) if minU is not None else -self.maxU
         self.n_inducing = n_inducing
         self.angle_dims = angle_dims
         self.name = name
         self.state0_dist = state0_dist
 
-        if sat_func:
+        if callable(sat_func):
             # set the model to be a RBF with saturated outputs
-            sat_func = partial(sat_func, e=maxU)
+            maxU = self.maxU - self.minU
+            sat_func = partial(sat_func, e=0.5*maxU)
+            def sfunc(*args, **kwargs):
+                return sat_func(*args, **kwargs) + 0.5*maxU + self.minU
+            self.sat_func = sfunc
 
         if filename is not None:
             # try loading from file
             super(RBFPolicy, self).__init__(
-                idims=0, odims=0, sat_func=sat_func, max_evals=max_evals,
+                idims=0, odims=0, sat_func=self.sat_func, max_evals=max_evals,
                 name=self.name, filename=filename)
             # self.load()
         else:
@@ -41,7 +46,7 @@ class RBFPolicy(RBFGP):
             idims = self.state0_dist.mean.size
             odims = len(self.maxU)
             super(RBFPolicy, self).__init__(
-                idims=idims, odims=odims, sat_func=sat_func,
+                idims=idims, odims=odims, sat_func=self.sat_func,
                 max_evals=max_evals, name=self.name)
             self.init_params()
 
@@ -118,13 +123,16 @@ class RBFPolicy(RBFGP):
 
 # random controller
 class RandPolicy:
-    def __init__(self, maxU=[10], random_walk=False):
+    def __init__(self, maxU=[10], minU=None, random_walk=False):
         self.maxU = np.array(maxU)
+        self.minU = np.array(minU) if minU is not None else -self.maxU
         # self.last_u = np.zeros_like(np.array(maxU))
         self.random_walk = random_walk
         self.last_u = None
 
     def evaluate(self, m, s=None, t=None, symbolic=False):
+        scale = self.maxU - self.minU
+        bias = self.minU
         if self.random_walk:
             new_u = ((2*np.random.random(self.maxU.size)-1.0))
             new_u = new_u.reshape(self.maxU.shape)*self.maxU

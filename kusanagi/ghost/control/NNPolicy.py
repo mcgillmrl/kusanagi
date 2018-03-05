@@ -9,15 +9,23 @@ from functools import partial
 
 # NN controller
 class NNPolicy(BNN):
-    def __init__(self, input_dims, maxU=[10], angle_dims=[], sat_func=sat,
+    def __init__(self, input_dims, maxU=[10], minU=None, angle_dims=[], sat_func=sat,
                  name='NNPolicy', filename=None, **kwargs):
         self.maxU = np.array(maxU, dtype=theano.config.floatX)
+        self.minU = (np.array(minU, dtype=theano.config.floatX)
+                     if minU is not None else -self.maxU)
         self.angle_dims = angle_dims
         self.D = input_dims + len(self.angle_dims)
         self.E = len(maxU)
 
-        if sat_func:
-            self.sat_func = partial(sat_func, e=self.maxU)
+        if callable(sat_func):
+            # set the model to be a RBF with saturated outputs
+            maxU = self.maxU - self.minU
+            sat_func = partial(sat_func, e=0.5*maxU)
+            def sfunc(*args, **kwargs):
+                return sat_func(*args, **kwargs) + 0.5*maxU + self.minU
+            self.sat_func = sfunc
+
         network_spec = kwargs.pop('network_spec', None)
         if type(network_spec) is dict:
             network_spec['output_nonlinearity'] = self.sat_func
@@ -25,19 +33,7 @@ class NNPolicy(BNN):
 
         super(NNPolicy, self).__init__(self.D, self.E, name=name,
                                        filename=filename, **kwargs)
-
-    def get_params(self, symbolic=True):
-        if symbolic:
-            return lasagne.layers.get_all_params(self.network,
-                                                 trainable=True)
-        else:
-            return lasagne.layers.get_all_param_values(self.network,
-                                                       trainable=True)
-
-    def set_params(self, params):
-        lasagne.layers.set_all_param_values(self.network, params,
-                                            trainable=True)
-
+   
     def predict_symbolic(self, mx, Sx=None, **kwargs):
         if self.network_spec is None:
             self.network_spec = dropout_mlp(
@@ -54,21 +50,11 @@ class NNPolicy(BNN):
             params = self.network_params\
                      if self.network_params is not None\
                      else {}
+            self.build_network(self.network_spec,
+                               params=params,
+                               name=self.name)
 
-            self.network = self.build_network(self.network_spec,
-                                              params=params,
-                                              name=self.name)
-
-        ret = super(NNPolicy, self).predict_symbolic(mx, Sx, **kwargs)
-
-        if Sx is None:
-            if isinstance(ret, list) or isinstance(ret, tuple):
-                ret = ret[0]
-            M = ret
-            return M
-        else:
-            M, S, V = ret
-            return M, S, V
+        return super(NNPolicy, self).predict_symbolic(mx, Sx, **kwargs)
 
     def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
         # by default, sample internal params (e.g. dropout masks)
