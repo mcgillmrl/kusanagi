@@ -99,7 +99,7 @@ class BaseRegressor(Loadable):
             params = dict(list(zip(self.param_names, params)))
         return params
     
-    def remove_params(names):
+    def remove_params(self, names):
         for pname in names:
             self.__dict__.pop(pname)
 
