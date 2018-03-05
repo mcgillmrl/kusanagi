@@ -3,6 +3,8 @@ import theano.tensor as tt
 import numpy as np
 import theano
 
+def sfunc(bias, sat_func, *args, **kwargs):
+    return sat_func(*args, **kwargs) + bias
 
 def gSin(m, v, i=None, e=None):
     D = m.shape[0]

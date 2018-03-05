@@ -5,7 +5,7 @@ import theano.tensor as tt
 
 from kusanagi import utils
 from kusanagi.ghost.regression import RBFGP, SSGP_UI
-from kusanagi.ghost.control.saturation import gSat
+from kusanagi.ghost.control.saturation import sfunc, gSat
 
 from kusanagi.base.Loadable import Loadable
 from functools import partial
@@ -26,12 +26,11 @@ class RBFPolicy(RBFGP):
         self.state0_dist = state0_dist
 
         if callable(sat_func):
-            # set the model to be a RBF with saturated outputs
-            maxU = self.maxU - self.minU
-            sat_func = partial(sat_func, e=0.5*maxU)
-            def sfunc(*args, **kwargs):
-                return sat_func(*args, **kwargs) + 0.5*maxU + self.minU
-            self.sat_func = sfunc
+            scale = 0.5*(self.maxU - self.minU)
+            bias = self.minU
+            sat_func = partial(sat_func, e=scale)
+            self.sat_func = partial(
+                sfunc, scale + bias, sat_func)
 
         if filename is not None:
             # try loading from file

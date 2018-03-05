@@ -3,7 +3,7 @@ import numpy as np
 import theano
 
 from kusanagi.ghost.regression import BNN, mlp, dropout_mlp, layers
-from kusanagi.ghost.control.saturation import tanhSat as sat
+from kusanagi.ghost.control.saturation import sfunc, tanhSat as sat
 from functools import partial
 
 
@@ -19,12 +19,11 @@ class NNPolicy(BNN):
         self.E = len(maxU)
 
         if callable(sat_func):
-            # set the model to be a RBF with saturated outputs
-            maxU = self.maxU - self.minU
-            sat_func = partial(sat_func, e=0.5*maxU)
-            def sfunc(*args, **kwargs):
-                return sat_func(*args, **kwargs) + 0.5*maxU + self.minU
-            self.sat_func = sfunc
+            scale = 0.5*(self.maxU - self.minU)
+            bias = self.minU
+            sat_func = partial(sat_func, e=scale)
+            self.sat_func = partial(
+                sfunc, scale + bias, sat_func)
 
         network_spec = kwargs.pop('network_spec', None)
         if type(network_spec) is dict:
