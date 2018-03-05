@@ -134,17 +134,17 @@ class RandPolicy:
         scale = self.maxU - self.minU
         bias = self.minU
         if self.random_walk:
-            new_u = ((2*np.random.random(self.maxU.size)-1.0))
-            new_u = new_u.reshape(self.maxU.shape)*self.maxU
+            new_u = np.random.random(scale.size)
+            new_u = new_u.reshape(scale.shape)*self.scale + bias
             r = np.random.binomial(1, 0.3)*0.75
             ret = (new_u if self.last_u is None or t==0
                    else self.last_u + r*(new_u - self.last_u))
             ret = np.min((ret.flatten(), self.maxU.flatten()), axis=0)
-            ret = np.max((ret.flatten(), -self.maxU.flatten()), axis=0)
+            ret = np.max((ret.flatten(), self.minU.flatten()), axis=0)
             ret = ret.reshape(self.maxU.shape)
         else:
-            ret = ((2*np.random.random(self.maxU.size)-1.0))
-            ret = ret.reshape(self.maxU.shape)*self.maxU
+            ret = np.random.random(scale.size)
+            ret = new_u.reshape(scale.shape)*self.scale + bias
 
         self.last_u = ret
         U = len(self.maxU)
