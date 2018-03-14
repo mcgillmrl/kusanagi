@@ -46,7 +46,7 @@ def rollout(x0, H, gamma0,
             z=None, mm_state=True, mm_cost=True,
             noisy_policy_input=True, noisy_cost_input=True,
             truncate_gradient=-1, extra_shared=[],
-            split_H=2, **kwargs):
+            split_H=1, **kwargs):
     ''' Given some initial state particles x0, and a prediction horizon H
     (number of timesteps), returns a set of trajectories sampled from the
     dynamics model and the discounted costs for each step in the

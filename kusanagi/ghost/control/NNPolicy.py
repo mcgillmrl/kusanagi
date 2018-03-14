@@ -18,17 +18,13 @@ class NNPolicy(BNN):
         self.D = input_dims + len(self.angle_dims)
         self.E = len(maxU)
 
+        self.sat_func = None
         if callable(sat_func):
             scale = 0.5*(self.maxU - self.minU)
             bias = self.minU
             sat_func = partial(sat_func, e=scale)
             self.sat_func = partial(
                 sfunc, scale + bias, sat_func)
-
-        network_spec = kwargs.pop('network_spec', None)
-        if type(network_spec) is dict:
-            network_spec['output_nonlinearity'] = self.sat_func
-        kwargs['network_spec'] = network_spec
 
         super(NNPolicy, self).__init__(self.D, self.E, name=name,
                                        filename=filename, **kwargs)
@@ -41,7 +37,7 @@ class NNPolicy(BNN):
                 hidden_dims=[50]*2,
                 p=0.1, p_input=0.0,
                 nonlinearities=lasagne.nonlinearities.rectify,
-                output_nonlinearity=self.sat_func,
+                output_nonlinearity=lasagne.nonlinearities.linear,
                 dropout_class=layers.DenseDropoutLayer,
                 name=self.name)
 
@@ -52,15 +48,38 @@ class NNPolicy(BNN):
             self.build_network(self.network_spec,
                                params=params,
                                name=self.name)
+        # we are going to apply the saturation function
+        # after whitening the outputs
+        return_samples = kwargs.get('return_samples', True)
+        kwargs['return_samples'] = True
+        y, sn = super(NNPolicy, self).predict_symbolic(mx, Sx, **kwargs)
+        if callable(self.sat_func):
+            y = self.sat_func(y)
 
-        return super(NNPolicy, self).predict_symbolic(mx, Sx, **kwargs)
+        if return_samples:
+            return y, sn
+        else:
+            n = tt.cast(y.shape[0], dtype=theano.config.floatX)
+            # empirical mean
+            M = y.mean(axis=0)
+            # empirical covariance
+            S = y.T.dot(y)/n - tt.outer(M, M)
+            # noise
+            S += tt.diag((sn**2).mean(axis=0))
+            # empirical input output covariance
+            if Sx is not None:
+                C = x.T.dot(y)/n - tt.outer(mx, M)
+            else:
+                C = tt.zeros((self.D, self.E))
+            return [M, S, C]
+
 
     def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
         # by default, sample internal params (e.g. dropout masks)
         # at every evaluation
         kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
-        kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', False)
-        kwargs['whiten_outputs'] = kwargs.get('whiten_outputs', False)
+        kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', True)
+        kwargs['whiten_outputs'] = kwargs.get('whiten_outputs', True)
         if s is None:
             kwargs['return_samples'] = kwargs.get('return_samples', True)
         kwargs['deterministic'] = kwargs.get('deterministic', False)

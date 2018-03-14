@@ -427,19 +427,20 @@ class BNN(BaseRegressor):
         if return_samples:
             # nothing else to do!
             return y, sn
-        n = tt.cast(y.shape[0], dtype=theano.config.floatX)
-        # empirical mean
-        M = y.mean(axis=0)
-        # empirical covariance
-        S = y.T.dot(y)/n - tt.outer(M, M)
-        # noise
-        S += tt.diag((sn**2).mean(axis=0))
-        # empirical input output covariance
-        if Sx is not None:
-            C = x.T.dot(y)/n - tt.outer(mx, M)
         else:
-            C = tt.zeros((self.D, self.E))
-        return [M, S, C]
+            n = tt.cast(y.shape[0], dtype=theano.config.floatX)
+            # empirical mean
+            M = y.mean(axis=0)
+            # empirical covariance
+            S = y.T.dot(y)/n - tt.outer(M, M)
+            # noise
+            S += tt.diag((sn**2).mean(axis=0))
+            # empirical input output covariance
+            if Sx is not None:
+                C = x.T.dot(y)/n - tt.outer(mx, M)
+            else:
+                C = tt.zeros((self.D, self.E))
+            return [M, S, C]
 
     def update(self, n_samples=None):
         ''' Updates the dropout masks'''
