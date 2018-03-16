@@ -340,7 +340,7 @@ if __name__ == '__main__':
         name = env.name+'_'+str(e_id)
 
     output_folder = os.path.join(odir, name)
-    print output_folder
+
     try:
         os.makedirs(output_folder)
     except:
