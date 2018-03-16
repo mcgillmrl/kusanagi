@@ -1,6 +1,6 @@
 '''
 Example of how to use the library for learning using the PILCO learner
-on the double_cartpole task
+on the double cartpole task
 '''
 # pylint: disable=C0103
 import argparse
@@ -16,7 +16,7 @@ from kusanagi import utils
 from kusanagi.ghost import regression, control
 from kusanagi.shell import experiment_utils, double_cartpole
 
-# np.random.seed(1337)
+# np.random.seed(1)
 np.set_printoptions(linewidth=500)
 
 
@@ -71,7 +71,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
     crn = eval_str_arg(crn)
     crn_dropout = eval_str_arg(crn_dropout)
 
-    scenario_params = experiment1_params(n_rnd, n_opt)
+    scenario_params = experiment1_params(n_rnd, n_opt, **kwargs)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
     # params for the dynamics model
@@ -109,213 +109,163 @@ def get_scenario(experiment_id, *args, **kwargs):
     if experiment_id == 1:
         # PILCO with rbf controller
         scenario_params = experiment1_params(*args, **kwargs)
-        learner_setup = experiment_utils.pilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_pilco_experiment
         params = scenario_params[0]
-
         pol = control.RBFPolicy(**params['policy'])
 
     elif experiment_id == 2:
         # PILCO with nn controller 1
         scenario_params = experiment1_params(*args, **kwargs)
-        learner_setup = experiment_utils.pilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_pilco_experiment
         params = scenario_params[0]
-        p0 = params['state0_dist']
 
-        pol = control.NNPolicy(p0.mean.size, **params['policy'])
-        pol_spec = regression.mlp(
-            input_dims=pol.D,
-            output_dims=pol.E,
+        pol_spec = dict(
             hidden_dims=[50]*4,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            output_nonlinearity=pol.sat_func,
-            name=pol.name)
-        pol.build_network(pol_spec)
+            build_fn=regression.mlp)
+        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 3:
         # mc PILCO with RBF controller and dropout mlp dynamics
         scenario_params = experiment2_params(*args, **kwargs)
-        learner_setup = experiment_utils.mcpilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
         pol = control.RBFPolicy(**params['policy'])
 
         # init dyn to use dropout
-        dyn = regression.BNN(**params['dynamics_model'])
-        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
-        dyn_spec = regression.dropout_mlp(
-            input_dims=dyn.D,
-            output_dims=odims,
+        dyn_spec = dict(
             hidden_dims=[200]*4,
-            p=0.1, p_input=0.0,
+            p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            dropout_class=regression.layers.DenseDropoutLayer,
-            name=dyn.name)
-        dyn.build_network(dyn_spec)
+            dropout_class=regression.layers.DenseLogNormalDropoutLayer,
+            build_fn=regression.dropout_mlp)
+        dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
     elif experiment_id == 4:
         # mc PILCO with NN controller and dropout mlp dynamics
         scenario_params = experiment2_params(*args, **kwargs)
-        learner_setup = experiment_utils.mcpilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
-        p0 = params['state0_dist']
 
         # init dyn to use dropout
-        dyn = regression.BNN(**params['dynamics_model'])
-        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
-        dyn_spec = regression.dropout_mlp(
-            input_dims=dyn.D,
-            output_dims=odims,
+        dyn_spec = dict(
             hidden_dims=[200]*4,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            dropout_class=regression.layers.DenseDropoutLayer,
-            name=dyn.name)
-        dyn.build_network(dyn_spec)
+            dropout_class=regression.layers.DenseLogNormalDropoutLayer,
+            build_fn=regression.mlp)
+        dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
         # init policy
-        pol = control.NNPolicy(p0.mean.size, **params['policy'])
-        pol_spec = regression.mlp(
-            input_dims=pol.D,
-            output_dims=pol.E,
+        pol_spec = dict(
             hidden_dims=[50]*4,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            output_nonlinearity=pol.sat_func,
-            name=pol.name)
-        pol.build_network(pol_spec)
+            build_fn=regression.mlp)
+        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 5:
-        # mc PILCO with RBF controller and dropout mlp dynamics
+        # mc PILCO with RBF controller and log normal dropout dynamics
         scenario_params = experiment2_params(*args, **kwargs)
-        learner_setup = experiment_utils.mcpilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
         pol = control.RBFPolicy(**params['policy'])
 
         # init dyn to use dropout
-        dyn = regression.BNN(**params['dynamics_model'])
-        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
-        # for the log normal dropout layers, the dropout probabilities 
+        # for the log normal dropout layers, the dropout probabilities
         # are dummy variables to enable dropout (not actual dropout probs)
-        dyn_spec = regression.dropout_mlp(
-            input_dims=dyn.D,
-            output_dims=odims,
+        dyn_spec = dict(
             hidden_dims=[200]*4,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
-            name=dyn.name)
-        dyn.build_network(dyn_spec)
+            build_fn=regression.dropout_mlp)
+        dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
     elif experiment_id == 6:
         # mc PILCO with NN controller and dropout mlp dynamics
         scenario_params = experiment2_params(*args, **kwargs)
-        learner_setup = experiment_utils.mcpilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
-        p0 = params['state0_dist']
 
         # init dyn to use dropout
-        dyn = regression.BNN(**params['dynamics_model'])
-        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
-        dyn_spec = regression.dropout_mlp(
-            input_dims=dyn.D,
-            output_dims=odims,
+        dyn_spec = dict(
             hidden_dims=[200]*4,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
-            name=dyn.name)
-        dyn.build_network(dyn_spec)
+            build_fn=regression.dropout_mlp)
+        dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
         # init policy
-        pol = control.NNPolicy(p0.mean.size, **params['policy'])
-        pol_spec = regression.mlp(
-            input_dims=pol.D,
-            output_dims=pol.E,
+        pol_spec = dict(
             hidden_dims=[50]*4,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            output_nonlinearity=pol.sat_func,
-            name=pol.name)
-        pol.build_network(pol_spec)
+            build_fn=regression.mlp)
+        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 7:
         # mc PILCO with dropout controller and dropout mlp dynamics
         scenario_params = experiment2_params(*args, **kwargs)
-        learner_setup = experiment_utils.mcpilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
-        p0 = params['state0_dist']
 
         # init dyn to use dropout
-        dyn = regression.BNN(**params['dynamics_model'])
-        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
-        dyn_spec = regression.dropout_mlp(
-            input_dims=dyn.D,
-            output_dims=odims,
+        dyn_spec = dict(
             hidden_dims=[200]*4,
-            p=0.1, p_input=0.0,
+            p=0.1, p_input=0.1,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
-            name=dyn.name)
-        dyn.build_network(dyn_spec)
+            build_fn=regression.dropout_mlp)
+        dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
         # init policy
-        pol = control.NNPolicy(p0.mean.size, **params['policy'])
-        pol_spec = regression.dropout_mlp(
-            input_dims=pol.D,
-            output_dims=pol.E,
+        pol_spec = dict(
             hidden_dims=[50]*4,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
-            name=pol.name)
-        pol.build_network(pol_spec)
+            build_fn=regression.dropout_mlp)
+        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 8:
-        # mc PILCO with dropout controller and dropout mlp dynamics
+        # mc PILCO with dropout controller and log-normal dropout dynamics
         scenario_params = experiment2_params(*args, **kwargs)
-        learner_setup = experiment_utils.mcpilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
-        p0 = params['state0_dist']
 
         # init dyn to use dropout
-        dyn = regression.BNN(**params['dynamics_model'])
-        odims = 2*dyn.E if dyn.heteroscedastic else dyn.E
-        dyn_spec = regression.dropout_mlp(
-            input_dims=dyn.D,
-            output_dims=odims,
+        dyn_spec = dict(
             hidden_dims=[200]*4,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
-            name=dyn.name)
-        dyn.build_network(dyn_spec)
+            build_fn=regression.dropout_mlp)
+        dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
         # init policy
-        pol = control.NNPolicy(p0.mean.size, **params['policy'])
-        pol_spec = regression.dropout_mlp(
-            input_dims=pol.D,
-            output_dims=pol.E,
+        pol_spec = dict(
             hidden_dims=[50]*4,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
-            name=pol.name)
-        pol.build_network(pol_spec)
+            build_fn=regression.dropout_mlp)
+        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 9:
-        # mc PILCO with dropout controller and dropout mlp dynamics
+        # mc PILCO with dropout controller and log-normal dropout dynamics
         scenario_params = experiment2_params(*args, **kwargs)
-        learner_setup = experiment_utils.mcpilco_double_cartpole_experiment
+        learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
         p0 = params['state0_dist']
 
@@ -356,7 +306,7 @@ if __name__ == '__main__':
         '-e', '--exp', type=int, default=1,
         help='id of experiment to run')
     parser.add_argument(
-        '-n', '--name', type=str, default='cartpole',
+        '-n', '--name', type=str,
         help='experiment name')
     parser.add_argument(
         '-o', '--output_folder', type=str, default=utils.get_output_dir(),
@@ -371,29 +321,38 @@ if __name__ == '__main__':
         '-k', '--kwarg', nargs=2, action='append', default=[],
         help='additional arguments for the experiment [name value]')
     args = parser.parse_args()
-
     e_id = args.exp
-    odir = args.output_folder
-    name = args.name+'_'+str(e_id)
-    output_folder = os.path.join(odir, name)
     kwargs = dict(args.kwarg)
 
+    # prepare experiment parameters
+    scenario_params, pol, dyn, learner_setup = get_scenario(e_id, **kwargs)
+    params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
+    # init environment
+    env = double_cartpole.DoubleCartpole(**params['plant'])
+    # init cost model
+    cost = partial(double_cartpole.double_cartpole_loss, **params['cost'])
+    
+    # initialize output directory
+    odir = args.output_folder
+    if args.name is not None:
+        name = args.name+'_'+str(e_id)
+    else:
+        name = env.name+'_'+str(e_id)
+
+    output_folder = os.path.join(odir, name)
+    print output_folder
     try:
-        os.mkdir(output_folder)
+        os.makedirs(output_folder)
     except:
         # move the old stuff
         target_dir = output_folder+'_'+str(os.stat(output_folder).st_ctime)
         os.rename(output_folder, target_dir)
         os.mkdir(output_folder)
         utils.print_with_stamp(
-            'Moved old results from [%s] to [%s]' % (output_folder, 
+            'Moved old results from [%s] to [%s]' % (output_folder,
                                                      target_dir))
-
+    utils.set_output_dir(output_folder)
     utils.print_with_stamp('Results will be saved in [%s]' % (output_folder))
-
-    scenario_params, pol, dyn, learner_setup = get_scenario(e_id, **kwargs)
-
-    params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
 
     # write the inital configuration to disk
     params_path = os.path.join(output_folder, 'initial_config.dill')
@@ -404,7 +363,7 @@ if __name__ == '__main__':
         dill.dump(config_dict, f)
 
     scenario = partial(
-        learner_setup, policy=pol, dynmodel=dyn)
+        learner_setup, pol=pol, dyn=dyn)
 
     # callback executed after every learning iteration
     def iter_cb(exp, dyn, pol, polopt, params):
@@ -416,7 +375,7 @@ if __name__ == '__main__':
         # TODO save state of the optimizer
 
     # run pilco
-    experiment_utils.run_pilco_experiment(
+    experiment_utils.run_pilco_experiment(env, cost,
         scenario, params, loss_kwargs, polopt_kwargs, extra_inps,
         learning_iteration_cb=iter_cb, render=args.render,
         debug_plot=args.debug_plot)

@@ -122,6 +122,8 @@ class Loadable(object):
             # check if output_folder exists, create it if necessary.
             if not os.path.exists(output_folder):
                 try:
+                    utils.print_with_stamp('creating the directory: %s'%(output_folder),
+                                           self.name)
                     os.makedirs(output_folder)
                 except OSError:
                     utils.print_with_stamp('Unable to create the directory: %s'%(output_folder),

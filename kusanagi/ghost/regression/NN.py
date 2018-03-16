@@ -92,6 +92,7 @@ class BNN(BaseRegressor):
         self.name = name
         self.should_recompile = False
         self.trained = False
+        self.heteroscedastic = heteroscedastic
 
         sn = (np.ones((self.E,))*1e-3).astype(floatX)
         sn = np.log(np.exp(sn)-1)
@@ -104,7 +105,8 @@ class BNN(BaseRegressor):
             self.network_spec = network_spec
         elif type(network_spec) is dict:
             network_spec['input_dims'] = idims
-            network_spec['output_dims'] = odims
+            network_spec['output_dims'] = odims*2 if self.heteroscedastic else odims
+            network_spec['name'] = network_spec.get('name', self.name)
             build_fn = network_spec.pop('build_fn', dropout_mlp)
             self.network_spec = build_fn(**network_spec)
         else:
@@ -124,7 +126,6 @@ class BNN(BaseRegressor):
         self.Ym = None
         self.Ys = None
 
-        self.heteroscedastic = heteroscedastic
 
         # filename for saving
         fname = '%s_%d_%d_%s_%s' % (self.name, self.D, self.E,

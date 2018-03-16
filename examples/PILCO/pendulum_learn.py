@@ -1,6 +1,6 @@
 '''
 Example of how to use the library for learning using the PILCO learner
-on the cartpole task
+on the pendulum task
 '''
 # pylint: disable=C0103
 import argparse
@@ -14,7 +14,7 @@ import theano
 from functools import partial
 from kusanagi import utils
 from kusanagi.ghost import regression, control
-from kusanagi.shell import experiment_utils, cartpole
+from kusanagi.shell import experiment_utils, pendulum
 
 # np.random.seed(1)
 np.set_printoptions(linewidth=500)
@@ -29,7 +29,7 @@ def eval_str_arg(arg):
 def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
                        **kwargs):
     ''' pilco with rbf controller'''
-    params = cartpole.default_params()
+    params = pendulum.default_params()
     params['n_rnd'] = int(n_rnd)
     params['n_opt'] = int(n_opt)
     for key in kwargs:
@@ -328,9 +328,9 @@ if __name__ == '__main__':
     scenario_params, pol, dyn, learner_setup = get_scenario(e_id, **kwargs)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
     # init environment
-    env = cartpole.Cartpole(**params['plant'])
+    env = pendulum.Pendulum(**params['plant'])
     # init cost model
-    cost = partial(cartpole.cartpole_loss, **params['cost'])
+    cost = partial(pendulum.pendulum_loss, **params['cost'])
     
     # initialize output directory
     odir = args.output_folder

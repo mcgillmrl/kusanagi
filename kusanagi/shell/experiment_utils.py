@@ -6,13 +6,13 @@ from matplotlib import pyplot as plt
 
 from kusanagi import utils
 from kusanagi.ghost import (algorithms, regression, control, optimizers)
-from kusanagi.shell import cartpole, double_cartpole
 from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 
 
-def plot_rollout(rollout_fn, exp, n_exp=0, *args, **kwargs):
+def plot_rollout(rollout_fn, exp, *args, **kwargs):
     fig = kwargs.get('fig')
     axarr = kwargs.get('axarr')
+    n_exp = kwargs.get('n_exp', 0)
 
     ret = rollout_fn(*args)
     trajectories = m_states = None
@@ -98,7 +98,7 @@ def setup_pilco_experiment(params, pol=None, dyn=None):
     # (can also be a class)
     learner = algorithms.pilco
 
-    return p0, pol, dyn, exp, polopt, learner
+    return p0, pol, dyn, exp, polopt, learner, params
 
 
 def setup_mc_pilco_experiment(params, pol=None, dyn=None):
@@ -146,92 +146,19 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
 
     # module where get_loss and build_rollout are defined
     # (can also be a class)
-    learner = algorithms.mc_pilco
+    learner = algorithms.mc_pilco  
 
-    return p0, pol, dyn, exp, polopt, learner
-
-
-def setup_cartpole_experiment(params=None):
-    # get experiment parameters
-    if params is None:
-        params = cartpole.default_params()
-
-    # init environment
-    env = cartpole.Cartpole(**params['plant'])
-
-    # init cost model
-    cost = partial(cartpole.cartpole_loss, **params['cost'])
-
-    return env, cost, params
+    return p0, pol, dyn, exp, polopt, learner, params
 
 
-def pilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
-    # init cartpole specific objects
-    env, cost, params = setup_cartpole_experiment(params)
-
-    # init policy and dynamics model
-    ret = setup_pilco_experiment(params, policy, dynmodel)
-    p0, pol, dyn, exp, polopt, learner = ret
-
-    return p0, env, pol, dyn, cost, exp, polopt, learner, params
-
-
-def mcpilco_cartpole_experiment(params=None, policy=None, dynmodel=None):
-    # init cartpole specific objects
-    env, cost, params = setup_cartpole_experiment(params)
-
-    # init policy and dynamics model
-    ret = setup_mc_pilco_experiment(params, policy, dynmodel)
-    p0, pol, dyn, exp, polopt, learner = ret
-
-    return p0, env, pol, dyn, cost, exp, polopt, learner, params
-
-
-def setup_double_cartpole_experiment(params=None):
-    # get experiment parameters
-    if params is None:
-        params = cartpole.default_params()
-
-    # init environment
-    env = double_cartpole.DoubleCartpole(**params['plant'])
-
-    # init cost model
-    cost = partial(double_cartpole.double_cartpole_loss, **params['cost'])
-
-    return env, cost, params
-
-
-def pilco_double_cartpole_experiment(params=None, policy=None, dynmodel=None):
-    # init cartpole specific objects
-    env, cost, params = setup_double_cartpole_experiment(params)
-
-    # init policy and dynamics model
-    ret = setup_pilco_experiment(params, policy, dynmodel)
-    p0, pol, dyn, exp, polopt, learner = ret
-
-    return p0, env, pol, dyn, cost, exp, polopt, learner, params
-
-
-def mcpilco_double_cartpole_experiment(
-    params=None, policy=None, dynmodel=None):
-    # init cartpole specific objects
-    env, cost, params = setup_double_cartpole_experiment(params)
-
-    # init policy and dynamics model
-    ret = setup_mc_pilco_experiment(params, policy, dynmodel)
-    p0, pol, dyn, exp, polopt, learner = ret
-
-    return p0, env, pol, dyn, cost, exp, polopt, learner, params
-
-
-def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
+def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
                          params=None, loss_kwargs={}, polopt_kwargs={},
                          extra_inps=[], step_cb=None, polopt_cb=None,
                          learning_iteration_cb=None, max_dataset_size=0,
                          render=False, debug_plot=0):
     # setup experiment
     exp_objs = exp_setup(params)
-    p0, env, pol, dyn, cost, exp, polopt, learner, params = exp_objs
+    p0, pol, dyn, exp, polopt, learner, params = exp_objs
     n_rnd = params.get('n_rnd', 1)
     n_opt = params.get('n_opt', 100)
     return_best = params.get('return_best', False)
@@ -318,6 +245,7 @@ def run_pilco_experiment(exp_setup=mcpilco_cartpole_experiment,
         # get initial state distribution (assumed gaussian)
         x0 = np.array([st[0] for st in exp.states])
         m0 = x0.mean(0)
+        print m0
         S0 = np.cov(x0, rowvar=False, ddof=1) +\
             1e-4*np.eye(x0.shape[1]) if len(x0) > 10 else p0.cov
 

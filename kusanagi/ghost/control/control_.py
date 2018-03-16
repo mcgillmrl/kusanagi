@@ -142,7 +142,7 @@ class RandPolicy:
             ret = np.max((ret.flatten(), self.minU.flatten()), axis=0)
             ret = ret.reshape(self.maxU.shape)
         else:
-            ret = np.random.random(scale.size)
+            new_u = np.random.random(scale.size)
             ret = new_u.reshape(scale.shape)*scale + bias
 
         self.last_u = ret
