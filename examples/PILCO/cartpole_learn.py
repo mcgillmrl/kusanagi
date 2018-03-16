@@ -45,7 +45,7 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
 
 
 def experiment2_params(n_rnd=1, n_opt=100,
-                       mc_samples=10, learning_rate=1e-3,
+                       mc_samples=50, learning_rate=1e-3,
                        polyak_averaging=None,
                        min_method='adam', max_evals=1000,
                        mm_state=True,

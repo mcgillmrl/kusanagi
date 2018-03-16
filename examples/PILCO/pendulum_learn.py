@@ -45,7 +45,7 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
 
 
 def experiment2_params(n_rnd=1, n_opt=100,
-                       mc_samples=10, learning_rate=1e-3,
+                       mc_samples=50, learning_rate=1e-3,
                        polyak_averaging=None,
                        min_method='adam', max_evals=1000,
                        mm_state=True,
@@ -120,7 +120,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         params = scenario_params[0]
 
         pol_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             build_fn=regression.mlp)
@@ -135,7 +135,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init dyn to use dropout
         dyn_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -151,7 +151,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init dyn to use dropout
         dyn_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -161,7 +161,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init policy
         pol_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             build_fn=regression.mlp)
@@ -178,7 +178,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # for the log normal dropout layers, the dropout probabilities
         # are dummy variables to enable dropout (not actual dropout probs)
         dyn_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -194,7 +194,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init dyn to use dropout
         dyn_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -204,7 +204,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init policy
         pol_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             build_fn=regression.mlp)
@@ -218,7 +218,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init dyn to use dropout
         dyn_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=0.1, p_input=0.1,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -228,7 +228,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init policy
         pol_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -244,7 +244,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init dyn to use dropout
         dyn_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -254,7 +254,7 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init policy
         pol_spec = dict(
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -275,7 +275,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=0.1, p_input=0.01,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
@@ -288,7 +288,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[200]*2,
+            hidden_dims=[50]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
