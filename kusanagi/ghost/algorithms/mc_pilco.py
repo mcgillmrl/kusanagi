@@ -168,7 +168,7 @@ def rollout(x0, H, gamma0,
 
 def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
-             noisy_policy_input=True, noisy_cost_input=True,
+             noisy_policy_input=True, noisy_cost_input=False,
              resample_dyn=False, crn=True, average=True,
              truncate_gradient=-1, split_H=1, extra_shared=[], **kwargs):
     '''

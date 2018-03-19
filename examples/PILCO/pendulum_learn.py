@@ -50,7 +50,7 @@ def experiment2_params(n_rnd=1, n_opt=100,
                        min_method='adam', max_evals=1000,
                        mm_state=True,
                        mm_cost=True,
-                       noisy_policy_input=False,
+                       noisy_policy_input=True,
                        noisy_cost_input=False,
                        heteroscedastic_dyn=False,
                        crn=True, crn_dropout=True,
@@ -244,26 +244,26 @@ def get_scenario(experiment_id, *args, **kwargs):
 
         # init dyn to use dropout
         dyn_spec = dict(
-            hidden_dims=[50]*2,
+            hidden_dims=[200]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.Orthogonal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             build_fn=regression.dropout_mlp)
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
         # init policy
         pol_spec = dict(
-            hidden_dims=[50]*2,
+            hidden_dims=[200]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.Orthogonal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             build_fn=regression.dropout_mlp)
         pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 9:
-        # mc PILCO with dropout controller and log-normal dropout dynamics
+        # mc PILCO with dropout controller and concrete dropout dynamics
         scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
@@ -275,10 +275,10 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn_spec = regression.dropout_mlp(
             input_dims=dyn.D,
             output_dims=odims,
-            hidden_dims=[50]*2,
+            hidden_dims=[200]*2,
             p=0.1, p_input=0.01,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.Orthogonal(),
             dropout_class=regression.layers.DenseConcreteDropoutLayer,
             name=dyn.name)
         dyn.build_network(dyn_spec)
@@ -288,10 +288,10 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = regression.dropout_mlp(
             input_dims=pol.D,
             output_dims=pol.E,
-            hidden_dims=[50]*2,
+            hidden_dims=[200]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.Orthogonal(),
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
