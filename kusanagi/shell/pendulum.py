@@ -32,13 +32,13 @@ def default_params():
     plant_params['state0_dist'] = p0
     plant_params['noise_dist'] = utils.distributions.Gaussian(
         np.zeros((p0.dim,)),
-        np.eye(p0.dim)*0.01**2)
+        np.diag([0.01,0.1])**2)
 
     # policy parameters
     policy_params = {}
     policy_params['state0_dist'] = p0
     policy_params['angle_dims'] = angi
-    policy_params['n_inducing'] = 30
+    policy_params['n_inducing'] = 20
     policy_params['maxU'] = [2.5]
 
     # dynamics model parameters
@@ -107,8 +107,8 @@ class Pendulum(plant.ODEPlant):
         'render.modes': ['human']
     }
 
-    def __init__(self, pole_length=0.5, pole_mass=0.5,
-                 friction=0.1, gravity=9.82,
+    def __init__(self, pole_length=1.0, pole_mass=1.0,
+                 friction=0.01, gravity=9.82,
                  state0_dist=None,
                  loss_func=None,
                  name='Pendulum',
@@ -148,10 +148,11 @@ class Pendulum(plant.ODEPlant):
     def dynamics(self, t, z):
         l, m, b, g = self.l, self.m, self.b, self.g
         f = self.u if self.u is not None else np.array([0])
+
         a1 = m*l
         dz = np.zeros((2, 1))
-        dz[0] = z[1]                                         # theta
-        dz[1] = 3*(f - b*z[1] - a1*g*np.sin(z[0])/2)/(a1*l)  # dtheta/dt
+        dz[0] = z[1]                                           # theta
+        dz[1] = 3*(f - b*z[1] - 0.5*a1*g*np.sin(z[0]))/(a1*l)  # dtheta/dt
 
         return dz
 

@@ -34,16 +34,16 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
             # plot predictive distribution
             for i in range(n_samples):
                 axarr[d].plot(
-                    np.arange(T-1), st[i, :-1], color='steelblue', alpha=0.3)
+                    np.arange(T), st[i, :], color='steelblue', alpha=10.0/n_samples)
             axarr[d].plot(
-                np.arange(T-1), st[:, :-1].mean(0), color='orange')
+                np.arange(T), st[:, :].mean(0), color='steelblue', linewidth=2)
         if m_states is not None:
             axarr[d].plot(
-                np.arange(T-1), m_states[:-1, d], color='steelblue',
+                np.arange(T), m_states[:, d], color='steelblue',
                 alpha=0.3)
             axarr[d].errorbar(
-                np.arange(T-1), m_states[:-1, d],
-                1.96*np.sqrt(s_states[:-1, d, d]), color='steelblue', alpha=0.3)
+                np.arange(T), m_states[:, d],
+                1.96*np.sqrt(s_states[:, d, d]), color='steelblue', alpha=0.3)
 
         total_exp = len(exp_states)
         for i in range(n_exp):
@@ -52,7 +52,7 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
                  color='orange', alpha=0.3)
         # plot experience
         axarr[d].plot(
-            np.arange(T-1), np.array(exp.states[-1])[1:T, d], color='red')
+            np.arange(T-1), np.array(exp.states[-1])[:T, d], color='red')
 
     fig.canvas.update()
     plt.show(False)
@@ -279,7 +279,7 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
     env.close()
 
 
-def evaluate_policy(env, pol, exp, params, n_tests=100, render=False):
+def evaluate_policy(env, input_pol, exp, params, n_tests=100, render=False):
     H = params['min_steps']
     angle_dims = params['angle_dims']
 
@@ -294,9 +294,11 @@ def evaluate_policy(env, pol, exp, params, n_tests=100, render=False):
     for i, p in enumerate(exp.policy_parameters):
         utils.print_with_stamp('Evaluating policy at iteration %d' % i)
         if p:
-            pol.set_params(p)
+            input_pol.set_params(p)
+            pol = input_pol
         else:
-            continue
+            pol = control.RandPolicy(maxU=input_pol.maxU)
+
         results_i = []
         for it in range(n_tests):
             ret = apply_controller(

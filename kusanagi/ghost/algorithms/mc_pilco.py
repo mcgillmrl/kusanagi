@@ -68,7 +68,7 @@ def rollout(x0, H, gamma0,
         n = n.astype(theano.config.floatX)
 
         # noisy state measruement for control
-        xn = x + z2_prev*(0.5*sn) if noisy_policy_input else x
+        xn = x + z2_prev*(sn) if noisy_policy_input else x
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
@@ -128,7 +128,7 @@ def rollout(x0, H, gamma0,
     # loop over the planning horizon
     mode = theano.compile.mode.get_mode('FAST_RUN')
     accum_cost = tt.constant(0, dtype=x0.dtype)
-    costs, trajectories = [], []
+    costs, trajectories = [], [x0[None, :, :]]
     # if split_H > 1, this results in truncated BPTT
     H_ = tt.ceil(H*1.0/split_H).astype('int32')
     for i in range(1, split_H+1):
