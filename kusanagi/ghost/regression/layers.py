@@ -489,7 +489,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
                  num_leading_axes=1, logit_posterior_mean=None,
-                 logit_posterior_std=None, interval=[-10.0, 0.1],
+                 logit_posterior_std=None, interval=[-6.0, 0.1],
                  shared_axes=(), noise_samples=None,
                  **kwargs):
         super(DenseLogNormalDropoutLayer, self).__init__(
@@ -519,7 +519,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
 
         if logit_posterior_std is None:
             # set posterior_std close to the minimum
-            logit_posterior_std = lasagne.init.Uniform((-3.0, -2.0))
+            logit_posterior_std = lasagne.init.Uniform((-3.0, -1.0))
 
         # add the posterior parameters as trainable parameters
         if isinstance(logit_posterior_mean, Number):
