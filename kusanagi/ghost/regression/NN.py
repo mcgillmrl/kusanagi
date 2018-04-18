@@ -21,7 +21,7 @@ floatX = theano.config.floatX
 def mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
         nonlinearities=nonlinearities.rectify,
         output_nonlinearity=nonlinearities.linear,
-        W_init=lasagne.init.GlorotUniform(),
+        W_init=lasagne.init.GlorotUniform('relu'),
         b_init=lasagne.init.Uniform(0.01),
         name='mlp', **kwargs):
     if not isinstance(nonlinearities, list):
@@ -60,7 +60,7 @@ def mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
 def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
                 nonlinearities=nonlinearities.rectify,
                 output_nonlinearity=nonlinearities.linear,
-                W_init=lasagne.init.GlorotUniform(),
+                W_init=lasagne.init.GlorotUniform('relu'),
                 b_init=lasagne.init.Uniform(0.01),
                 p=0.5, p_input=0.2,
                 dropout_class=layers.DenseDropoutLayer,
@@ -85,7 +85,7 @@ def dropout_mlp(input_dims, output_dims, hidden_dims=[200]*4, batchsize=None,
 class BNN(BaseRegressor):
     ''' Bayesian neural net regressor '''
     def __init__(self, idims, odims, n_samples=100,
-                 heteroscedastic=False, name='BNN',
+                 heteroscedastic=True, name='BNN',
                  filename=None, network_spec=None, **kwargs):
         self.D = idims
         self.E = odims
@@ -208,10 +208,11 @@ class BNN(BaseRegressor):
     def update_dataset_statistics(self, X_dataset, Y_dataset):
         # add small amount of noise for smoothing
         X_dataset += 1e-6*np.random.randn(*X_dataset.shape)
-        Xm = X_dataset.mean(0).astype(floatX)
-        Xc = np.cov(X_dataset-Xm, rowvar=False, ddof=1).astype(floatX)
+        Xm = np.atleast_1d(X_dataset.mean(0).astype(floatX))
+        Xc = np.atleast_2d(
+            (np.cov(X_dataset-Xm, rowvar=False, ddof=1).astype(floatX)))
         iXs = np.linalg.cholesky(
-            np.linalg.inv(np.atleast_2d(Xc))).astype(floatX)
+            np.linalg.inv(Xc)).astype(floatX)
         if self.Xm is None:
             self.Xm = theano.shared(Xm, name='%s>Xm' % (self.name))
             self.iXs = theano.shared(iXs, name='%s>Xs' % (self.name))
@@ -219,9 +220,12 @@ class BNN(BaseRegressor):
             self.Xm.set_value(Xm)
             self.iXs.set_value(iXs)
 
-        Ym = Y_dataset.mean(0).astype(floatX)
-        Yc = np.cov(Y_dataset-Ym, rowvar=False, ddof=1).astype(floatX)
-        Ys = np.linalg.cholesky(np.atleast_2d((Yc))).T.astype(floatX)
+        Ym = np.atleast_1d(Y_dataset.mean(0).astype(floatX))
+        Yc = np.atleast_2d(
+            np.cov(Y_dataset-Ym, rowvar=False, ddof=1).astype(floatX))
+
+        Ys = np.linalg.cholesky(Yc).T.astype(floatX)
+
         if self.Ym is None:
             self.Ym = theano.shared(Ym, name='%s>Ym' % (self.name))
             self.Ys = theano.shared(Ys, name='%s>Ys' % (self.name))
@@ -254,8 +258,8 @@ class BNN(BaseRegressor):
             idims = self.D
             odims = self.E*2 if self.heteroscedastic else self.E
             network_spec = dropout_mlp(
-                idims, odims, hidden_dims=[100]*4,
-                p=0.1, p_input=0.0,
+                idims, odims, hidden_dims=[200]*4,
+                p=0.5, p_input=0.0,
                 nonlinearities=nonlinearities.rectify,
                 dropout_class=layers.DenseLogNormalDropoutLayer)
         utils.print_with_stamp('Building network', self.name)
@@ -414,7 +418,7 @@ class BNN(BaseRegressor):
                                         deterministic=deterministic,
                                         fixed_noise_samples=not iid_per_eval)
         y = ret[:, :self.E]
-        sn = (tt.exp(ret[:, self.E:])
+        sn = (0.1*tt.nnet.sigmoid(ret[:, self.E:])
               if self.heteroscedastic
               else tt.tile(self.sn, (y.shape[0], 1)))
         # fudge factor
@@ -423,7 +427,7 @@ class BNN(BaseRegressor):
             # scale and center outputs
             y = y.dot(self.Ys) + self.Ym
             # rescale variances
-            # sn = sn*tt.diag(self.Ys)
+            sn = sn*tt.diag(self.Ys)
         y.name = '%s>output_samples' % (self.name)
         if return_samples:
             # nothing else to do!
