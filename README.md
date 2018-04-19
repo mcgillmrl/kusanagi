@@ -4,7 +4,7 @@
 
 Install the Miniconda 3 distribution: https://conda.io/miniconda.html
 
-    conda install numpy scipy mkl mkl-rt mkl-service jupyter
+    conda install numpy scipy mkl mkl-rt mkl-service jupyter qt
     conda install pygpu libgpuarray -c mila-udem
     pip install --upgrade git+https://github.com/Theano/Theano
     pip install --upgrade git+https://github.com/Lasagne/Lasagne

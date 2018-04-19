@@ -106,7 +106,8 @@ class ODEPlant(Plant):
         cost = None
         if self.loss_func is not None:
             cost = self.loss_func(np.array(self.state)[None, :])
-        return self.get_state()[0], cost, False, {}
+        state, t = self.get_state()
+        return state, cost, False, dict(t=t)
 
     def dynamics(self, *args, **kwargs):
         msg = "You need to implement self.dynamics in the ODEPlant subclass."

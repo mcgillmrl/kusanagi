@@ -23,6 +23,7 @@ if __name__ == '__main__':
     draw_cp = CartpoleDraw(plant, 0.001)
     draw_cp.init_ui()
     def _render(self, mode='human', close=False, *args, **kwargs):
+        return
         state = self.get_state(noisy=False)
         draw_cp.update(*state)
         plot.update(*state)
