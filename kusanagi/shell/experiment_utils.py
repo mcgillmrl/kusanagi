@@ -13,7 +13,6 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
     fig = kwargs.get('fig')
     axarr = kwargs.get('axarr')
     n_exp = kwargs.get('n_exp', 0)
-    print exp
     ret = rollout_fn(*args)
     trajectories = m_states = None
     if len(ret) == 3:
@@ -36,7 +35,7 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
                 axarr[d].plot(
                     np.arange(T), st[i, :], color='steelblue', alpha=10.0/n_samples)
             axarr[d].plot(
-                np.arange(T), st[:, :].mean(0), color='steelblue', linewidth=2)
+                np.arange(T), st[:, :].mean(0), color='blue', linewidth=2)
         if m_states is not None:
             axarr[d].plot(
                 np.arange(T), m_states[:, d], color='steelblue',
@@ -245,7 +244,6 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
         # get initial state distribution (assumed gaussian)
         x0 = np.array([st[0] for st in exp.states])
         m0 = x0.mean(0)
-        print m0
         S0 = np.cov(x0, rowvar=False, ddof=1) +\
             1e-4*np.eye(x0.shape[1]) if len(x0) > 10 else p0.cov
 

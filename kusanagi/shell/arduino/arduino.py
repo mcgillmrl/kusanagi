@@ -20,12 +20,11 @@ class SerialPlant(plant.Plant):
     cmds = ['RESET_STATE', 'GET_STATE', 'APPLY_CONTROL', 'CMD_OK', 'STATE']
     cmds = dict(list(zip(cmds, [str(i) for i in range(len(cmds))])))
 
-    def __init__(self, state_indices=None, maxU=None, loss_func=None,
+    def __init__(self, state_indices=[0, 2, 3, 1], maxU=None, loss_func=None,
                  baud_rate=4000000, port='/dev/ttyACM0',
                  name='SerialPlant', *args, **kwargs):
         self.__dict__.update(kwargs)
-        super(SerialPlant, self).__init__(name=name, *args, **kwargs)
-        self.loss_func = loss_func
+        super(SerialPlant, self).__init__(name=name, loss_func=loss_func, *args, **kwargs)
         self.port = port
         self.baud_rate = baud_rate
         self.serial = serial.Serial(self.port, self.baud_rate)

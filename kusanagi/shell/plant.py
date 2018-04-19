@@ -11,6 +11,7 @@ from time import time, sleep
 from threading import Thread
 from multiprocessing import Process, Pipe, Event
 from kusanagi.utils import print_with_stamp, gTrig_np
+from kusanagi.shell.cost import build_loss_func
 
 color_generator = iter(cnames.items())
 
@@ -19,7 +20,7 @@ class Plant(gym.Env):
     metadata = {
         'render.modes': ['human']
     }
-    def __init__(self, dt=0.1, noise_dist=None,
+    def __init__(self, dt=0.1, noise_dist=None, loss_func=None,
                  angle_dims=[], name='Plant',
                  *args, **kwargs):
         self.name = name
@@ -32,11 +33,18 @@ class Plant(gym.Env):
         self.done = False
         self.renderer = None
 
-        # initialize loss_func
-        self.loss_func = None
+        # reward/loss function
+        self.loss_func = loss_func
+        if callable(loss_func):
+            try:
+                self.loss_func = build_loss_func(loss_func, False,
+                                                 self.name+'_loss')
+            except Exception as e:
+                pass
 
     def apply_control(self, u):
         self.u = np.array(u, dtype=np.float64)
+
         if len(self.u.shape) < 2:
             self.u = self.u[:, None]
 
