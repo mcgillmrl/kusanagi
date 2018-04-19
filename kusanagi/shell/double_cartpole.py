@@ -123,7 +123,7 @@ class DoubleCartpole(plant.ODEPlant):
                  loss_func=None,
                  name='DoubleCartpole',
                  *args, **kwargs):
-        super(DoubleCartpole, self).__init__(name=name, *args, **kwargs)
+        super(DoubleCartpole, self).__init__(name=name, loss_func=loss_func,  *args, **kwargs)
         # double cartpole system parameters
         self.l1 = link1_length
         self.l2 = link2_length
@@ -139,16 +139,6 @@ class DoubleCartpole(plant.ODEPlant):
             self.state0_dist = utils.distributions.Gaussian(m0, s0)
         else:
             self.state0_dist = state0_dist
-
-        # reward/loss function
-        if loss_func is None:
-            self.loss_func = cost.build_loss_func(double_cartpole_loss,
-                                                  False,
-                                                  'double_cartpole_loss')
-        else:
-            self.loss_func = cost.build_loss_func(loss_func,
-                                                  False,
-                                                  'double_cartpole_loss')
 
         # pointer to the class that will draw the state of the carpotle system
         self.renderer = None

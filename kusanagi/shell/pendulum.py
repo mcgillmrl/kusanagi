@@ -113,7 +113,7 @@ class Pendulum(plant.ODEPlant):
                  loss_func=None,
                  name='Pendulum',
                  *args, **kwargs):
-        super(Pendulum, self).__init__(name=name, *args, **kwargs)
+        super(Pendulum, self).__init__(name=name, loss_func=loss_func, *args, **kwargs)
         # pendulum system parameters
         self.l = pole_length
         self.m = pole_mass
@@ -127,19 +127,11 @@ class Pendulum(plant.ODEPlant):
         else:
             self.state0_dist = state0_dist
 
-        # reward/loss function
-        if loss_func is None:
-            self.loss_func = cost.build_loss_func(pendulum_loss, False,
-                                                  'pendulum_loss')
-        else:
-            self.loss_func = cost.build_loss_func(loss_func, False,
-                                                  'pendulum_loss')
-
         # pointer to the class that will draw the state of the carpotle system
         self.renderer = None
 
         # 4 state dims (x ,x_dot, theta_dot, theta)
-        o_lims = np.array([np.finfo(np.float).max for i in range(4)])
+        o_lims = np.array([10 for i in range(4)])
         self.observation_space = spaces.Box(-o_lims, o_lims)
         # 1 action dim (x_force)
         a_lims = np.array([np.finfo(np.float).max for i in range(1)])

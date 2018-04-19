@@ -111,10 +111,10 @@ class Cartpole(plant.ODEPlant):
     def __init__(self, pole_length=0.5, pole_mass=0.5,
                  cart_mass=0.5, friction=0.1, gravity=9.82,
                  state0_dist=None,
-                 loss_func=None,
+                 loss_func=cartpole_loss,
                  name='Cartpole',
                  *args, **kwargs):
-        super(Cartpole, self).__init__(name=name, *args, **kwargs)
+        super(Cartpole, self).__init__(name=name, loss_func=loss_func, *args, **kwargs)
         # cartpole system parameters
         self.l = pole_length
         self.m = pole_mass
@@ -128,14 +128,6 @@ class Cartpole(plant.ODEPlant):
                 [0, 0, 0, 0], (0.1**2)*np.eye(4))
         else:
             self.state0_dist = state0_dist
-
-        # reward/loss function
-        if loss_func is None:
-            self.loss_func = cost.build_loss_func(cartpole_loss, False,
-                                                  'cartpole_loss')
-        else:
-            self.loss_func = cost.build_loss_func(loss_func, False,
-                                                  'cartpole_loss')
 
         # pointer to the class that will draw the state of the carpotle system
         self.renderer = None

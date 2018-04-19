@@ -45,14 +45,14 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
 
 
 def experiment2_params(n_rnd=1, n_opt=100,
-                       mc_samples=50, learning_rate=1e-3,
+                       mc_samples=100, learning_rate=1e-3,
                        polyak_averaging=None,
                        min_method='adam', max_evals=1000,
                        mm_state=True,
                        mm_cost=True,
-                       noisy_policy_input=False,
+                       noisy_policy_input=True,
                        noisy_cost_input=False,
-                       heteroscedastic_dyn=False,
+                       heteroscedastic_dyn=True,
                        crn=True, crn_dropout=True,
                        clip_gradients=1.0, **kwargs):
     ''' mc-pilco with rbf controller'''
@@ -327,10 +327,10 @@ if __name__ == '__main__':
     # prepare experiment parameters
     scenario_params, pol, dyn, learner_setup = get_scenario(e_id, **kwargs)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
-    # init environment
-    env = double_cartpole.DoubleCartpole(**params['plant'])
     # init cost model
     cost = partial(double_cartpole.double_cartpole_loss, **params['cost'])
+    # init environment
+    env = double_cartpole.DoubleCartpole(loss_func=cost, **params['plant'])
     
     # initialize output directory
     odir = args.output_folder
