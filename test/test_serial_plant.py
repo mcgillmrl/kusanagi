@@ -3,8 +3,8 @@ import signal,sys
 import numpy as np
 from time import time,sleep
 from functools import partial
-from kusanagi.ghost.algorithms.PILCO import PILCO
-from kusanagi.shell.plant import SerialPlant, LivePlot
+from kusanagi.shell.arduino import SerialPlant
+from kusanagi.shell.plant import LivePlot
 from kusanagi.shell.cartpole import  CartpoleDraw
 from kusanagi.ghost.control import RBFPolicy
 from kusanagi.utils import gTrig_np
@@ -13,30 +13,28 @@ if __name__ == '__main__':
     #np.random.seed(31337)
     np.set_printoptions(linewidth=500)
     # initliaze plant
-    dt = 0.1                                                      # simulation time step
-    model_parameters ={}                                             # simulation parameters
-    model_parameters['l'] = 0.5
-    model_parameters['m'] = 0.5
-    model_parameters['M'] = 0.5
-    model_parameters['b'] = 0.1
-    model_parameters['g'] = 9.82
-    x0 = [0,0,0,0]                                                   # initial state mean
-    S0 = np.eye(4)*(0.1**2)                                          # initial state covariance
+    plant_params = dict(dt=0.1, l=0.5, m=0.5, M=0.5, b=0.1, g=9.82)
     maxU = [10]
-    measurement_noise = np.diag(np.ones(len(x0))*0.01**2)            # model measurement noise (randomizes the output of the plant)
-    plant = SerialPlant(model_parameters,x0,S0,dt,measurement_noise,state_indices=[0,2,3,1],maxU=maxU,baud_rate=4000000,port='/dev/ttyACM0')
+    plant = SerialPlant(state_indices=[0,2,3,1], maxU=maxU, baud_rate=4000000,port='/dev/ttyACM0', **plant_params)
+    
+    # initializes visualization
     plot = LivePlot(plant,0.001,H=5,angi=[0,3])
-    draw_cp = CartpoleDraw(plant,0.001)                              # initializes visualization
-    plot.start()
-    draw_cp.start()
+    plot.init_ui()
+    draw_cp = CartpoleDraw(plant, 0.001)
+    draw_cp.init_ui()
+    def _render(self, mode='human', close=False, *args, **kwargs):
+        state = self.get_state(noisy=False)
+        draw_cp.update(*state)
+        plot.update(*state)
+    plant.set_render_func(_render)
     
     atexit.register(plant.stop)
-    atexit.register(plot.stop)
-    atexit.register(draw_cp.stop)
+    atexit.register(plot.close)
+    atexit.register(draw_cp.close)
 
-    w = 2*np.pi*0.5;
-    A = 10;
-    plant.reset_state()
+    w = 2*np.pi*0.5
+    A = 10.0
+    plant.reset()
     while True:
         exec_time = time()
         #u_t = A*w*np.cos(w*(time()+0.5*dt))[None]
@@ -45,9 +43,8 @@ if __name__ == '__main__':
         #    u_t[0] = A
         #else:
         #    u_t[0] = -A
-        plant.apply_control(u_t)
-        plant.step()
-        #print plant.get_plant_state()
+        plant.step(u_t)
+        plant.render()
         exec_time = time() - exec_time
-        sleep(max(dt-exec_time,0))
+        sleep(max(plant.dt-exec_time,0))
 

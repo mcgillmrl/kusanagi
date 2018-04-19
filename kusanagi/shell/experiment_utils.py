@@ -13,7 +13,7 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
     fig = kwargs.get('fig')
     axarr = kwargs.get('axarr')
     n_exp = kwargs.get('n_exp', 0)
-
+    print exp
     ret = rollout_fn(*args)
     trajectories = m_states = None
     if len(ret) == 3:

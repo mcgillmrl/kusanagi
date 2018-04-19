@@ -1,8 +1,7 @@
 # pylint: disable=C0103
 import gym
 import numpy as np
-import serial
-import struct
+import types
 
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Cursor
@@ -17,6 +16,9 @@ color_generator = iter(cnames.items())
 
 
 class Plant(gym.Env):
+    metadata = {
+        'render.modes': ['human']
+    }
     def __init__(self, dt=0.1, noise_dist=None,
                  angle_dims=[], name='Plant',
                  *args, **kwargs):
@@ -65,6 +67,9 @@ class Plant(gym.Env):
         msg = "You need to implement self._reset in your Plant subclass."
         raise NotImplementedError(msg)
 
+    def set_render_func(self, render_func):
+        self._render = types.MethodType(render_func, self)
+
 
 class ODEPlant(Plant):
     def __init__(self, name='ODEPlant', integrator='dopri5',
@@ -107,101 +112,6 @@ class ODEPlant(Plant):
         msg = "You need to implement self.dynamics in the ODEPlant subclass."
         raise NotImplementedError(msg)
 
-
-class SerialPlant(Plant):
-    cmds = ['RESET_STATE', 'GET_STATE', 'APPLY_CONTROL', 'CMD_OK', 'STATE']
-    cmds = dict(list(zip(cmds, [str(i) for i in range(len(cmds))])))
-
-    def __init__(self, params=None, x0=None, S0=None, dt=0.1, noise=None,
-                 name='SerialPlant', baud_rate=115200, port='/dev/ttyACM0',
-                 state_indices=None, maxU=None, angle_dims=[]):
-        super(SerialPlant, self).__init__(params, x0, S0, dt,
-                                          noise, name, angle_dims)
-        self.port = port
-        self.baud_rate = baud_rate
-        self.serial = serial.Serial(self.port, self.baud_rate)
-        self.state_indices = state_indices\
-            if state_indices is not None\
-            else list(range(len(x0)))
-        self.U_scaling = 1.0/np.array(maxU)
-        self.t = -1
-
-    def apply_control(self, u):
-        if not self.serial.isOpen():
-            self.serial.open()
-        self.u = np.array(u, dtype=np.float64)
-        if len(self.u.shape) < 2:
-            self.u = self.u[:, None]
-        if self.U_scaling is not None:
-            self.u *= self.U_scaling
-        if self.t < 0:
-            self.state, self.t = self.state_from_serial()
-
-        u_array = self.u.flatten().tolist()
-        u_array.append(self.t+self.dt)
-        u_string = ','.join([str(ui) for ui in u_array])  # TODO pack as binary
-        self.serial.flushInput()
-        self.serial.flushOutput()
-        cmd = self.cmds['APPLY_CONTROL']+','+u_string+";"
-        self.serial.write(cmd.encode())
-
-    def _step(self):
-        if not self.serial.isOpen():
-            self.serial.open()
-        dt = self.dt
-        t1 = self.t + dt
-        while self.t < t1:
-            self.state, self.t = self.state_from_serial()
-        return self.state
-
-    def state_from_serial(self):
-        self.serial.flushInput()
-        self.serial.write((self.cmds['GET_STATE']+";").encode())
-        c = self.serial.read()
-        buf = [c]
-        tmp = (self.cmds['STATE']+',').encode()
-        while buf != tmp:  # TODO timeout this loop
-            c = self.serial.read()
-            buf = buf[-1]+c
-        buf = []
-        res = []
-        escaped = False
-        while True:  # TODO timeout this loop
-            c = self.serial.read()
-            if not escaped:
-                if c == b'/':
-                    escaped = True
-                    continue
-                elif c == b',':
-                    res.append(b''.join(buf))
-                    buf = []
-                    continue
-                elif c == b';':
-                    res.append(b''.join(buf))
-                    buf = []
-                    break
-            buf.append(c)
-            escaped = False
-        res = np.array([struct.unpack('<d', ri) for ri in res]).flatten()
-        return res[self.state_indices], res[-1]
-
-    def _reset(self):
-        msg = 'Please reset your plant to its initial state and hit Enter'
-        print_with_stamp(msg, self.name)
-        input()
-        if not self.serial.isOpen():
-            self.serial.open()
-        self.serial.flushInput()
-        self.serial.flushOutput()
-        self.serial.write((self.cmds['RESET_STATE']+";").encode())
-        sleep(self.dt)
-        self.state, self.t = self.state_from_serial()
-        self.t = -1
-        return self.state
-
-    def stop(self):
-        super(SerialPlant, self).stop()
-        self.serial.close()
 
 
 class PlantDraw(object):
@@ -267,6 +177,7 @@ class PlantDraw(object):
         plt.close(self.fig)
 
     def update(self, *args, **kwargs):
+        plt.figure(self.name)
         updts = self._update(*args, **kwargs)
         self.update_canvas(updts)
 
@@ -349,6 +260,7 @@ class LivePlot(PlantDraw):
         self.update_period = refresh_period
 
     def init_artists(self):
+        plt.figure(self.name)
         self.lines = [plt.Line2D(self.t_labels, self.data[:, i],
                                  c=next(color_generator)[0])
                       for i in range(self.data.shape[1])]
@@ -357,7 +269,7 @@ class LivePlot(PlantDraw):
             self.ax.add_line(line)
         self.previous_update_time = time()
 
-    def update(self, state, t):
+    def _update(self, state, t):
         if t != self.current_t:
             if len(self.data) <= 1:
                 self.data = np.array([state]*2)

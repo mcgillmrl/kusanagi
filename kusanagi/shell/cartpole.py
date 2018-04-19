@@ -187,7 +187,6 @@ class CartpoleDraw(plant.PlantDraw):
                  name='CartpoleDraw'):
         super(CartpoleDraw, self).__init__(cartpole_plant,
                                            refresh_period, name)
-        l = self.plant.l
         m = self.plant.m
         M = self.plant.M
 
@@ -197,16 +196,17 @@ class CartpoleDraw(plant.PlantDraw):
         self.center_x = 0
         self.center_y = 0
 
+    def init_artists(self):
+        plt.figure(self.name)
         # initialize the patches to draw the cartpole
+        l = self.plant.l
         cart_xy = (self.center_x-0.5*self.cart_h,
                    self.center_y-0.125*self.cart_h)
         self.cart_rect = plt.Rectangle(cart_xy, self.cart_h,
                                        0.25*self.cart_h, facecolor='black')
         self.pole_line = plt.Line2D((self.center_x, 0), (self.center_y, l),
                                     lw=2, c='r')
-        self.mass_circle = plt.Circle((0, l), self.mass_r, fc='y')
-
-    def init_artists(self):
+        self.mass_circle = plt.Circle((0, l), self.mass_r, fc='y')        
         self.ax.add_patch(self.cart_rect)
         self.ax.add_patch(self.mass_circle)
         self.ax.add_line(self.pole_line)
