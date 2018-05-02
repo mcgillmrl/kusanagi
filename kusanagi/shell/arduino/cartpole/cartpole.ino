@@ -83,6 +83,9 @@ void setup() {
   analogWriteFrequency(PWM_PIN,IDEAL_PWM_FREQ);
   analogWrite(PWM_PIN,0);
 
+  pinMode(13, OUTPUT);
+  digitalWrite(13, HIGH);
+
   // initialize velocity estimator params
   for (int i=0; i<N_joints;i++){
     a[i] = 1/(tau[i] + 0.5*enc_dt);
