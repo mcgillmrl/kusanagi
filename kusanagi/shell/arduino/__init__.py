@@ -1,1 +1,1 @@
-from arduino import *
+from .arduino import *
