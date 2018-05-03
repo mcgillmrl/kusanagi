@@ -46,7 +46,7 @@ def experiment1_params(n_rnd=1, n_opt=100, dynmodel_class=regression.SSGP_UI,
 
 
 def experiment2_params(n_rnd=1, n_opt=100,
-                       mc_samples=100, learning_rate=1e-4,
+                       mc_samples=100, learning_rate=1e-3,
                        polyak_averaging=None,
                        min_method='adam', max_evals=1000,
                        mm_state=True,
@@ -344,7 +344,7 @@ if __name__ == '__main__':
 
     try:
         os.makedirs(output_folder)
-    except:
+    except Exception:
         # move the old stuff
         target_dir = output_folder+'_'+str(os.stat(output_folder).st_ctime)
         os.rename(output_folder, target_dir)
