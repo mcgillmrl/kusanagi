@@ -310,6 +310,9 @@ if __name__ == '__main__':
         '-n', '--name', type=str,
         help='experiment name')
     parser.add_argument(
+        '-H', '--horizon', type=int,
+        help='steps for control horizon (length of trials in number of timesteps)')
+    parser.add_argument(
         '-o', '--output_folder', type=str, default=utils.get_output_dir(),
         help='where to save the results of the experiment')
     parser.add_argument(
@@ -328,6 +331,8 @@ if __name__ == '__main__':
     # prepare experiment parameters
     scenario_params, pol, dyn, learner_setup = get_scenario(e_id, **kwargs)
     params, loss_kwargs, polopt_kwargs, extra_inps = scenario_params
+    if args.horizon:
+        params['min_steps'] = args.horizon
     # init cost model
     cost = partial(cartpole.cartpole_loss, **params['cost'])
     # init environment
