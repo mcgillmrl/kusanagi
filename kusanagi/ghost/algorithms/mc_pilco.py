@@ -2,6 +2,7 @@ import lasagne
 import numpy as np
 import theano
 import theano.tensor as tt
+
 from kusanagi import utils
 
 randint = lasagne.random.get_rng().randint(1, 2147462579)
@@ -45,6 +46,7 @@ def rollout(x0, H, gamma0,
             angle_dims=[],
             z=None, mm_state=True, mm_cost=True,
             noisy_policy_input=True, noisy_cost_input=True,
+            time_varying_cost=False,
             truncate_gradient=-1, extra_shared=[],
             split_H=1, **kwargs):
     ''' Given some initial state particles x0, and a prediction horizon H
@@ -59,8 +61,14 @@ def rollout(x0, H, gamma0,
     opts = (mm_state, mm_cost, noisy_policy_input, noisy_cost_input)
     utils.print_with_stamp(msg % opts, 'mc_pilco.rollout')
 
+    if not time_varying_cost:
+        def tv_cost(t, *args, **kwargs): 
+            return cost(*args, **kwargs)
+    else:
+        tv_cost = cost
+
     # define internal scan computations
-    def step_rollout(z1, z2, z2_prev, cumm_cost, x, sn, gamma, *args):
+    def step_rollout(t, z1, z2, z2_prev, cumm_cost, x, sn, gamma, *args):
         '''
             Single step of rollout.
         '''
@@ -75,7 +83,7 @@ def rollout(x0, H, gamma0,
             x, xn, pol, dyn, angle_dims, **kwargs)
 
         def eval_cost(xn, mxn=None, Sxn=None):
-            c = cost(xn, None)
+            c = tv_cost(t, xn, None)
             # moment-matching for cost
             if mm_cost:
                 # compute input moments
@@ -86,7 +94,7 @@ def rollout(x0, H, gamma0,
                            - tt.outer(mxn, mxn))
                 # propagate gaussian through cost (should be implemented in
                 # cost func)
-                mc = cost(mxn, Sxn)[0]
+                mc = tv_cost(t, mxn, Sxn)[0]
             # no moment-matching
             else:
                 mc = c.sum()/n
@@ -135,7 +143,8 @@ def rollout(x0, H, gamma0,
         start_idx = (i-1)*H_ + 1
         end_idx = start_idx + H_
         output = theano.scan(
-            fn=step_rollout, sequences=[z[0, start_idx:end_idx],
+            fn=step_rollout, sequences=[tt.arange(start_idx, end_idx),
+                                        z[0, start_idx:end_idx],
                                         z[1, start_idx:end_idx],
                                         z[1, -end_idx:-start_idx]],
             outputs_info=[None, accum_cost, x0,
@@ -169,6 +178,7 @@ def rollout(x0, H, gamma0,
 def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=False,
+             time_varying_cost=False,
              resample_dyn=False, crn=True, average=True,
              truncate_gradient=-1, split_H=1, extra_shared=[], **kwargs):
     '''
@@ -258,6 +268,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
                             split_H=split_H,
                             noisy_policy_input=noisy_policy_input,
                             noisy_cost_input=noisy_cost_input,
+                            time_varying_cost=time_varying_cost
                             extra_shared=extra_shared, **kwargs)
 
     accum_cost, costs, trajectories = r_outs
