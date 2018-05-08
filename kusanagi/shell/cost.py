@@ -2,7 +2,7 @@
 import theano
 import numpy as np
 import theano.tensor as tt
-from theano.tensor.nlinalg import matrix_inverse
+from theano.tensor.nlinalg import matrix_inverse, trace
 from theano.tensor.slinalg import solve
 from theano.tensor.nlinalg import det
 from kusanagi import utils
@@ -84,6 +84,22 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
             -delta.dot(S2).dot(delta))/tt.sqrt(det(Ip2SxQ)) - m_cost**2
 
         return 1.0 + m_cost, s_cost
+
+
+def reverse_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov):
+    '''
+        Returns KL ( Normal(mx, Sx) || Normal(target_mean[t], target_cov[t]) )
+    '''
+    mt, St = target_mean[t], target_cov[t]
+    if Sx is None:
+        # TODO evaluate empirical KL
+        return 0
+    else:
+        delta = mt - mx
+        Stinv = matrix_inverse(St)
+        kl = tt.log(det(St)) - tt.log(det(Sx))
+        kl += trace(Stinv.dot(delta.T.dot(delta) + Sx - St))
+        return 0.5*kl
 
 
 def convert_angle_dimensions(mx, Sx, angle_dims=[]):
