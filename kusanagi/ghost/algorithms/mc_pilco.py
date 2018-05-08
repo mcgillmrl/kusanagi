@@ -268,7 +268,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
                             split_H=split_H,
                             noisy_policy_input=noisy_policy_input,
                             noisy_cost_input=noisy_cost_input,
-                            time_varying_cost=time_varying_cost
+                            time_varying_cost=time_varying_cost,
                             extra_shared=extra_shared, **kwargs)
 
     accum_cost, costs, trajectories = r_outs
