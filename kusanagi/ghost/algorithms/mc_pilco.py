@@ -178,9 +178,9 @@ def rollout(x0, H, gamma0,
 def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=False,
-             time_varying_cost=False,
-             resample_dyn=False, crn=True, average=True,
-             truncate_gradient=-1, split_H=1, extra_shared=[], **kwargs):
+             time_varying_cost=False, resample_dyn=False, crn=True, average=True,
+             truncate_gradient=-1, split_H=1, extra_shared=[], extra_updts_init=None,
+             **kwargs):
     '''
         Constructs the computation graph for the value function according to
         the mc-pilco algorithm:
@@ -275,11 +275,13 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
 
     # loss is E_{dyns}((1/H)*sum c(x_t))
     #          = (1/H)*sum E_{x_t}(c(x_t))
-    #loss = mean_costs.mean() if average else mean_costs.sum()
+    # loss = mean_costs.mean() if average else mean_costs.sum()
     loss = accum_cost/H if average else accum_cost
 
     inps = [mx0, Sx0, H, gamma]
     updates += updts
+    if callable(extra_updts_init):
+        updates += extra_updts_init(loss, costs, trajectories)
     if intermediate_outs:
         return [loss, costs, trajectories], inps, updates
     else:
