@@ -316,7 +316,7 @@ if __name__ == '__main__':
         help='experiment name')
     parser.add_argument(
         '-H', '--horizon', type=int,
-        help='steps for control horizon (length of trials in number of timesteps)')
+        help='steps for control horizon (length of trials in time steps)')
     parser.add_argument(
         '-o', '--output_folder', type=str, default=utils.get_output_dir(),
         help='where to save the results of the experiment')

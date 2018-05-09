@@ -16,8 +16,8 @@ floatX = theano.config.floatX
 # GP based controller
 class RBFPolicy(RBFGP):
     def __init__(self, idims=None, odims=None, sat_func=gSat, state0_dist=None,
-                 maxU=[10], minU=None, n_inducing=10, angle_dims=[], name='RBFPolicy',
-                 filename=None, max_evals=750, *kwargs):
+                 maxU=[10], minU=None, n_inducing=10, angle_dims=[],
+                 name='RBFPolicy', filename=None, max_evals=750, *kwargs):
         self.maxU = np.array(maxU)
         self.minU = np.array(minU) if minU is not None else -self.maxU
         self.n_inducing = n_inducing
@@ -136,7 +136,7 @@ class RandPolicy:
             new_u = np.random.random(scale.size)
             new_u = new_u.reshape(scale.shape)*scale + bias
             r = np.random.binomial(1, 0.3)*0.75
-            ret = (new_u if self.last_u is None or t==0
+            ret = (new_u if self.last_u is None or t == 0
                    else self.last_u + r*(new_u - self.last_u))
             ret = np.min((ret.flatten(), self.maxU.flatten()), axis=0)
             ret = np.max((ret.flatten(), self.minU.flatten()), axis=0)
@@ -191,10 +191,10 @@ class LocalLinearPolicy(Loadable):
         self.z_nominal = theano.shared(z)
 
         # initialize the open loop and feedback matrices
-        I = np.zeros((H_steps, len(self.maxU)))
-        L = np.zeros((H_steps, len(self.maxU), z0.size))
-        self.I = theano.shared(I)
-        self.L = theano.shared(L)
+        I_ = np.zeros((H_steps, len(self.maxU)))
+        L_ = np.zeros((H_steps, len(self.maxU), z0.size))
+        self.I_ = theano.shared(I_)
+        self.L_ = theano.shared(L_)
 
         # set a meaningful filename
         self.filename = self.name+'_'+str(len(self.m0))+'_'+str(len(self.maxU))
@@ -205,7 +205,7 @@ class LocalLinearPolicy(Loadable):
             self.t = t
         t = self.t
 
-        u, z, I, L = self.u_nominal, self.z_nominal, self.I, self.L
+        u, z, I, L = self.u_nominal, self.z_nominal, self.I_, self.L_
 
         if symbolic:
             tt_ = theano.tensor
@@ -297,7 +297,7 @@ class AdjustedPolicy:
             Su = Su + Sadj + Su_adj + Su_adj.T
             if S is not None:
                 if symbolic:
-                    Cu = Cu + tt_.slinalg.Solve(S, Sxu_adj[:m.size])
+                    Cu = Cu + tt_.slinalg.solve(S, Sxu_adj[:m.size])
                 else:
                     Cu = Cu + np.linalg.pinv(S).dot(Sxu_adj[:m.size])
 

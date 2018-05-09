@@ -105,7 +105,8 @@ class BNN(BaseRegressor):
             self.network_spec = network_spec
         elif type(network_spec) is dict:
             network_spec['input_dims'] = idims
-            network_spec['output_dims'] = odims*2 if self.heteroscedastic else odims
+            odims_ = odims*2 if self.heteroscedastic else odims
+            network_spec['output_dims'] = odims_
             network_spec['name'] = network_spec.get('name', self.name)
             build_fn = network_spec.pop('build_fn', dropout_mlp)
             self.network_spec = build_fn(**network_spec)
@@ -125,7 +126,6 @@ class BNN(BaseRegressor):
         self.iXs = None
         self.Ym = None
         self.Ys = None
-
 
         # filename for saving
         fname = '%s_%d_%d_%s_%s' % (self.name, self.D, self.E,
@@ -155,7 +155,7 @@ class BNN(BaseRegressor):
         if self.network_params is None:
             self.network_params = {}
 
-        if self.network_spec is not None:            
+        if self.network_spec is not None:
             self.build_network(self.network_spec,
                                params=self.network_params,
                                name=self.name)
@@ -302,8 +302,10 @@ class BNN(BaseRegressor):
         else:
             if self.network:
                 # remove old network params from this class params
-                params = lasagne.layers.get_all_params(self.network, trainable=True)
-                self.remove_params([p.name for p in params if p.name is not None])
+                params = lasagne.layers.get_all_params(
+                    self.network, trainable=True)
+                self.remove_params(
+                    [p.name for p in params if p.name is not None])
             # add network parameters to this class params
             params = lasagne.layers.get_all_params(network, trainable=True)
             self.set_params(dict([(p.name, p) for p in params]))

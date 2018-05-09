@@ -62,16 +62,17 @@ def rollout(x0, H, gamma0,
     utils.print_with_stamp(msg % opts, 'mc_pilco.rollout')
 
     if not time_varying_cost:
-        def tv_cost(t, *args, **kwargs): 
+        def tv_cost(t, *args, **kwargs):
             return cost(*args, **kwargs)
     else:
         tv_cost = cost
 
     # define internal scan computations
-    def step_rollout(t, z1, z2, z2_prev, cumm_cost, x, sn, gamma, *args):
+    def step_rollout(t_next, z1, z2, z2_prev, cumm_cost, x, sn, gamma, *args):
         '''
             Single step of rollout.
         '''
+        t_next = theano.printing.Print('t_next')(t_next)
         n = x.shape[0]
         n = n.astype(theano.config.floatX)
 
@@ -82,7 +83,7 @@ def rollout(x0, H, gamma0,
         x_next, sn_next = propagate_particles(
             x, xn, pol, dyn, angle_dims, **kwargs)
 
-        def eval_cost(xn, mxn=None, Sxn=None):
+        def eval_cost(t, xn, mxn=None, Sxn=None):
             c = tv_cost(t, xn, None)
             # moment-matching for cost
             if mm_cost:
@@ -110,15 +111,15 @@ def rollout(x0, H, gamma0,
             if noisy_cost_input:
                 xn_next += z2*sn_next
                 #  get cost of applying action:
-                mc_next, c_next = eval_cost(xn_next)
+                mc_next, c_next = eval_cost(t_next, xn_next)
             else:
-                mc_next, c_next = eval_cost(xn_next, mx_next, Sx_next)
+                mc_next, c_next = eval_cost(t_next, xn_next, mx_next, Sx_next)
         # no moment-matching for state
         else:
             # noisy state measurement for cost
             xn_next = x_next + z2*sn_next if noisy_cost_input else x_next
             #  get cost of applying action:
-            mc_next, c_next = eval_cost(xn_next)
+            mc_next, c_next = eval_cost(t_next, xn_next)
 
         c_next = gamma*c_next
         mc_next = gamma*mc_next
@@ -142,8 +143,9 @@ def rollout(x0, H, gamma0,
     for i in range(1, split_H+1):
         start_idx = (i-1)*H_ + 1
         end_idx = start_idx + H_
+        trange = theano.printing.Print('Trange')(tt.arange(start_idx, end_idx))
         output = theano.scan(
-            fn=step_rollout, sequences=[tt.arange(start_idx, end_idx),
+            fn=step_rollout, sequences=[trange,
                                         z[0, start_idx:end_idx],
                                         z[1, start_idx:end_idx],
                                         z[1, -end_idx:-start_idx]],
@@ -178,8 +180,9 @@ def rollout(x0, H, gamma0,
 def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=False,
-             time_varying_cost=False, resample_dyn=False, crn=True, average=True,
-             truncate_gradient=-1, split_H=1, extra_shared=[], extra_updts_init=None,
+             time_varying_cost=False, resample_dyn=False, crn=True,
+             average=True, truncate_gradient=-1, split_H=1,
+             extra_shared=[], extra_updts_init=None,
              **kwargs):
     '''
         Constructs the computation graph for the value function according to

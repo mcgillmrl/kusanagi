@@ -50,7 +50,7 @@ class SGDOptimizer(object):
     def min_method(self, min_method):
         self.__min_method = min_method.lower()
 
-    def set_objective(self, loss, params, inputs=None, updts=None, 
+    def set_objective(self, loss, params, inputs=None, updts=None,
                       outputs=[], output_grads=False, grads=None,
                       polyak_averaging=None, clip=None, trust_input=True,
                       compilation_mode=None, **kwargs):
@@ -64,7 +64,8 @@ class SGDOptimizer(object):
             @param updts dictionary of list of theano updates to be applied
                          after every evaluation of the loss function
             @param outputs additional outputs to return in the callbacks
-            @param output_grads whether to return the gradients in the callbacks
+            @param output_grads whether to return the gradients in the
+                                callbacks
             @param grads gradients of the loss function. If not provided, will
                          be computed here
             @param kwargs arguments to pass to the lasagne.updates function
@@ -263,7 +264,8 @@ class SGDOptimizer(object):
 
         # training loop
         if return_best:
-            out_str = 'Curr loss: %E [%d: %E], n_evals: %d, Avg. time per updt: %f'
+            out_str = 'Curr loss: %E [%d: %E], n_evals: %d'
+            out_str += ', Avg. time per updt: %f'
         else:
             out_str = 'Curr loss: %E, n_evals: %d, Avg. time per updt: %f'
         for i in range(1, self.max_evals):
@@ -290,7 +292,7 @@ class SGDOptimizer(object):
             self.iter_time += it_updt
             if return_best:
                 str_params = (loss, self.best_p[2], self.best_p[0],
-                    self.n_evals, self.iter_time)
+                              self.n_evals, self.iter_time)
             else:
                 str_params = (loss, self.n_evals, self.iter_time)
             utils.print_with_stamp(out_str % str_params, self.name, True)

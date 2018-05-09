@@ -124,7 +124,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             build_fn=regression.mlp)
-        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
+        pol = control.NNPolicy(
+            dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 3:
         # mc PILCO with RBF controller and dropout mlp dynamics
@@ -165,7 +166,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             build_fn=regression.mlp)
-        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
+        pol = control.NNPolicy(
+            dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 5:
         # mc PILCO with RBF controller and log normal dropout dynamics
@@ -208,7 +210,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             build_fn=regression.mlp)
-        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
+        pol = control.NNPolicy(
+            dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 7:
         # mc PILCO with dropout controller and dropout mlp dynamics
@@ -234,7 +237,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             build_fn=regression.dropout_mlp)
-        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
+        pol = control.NNPolicy(
+            dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 8:
         # mc PILCO with dropout controller and log-normal dropout dynamics
@@ -260,7 +264,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             W_init=lasagne.init.Orthogonal(),
             dropout_class=regression.layers.DenseDropoutLayer,
             build_fn=regression.dropout_mlp)
-        pol = control.NNPolicy(dyn.E, network_spec=pol_spec, **params['policy'])
+        pol = control.NNPolicy(
+            dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 9:
         # mc PILCO with dropout controller and concrete dropout dynamics
@@ -310,7 +315,7 @@ if __name__ == '__main__':
         help='experiment name')
     parser.add_argument(
         '-H', '--horizon', type=int,
-        help='steps for control horizon (length of trials in number of timesteps)')
+        help='steps for control horizon (length of trials in time steps)')
     parser.add_argument(
         '-o', '--output_folder', type=str, default=utils.get_output_dir(),
         help='where to save the results of the experiment')
@@ -336,7 +341,7 @@ if __name__ == '__main__':
     env = pendulum.Pendulum(**params['plant'])
     # init cost model
     cost = partial(pendulum.pendulum_loss, **params['cost'])
-    
+
     # initialize output directory
     odir = args.output_folder
     if args.name is not None:
@@ -348,7 +353,7 @@ if __name__ == '__main__':
 
     try:
         os.makedirs(output_folder)
-    except:
+    except OSError:
         # move the old stuff
         target_dir = output_folder+'_'+str(os.stat(output_folder).st_ctime)
         os.rename(output_folder, target_dir)
@@ -380,8 +385,9 @@ if __name__ == '__main__':
         # TODO save state of the optimizer
 
     # run pilco
-    experiment_utils.run_pilco_experiment(env, cost,
-        scenario, params, loss_kwargs, polopt_kwargs, extra_inps,
+    experiment_utils.run_pilco_experiment(
+        env, cost, scenario, params,
+        loss_kwargs, polopt_kwargs, extra_inps,
         learning_iteration_cb=iter_cb, render=args.render,
         debug_plot=args.debug_plot)
 

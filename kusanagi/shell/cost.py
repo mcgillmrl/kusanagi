@@ -3,7 +3,7 @@ import theano
 import numpy as np
 import theano.tensor as tt
 from theano.tensor.nlinalg import matrix_inverse, trace
-from theano.tensor.slinalg import solve
+# from theano.tensor.slinalg import solve
 from theano.tensor.nlinalg import det
 from kusanagi import utils
 
