@@ -225,7 +225,7 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
     # initial call so that the user gets the state before
     # the first learrning iteration
     if callable(learning_iteration_cb):
-        learning_iteration_cb(exp, dyn, pol, polopt, params)
+        learning_iteration_cb(exp, dyn, pol, polopt, params, rollout_fn)
 
     if crn_dropout:
         utils.print_with_stamp('using common random numbers for dyn and pol', 'experiment_utils')
@@ -270,7 +270,7 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
 
         if callable(learning_iteration_cb):
             # user callback
-            learning_iteration_cb(exp, dyn, pol, polopt, params)
+            learning_iteration_cb(exp, dyn, pol, polopt, params, rollout_fn)
 
         if debug_plot > 0:
             fig, axarr = plot_rollout(

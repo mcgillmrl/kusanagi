@@ -372,7 +372,7 @@ if __name__ == '__main__':
         learner_setup, pol=pol, dyn=dyn)
 
     # callback executed after every learning iteration
-    def iter_cb(exp, dyn, pol, polopt, params):
+    def iter_cb(exp, dyn, pol, polopt, params, rollout_fn):
         i = exp.curr_episode
         # setup output directory
         exp.save(output_folder, 'experience_%d' % (i))
