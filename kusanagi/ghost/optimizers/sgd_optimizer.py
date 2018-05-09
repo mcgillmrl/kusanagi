@@ -50,7 +50,8 @@ class SGDOptimizer(object):
     def min_method(self, min_method):
         self.__min_method = min_method.lower()
 
-    def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
+    def set_objective(self, loss, params, inputs=None, updts=None, 
+                      outputs=[], output_grads=False, grads=None,
                       polyak_averaging=None, clip=None, trust_input=True,
                       compilation_mode=None, **kwargs):
         '''
@@ -62,6 +63,8 @@ class SGDOptimizer(object):
                           compute the loss, other than params
             @param updts dictionary of list of theano updates to be applied
                          after every evaluation of the loss function
+            @param outputs additional outputs to return in the callbacks
+            @param output_grads whether to return the gradients in the callbacks
             @param grads gradients of the loss function. If not provided, will
                          be computed here
             @param kwargs arguments to pass to the lasagne.updates function
@@ -87,7 +90,9 @@ class SGDOptimizer(object):
         min_method_updt = LASAGNE_MIN_METHODS[self.min_method]
         grad_updates = min_method_updt(grads, params, **kwargs)
 
-        outputs = [loss]+grads
+        outputs = [loss] + outputs
+        if output_grads:
+            outputs += grads
         grad_updates = grad_updates+updts
         if polyak_averaging and polyak_averaging > 0.0:
             # create copy of params
@@ -191,7 +196,7 @@ class SGDOptimizer(object):
 
                 # the returned loss and gradients correspond to the parameters
                 # BEFORE the update
-                loss, dloss = ret[0], ret[1:]
+                loss = ret[0]
 
                 if loss < self.best_p[0] or self.n_evals < 10:
                     # get current optimizer state
@@ -200,7 +205,7 @@ class SGDOptimizer(object):
                              for s in self.optimizer_state]
                     self.best_p = [loss, state, self.n_evals]
                 if callable(callback):
-                    callback(loss, dloss)
+                    callback(*ret)
 
                 self.n_evals += 1
                 if self.n_evals >= self.max_evals:
@@ -267,7 +272,7 @@ class SGDOptimizer(object):
             # evaluate current policy and update parameters
             ret = self.update_params_fn()
             # the returned loss corresponds to the parameters BEFORE the update
-            loss, dloss = ret[0], ret[1:]
+            loss = ret[0]
 
             if loss < self.best_p[0] or i < 10 and return_best:
                 # get current optimizer state
@@ -276,7 +281,7 @@ class SGDOptimizer(object):
                          for s in self.optimizer_state]
                 self.best_p = [loss, state, i]
             if callable(callback):
-                callback(loss, dloss)
+                callback(*ret)
             self.n_evals += 1
 
             end_time = time.time()
