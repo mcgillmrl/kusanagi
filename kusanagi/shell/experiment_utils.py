@@ -210,6 +210,7 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
     loss, inps, updts = learner.get_loss(
         pol, dyn, cost, angle_dims, **loss_kwargs)
 
+    rollout_fn = None
     if debug_plot > 0:
         # build rollout function for plotting
         loss_kwargs['mm_state'] = False
