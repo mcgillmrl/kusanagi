@@ -114,11 +114,11 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
             pol_spec = regression.mlp(
                 input_dims=pol.D,
                 output_dims=pol.E,
-                hidden_dims=[50]*2,
-                p=0.05, p_input=0.0,
+                hidden_dims=[200]*2,
+                p=0.1, p_input=0.0,
                 nonlinearities=nonlinearities.rectify,
                 output_nonlinearity=pol.sat_func,
-                dropout_class=regression.DenseDropoutLayer,
+                dropout_class=regression.layers.DenseDropoutLayer,
                 name=pol.name)
         pol.network = pol.build_network(pol_spec)
 
@@ -133,7 +133,7 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
                 hidden_dims=[200]*2,
                 p=0.1, p_input=0.1,
                 nonlinearities=nonlinearities.rectify,
-                dropout_class=regression.DenseLogNormalDropoutLayer,
+                dropout_class=regression.layers.DenseLogNormalDropoutLayer,
                 name=dyn.name)
         dyn.network = dyn.build_network(dyn_spec)
 
