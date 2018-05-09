@@ -354,7 +354,7 @@ if __name__ == '__main__':
 
     try:
         os.makedirs(output_folder)
-    except IOError:
+    except OSError:
         # move the old stuff
         target_dir = output_folder+'_'+str(os.stat(output_folder).st_ctime)
         os.rename(output_folder, target_dir)
