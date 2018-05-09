@@ -145,14 +145,14 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
 
     # module where get_loss and build_rollout are defined
     # (can also be a class)
-    learner = algorithms.mc_pilco  
+    learner = algorithms.mc_pilco
 
     return p0, pol, dyn, exp, polopt, learner, params
 
 
 def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
                          params=None, loss_kwargs={}, polopt_kwargs={},
-                         extra_inps=[], step_cb=None, polopt_cb=None,
+                         extra_inps=[], step_cb=None, minimize_cb=None,
                          learning_iteration_cb=None, max_dataset_size=0,
                          render=False, debug_plot=0):
     # setup experiment
@@ -175,14 +175,14 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
         if callable(step_cb):
             step_cb(state, action, cost, info)
 
-    def polopt_cb_internal(*args, **kwargs):
+    def minimize_cb_internal(*args, **kwargs):
         if not crn_dropout:
             if hasattr(dyn, 'update'):
                 dyn.update()
             if hasattr(pol, 'update'):
                 pol.update()
-        if callable(polopt_cb):
-            polopt_cb(*args, **kwargs)
+        if callable(minimize_cb):
+            minimize_cb(*args, **kwargs)
 
     # function to execute before applying policy
     def gTrig(state):
@@ -248,15 +248,16 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
             1e-4*np.eye(x0.shape[1]) if len(x0) > 10 else p0.cov
 
         # 2. optimize policy
-        polopt_args = [m0, S0, H, gamma]
+        minimize_args = [m0, S0, H, gamma]
         if isinstance(polopt, optimizers.SGDOptimizer):
             # check if we have a learning rate parameter
             lr = params.get('learning_rate', 1e-4)
             if callable(lr):
                 lr = lr(i)
-            polopt_args.append(lr)
-        polopt.minimize(*polopt_args,
-                        callback=polopt_cb_internal,
+            minimize_args.append(lr)
+
+        polopt.minimize(*minimize_args,
+                        callback=minimize_cb_internal,
                         return_best=return_best)
 
         # 3. apply controller
