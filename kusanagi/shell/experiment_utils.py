@@ -1,6 +1,5 @@
 import numpy as np
 
-from functools import partial
 from lasagne import nonlinearities
 from matplotlib import pyplot as plt
 
@@ -33,7 +32,8 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
             # plot predictive distribution
             for i in range(n_samples):
                 axarr[d].plot(
-                    np.arange(T), st[i, :], color='steelblue', alpha=10.0/n_samples)
+                    np.arange(T), st[i, :], color='steelblue',
+                    alpha=10.0/n_samples)
             axarr[d].plot(
                 np.arange(T), st[:, :].mean(0), color='blue', linewidth=2)
         if m_states is not None:
@@ -210,6 +210,10 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
     loss, inps, updts = learner.get_loss(
         pol, dyn, cost, angle_dims, **loss_kwargs)
 
+    outs = []
+    if isinstance(loss, list):
+        loss, outs = loss[0], loss[1:]
+
     rollout_fn = None
     if debug_plot > 0:
         # build rollout function for plotting
@@ -221,7 +225,7 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
     # set objective of policy optimizer
     inps += extra_inps
     polopt.set_objective(loss, pol.get_params(symbolic=True),
-                         inps, updts, **polopt_kwargs)
+                         inps, updts, outs, **polopt_kwargs)
 
     # initial call so that the user gets the state before
     # the first learrning iteration
@@ -229,9 +233,11 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
         learning_iteration_cb(exp, dyn, pol, polopt, params, rollout_fn)
 
     if crn_dropout:
-        utils.print_with_stamp('using common random numbers for dyn and pol', 'experiment_utils')
+        utils.print_with_stamp(
+            'using common random numbers for dyn and pol', 'experiment_utils')
     else:
-        utils.print_with_stamp('resampling weights for dyn and pol', 'experiment_utils')        
+        utils.print_with_stamp(
+            'resampling weights for dyn and pol', 'experiment_utils')
     for i in range(n_opt):
         total_exp = sum([len(st) for st in exp.states])
         msg = '==== Iteration [%d], experience: [%d steps] ===='
