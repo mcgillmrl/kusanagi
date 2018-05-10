@@ -88,7 +88,7 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
 
 
 def forward_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov,
-                             angle_dims=[], angle_dims_t):
+                             angle_dims=[], angle_dims_t=[]):
     '''
         Returns KL ( Normal(target_mean[t], target_cov[t]) || Normal(mx, Sx) )
     '''
