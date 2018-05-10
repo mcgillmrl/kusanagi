@@ -9,8 +9,10 @@ from functools import partial
 
 # NN controller
 class NNPolicy(BNN):
-    def __init__(self, input_dims, maxU=[10], minU=None, angle_dims=[], sat_func=sat,
-                 name='NNPolicy', filename=None, **kwargs):
+    def __init__(self, input_dims, maxU=[10], minU=None, angle_dims=[],
+                 sat_func=sat, name='NNPolicy', filename=None, **kwargs):
+        # policy output noise is not input-dependent by default
+        kwargs['heteroscedastic'] = kwargs.get('heteroscedastic', False)
         self.maxU = np.array(maxU, dtype=theano.config.floatX)
         self.minU = (np.array(minU, dtype=theano.config.floatX)
                      if minU is not None else -self.maxU)
