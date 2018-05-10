@@ -3,7 +3,8 @@ import theano
 import numpy as np
 import theano.tensor as tt
 from theano.tensor.nlinalg import matrix_inverse, trace
-# from theano.tensor.slinalg import solve
+from theano.tensor.slinalg import (cholesky,
+                                   solve_lower_triangular)
 from theano.tensor.nlinalg import det
 from kusanagi import utils
 
@@ -86,14 +87,45 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
         return 1.0 + m_cost, s_cost
 
 
+def forward_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov):
+    '''
+        Returns KL ( Normal(target_mean[t], target_cov[t]) || Normal(mx, Sx) )
+    '''
+    mt, St = target_mean[t], target_cov[t]
+    if Sx is None:
+        # TODO evaluate empirical KL
+        return 0
+    else:
+        delta = mx - mt
+        Sxinv = matrix_inverse(Sx)
+        kl = tt.log(det(Sx)) - tt.log(det(St))
+        kl += trace(Sxinv.dot(delta.T.dot(delta) + St - Sx))
+        return 0.5*kl
+
+
 def reverse_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov):
     '''
         Returns KL ( Normal(mx, Sx) || Normal(target_mean[t], target_cov[t]) )
     '''
     mt, St = target_mean[t], target_cov[t]
     if Sx is None:
-        # TODO evaluate empirical KL
-        return 0
+        x = mx
+        n = x.shape[0]
+        n = n.astype(theano.config.floatX)
+        mx = x.mean(0)
+        Sx = x.T.dot(x)/n - tt.outer(mx, mx)
+
+        # evaluate empirical KL (expectation over the rolled out samples)
+        def logprob(x, m, S):
+            delta = x - m
+            L = cholesky(S)
+            beta = solve_lower_triangular(L, delta.T).T
+            lp = -0.5*tt.square(beta).sum(-1)
+            lp -= tt.sum(tt.log(tt.diagonal(L)))
+            lp -= (0.5*m.size*tt.log(2*np.pi)).astype(theano.config.floatX)
+            return lp
+
+        return (logprob(x, mx, Sx) - logprob(x, mt, St)).mean(0)
     else:
         delta = mt - mx
         Stinv = matrix_inverse(St)
