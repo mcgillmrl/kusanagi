@@ -94,7 +94,9 @@ def rollout(x0, H, gamma0,
                            - tt.outer(mxn, mxn))
                 # propagate gaussian through cost (should be implemented in
                 # cost func)
-                mc = tv_cost(t, mxn, Sxn)[0]
+                mc = tv_cost(t, mxn, Sxn)
+                if isinstance(mc, list) or isinstance(mc, tuple):
+                    mc = mc[0]
             # no moment-matching
             else:
                 mc = c.sum()/n
