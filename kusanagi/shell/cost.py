@@ -87,11 +87,14 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
         return 1.0 + m_cost, s_cost
 
 
-def forward_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov):
+def forward_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov,
+                             angle_dims=[], angle_dims_t):
     '''
         Returns KL ( Normal(target_mean[t], target_cov[t]) || Normal(mx, Sx) )
     '''
     mt, St = target_mean[t], target_cov[t]
+    mx, Sx = convert_angle_dimensions(mx, Sx, angle_dims)
+    mt, St = convert_angle_dimensions(mt, St, angle_dims_t)
     if Sx is None:
         # TODO evaluate empirical KL
         return 0
@@ -103,11 +106,14 @@ def forward_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov):
         return 0.5*kl
 
 
-def reverse_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov):
+def reverse_gaussian_kl_loss(t, mx, Sx, target_mean, target_cov,
+                             angle_dims=[], angle_dims_t=[]):
     '''
         Returns KL ( Normal(mx, Sx) || Normal(target_mean[t], target_cov[t]) )
     '''
     mt, St = target_mean[t], target_cov[t]
+    mx, Sx = convert_angle_dimensions(mx, Sx, angle_dims)
+    mt, St = convert_angle_dimensions(mt, St, angle_dims_t)
     if Sx is None:
         x = mx
         n = x.shape[0]
