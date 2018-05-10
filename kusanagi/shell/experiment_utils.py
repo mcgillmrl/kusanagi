@@ -53,9 +53,7 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
         axarr[d].plot(
             np.arange(T-1), np.array(exp.states[-1])[:T, d], color='red')
 
-    fig.canvas.update()
     plt.show(False)
-    fig.canvas.update()
     plt.waitforbuttonpress(0.5)
 
     return fig, axarr
@@ -159,6 +157,9 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
     exp_objs = exp_setup(params)
     p0, pol, dyn, exp, polopt, learner, params = exp_objs
     n_rnd = params.get('n_rnd', 1)
+    n_init = params.get('n_init', 0)
+    if n_rnd == 0:
+        n_init = 1
     n_opt = params.get('n_opt', 100)
     return_best = params.get('return_best', False)
     crn_dropout = params.get('crn_dropout', True)
@@ -192,13 +193,15 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
     randpol = control.RandPolicy(maxU=pol.maxU)
     for i in range(n_rnd):
         exp.new_episode()
-        if n_rnd > 1 and i == n_rnd - 1:
-            p = pol
-            utils.print_with_stamp('Executing initial policy')
-        else:
-            p = randpol
-            utils.print_with_stamp('Executing uniformly-random controls')
-        apply_controller(env, p, H,
+        utils.print_with_stamp('Executing uniformly-random controls')
+        apply_controller(env, randpol, H,
+                         preprocess=gTrig,
+                         callback=step_cb_internal)
+
+    for i in range(n_init):
+        exp.new_episode()
+        utils.print_with_stamp('Executing initial policy')
+        apply_controller(env, pol, H,
                          preprocess=gTrig,
                          callback=step_cb_internal)
 
