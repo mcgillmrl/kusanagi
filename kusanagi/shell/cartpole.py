@@ -114,7 +114,8 @@ class Cartpole(plant.ODEPlant):
                  loss_func=cartpole_loss,
                  name='Cartpole',
                  *args, **kwargs):
-        super(Cartpole, self).__init__(name=name, loss_func=loss_func, *args, **kwargs)
+        super(Cartpole, self).__init__(
+            name=name, loss_func=loss_func, *args, **kwargs)
         # cartpole system parameters
         self.l = pole_length
         self.m = pole_mass
@@ -165,7 +166,7 @@ class Cartpole(plant.ODEPlant):
 
     def _render(self, mode='human', close=False):
         if self.renderer is None:
-            self.renderer = CartpoleDraw(self)
+            self.renderer = CartpoleDraw(self, name=self.name)
             self.renderer.init_ui()
         self.renderer.update(*self.get_state(noisy=False))
 
@@ -198,7 +199,7 @@ class CartpoleDraw(plant.PlantDraw):
                                        0.25*self.cart_h, facecolor='black')
         self.pole_line = plt.Line2D((self.center_x, 0), (self.center_y, l),
                                     lw=2, c='r')
-        self.mass_circle = plt.Circle((0, l), self.mass_r, fc='y')        
+        self.mass_circle = plt.Circle((0, l), self.mass_r, fc='y')
         self.ax.add_patch(self.cart_rect)
         self.ax.add_patch(self.mass_circle)
         self.ax.add_line(self.pole_line)

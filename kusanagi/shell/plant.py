@@ -143,6 +143,7 @@ class PlantDraw(object):
         self.polling_pipe, self.drawing_pipe = Pipe()
 
     def init_ui(self):
+        plt.close(self.name)
         self.fig = plt.figure(self.name)
         self.ax = plt.gca()
         self.ax.set_xlim([-1.5, 1.5])
@@ -153,7 +154,7 @@ class PlantDraw(object):
         self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
         self.cursor = Cursor(self.ax, useblit=True, color='red', linewidth=2)
         self.init_artists()
-        #plt.ion()
+        # plt.ion()
         plt.show(False)
 
     def drawing_loop(self, drawing_pipe):
@@ -182,7 +183,7 @@ class PlantDraw(object):
 
     def close(self):
         # close the matplotlib windows, clean up
-        #plt.ioff()
+        # plt.ioff()
         plt.close(self.fig)
 
     def update(self, *args, **kwargs):
