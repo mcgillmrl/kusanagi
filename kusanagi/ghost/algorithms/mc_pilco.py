@@ -72,7 +72,6 @@ def rollout(x0, H, gamma0,
         '''
             Single step of rollout.
         '''
-        t_next = theano.printing.Print('t_next')(t_next)
         n = x.shape[0]
         n = n.astype(theano.config.floatX)
 
@@ -91,7 +90,7 @@ def rollout(x0, H, gamma0,
                 if mxn is None:
                     mxn = xn.mean(0)
                 if Sxn is None:
-                    Sxn = (xn.T.dot(xn)/n
+                    Sxn = (xn.T.dot(xn)/(n-1)
                            - tt.outer(mxn, mxn))
                 # propagate gaussian through cost (should be implemented in
                 # cost func)
@@ -143,9 +142,9 @@ def rollout(x0, H, gamma0,
     for i in range(1, split_H+1):
         start_idx = (i-1)*H_ + 1
         end_idx = start_idx + H_
-        trange = theano.printing.Print('Trange')(tt.arange(start_idx, end_idx))
+
         output = theano.scan(
-            fn=step_rollout, sequences=[trange,
+            fn=step_rollout, sequences=[tt.arange(start_idx, end_idx),
                                         z[0, start_idx:end_idx],
                                         z[1, start_idx:end_idx],
                                         z[1, -end_idx:-start_idx]],
