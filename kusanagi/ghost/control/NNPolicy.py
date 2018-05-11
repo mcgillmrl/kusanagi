@@ -1,6 +1,7 @@
 import lasagne
 import numpy as np
 import theano
+import theano.tensor as tt
 
 from kusanagi.ghost.regression import BNN, mlp, dropout_mlp, layers
 from kusanagi.ghost.control.saturation import sfunc, tanhSat as sat
@@ -30,7 +31,7 @@ class NNPolicy(BNN):
 
         super(NNPolicy, self).__init__(self.D, self.E, name=name,
                                        filename=filename, **kwargs)
-   
+
     def predict_symbolic(self, mx, Sx=None, **kwargs):
         if self.network_spec is None:
             self.network_spec = dropout_mlp(
@@ -50,11 +51,25 @@ class NNPolicy(BNN):
             self.build_network(self.network_spec,
                                params=params,
                                name=self.name)
+
+        if Sx is not None:
+            # generate random samples from input (assuming gaussian
+            # distributed inputs)
+            # standard uniform samples (one sample per network sample)
+            z_std = self.m_rng.normal((self.n_samples, self.D))
+
+            # scale and center particles
+            Lx = tt.slinalg.cholesky(Sx)
+            x = mx + z_std.dot(Lx.T)
+        else:
+            x = mx[None, :] if mx.ndim == 1 else mx
+
         # we are going to apply the saturation function
         # after whitening the outputs
         return_samples = kwargs.get('return_samples', True)
         kwargs['return_samples'] = True
-        y, sn = super(NNPolicy, self).predict_symbolic(mx, Sx, **kwargs)
+
+        y, sn = super(NNPolicy, self).predict_symbolic(x, None, **kwargs)
         if callable(self.sat_func):
             y = self.sat_func(y)
 
@@ -74,7 +89,6 @@ class NNPolicy(BNN):
             else:
                 C = tt.zeros((self.D, self.E))
             return [M, S, C]
-
 
     def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
         # by default, sample internal params (e.g. dropout masks)

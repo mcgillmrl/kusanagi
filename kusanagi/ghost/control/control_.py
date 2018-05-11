@@ -253,22 +253,31 @@ class AdjustedPolicy:
         self.angle_dims = angle_dims
         self.name = name
         self.maxU = maxU
+        self.D = source_policy.D
 
         self.source_policy = source_policy
         # TODO we may add a saturating function here
+        idims = self.D + source_policy.E if use_control_input else self.source_policy.D
         self.adjustment_model = adjustment_model_class(
-            idims=self.source_policy.D, odims=self.source_policy.E,
+            idims=idims, odims=self.source_policy.E,
             name='AdjustmentModel', **kwargs)
 
     def init_params(self):
-        # self.source_policy.init_params() TODO
-        pass
+        self.source_policy.init_params()
+        self.adjustment_model.init_params()
 
-    def evaluate(self, m, S=None, t=None, symbolic=False):
+    def evaluate(self, m, S=None, t=None, symbolic=False, **kwargs):
         tt_ = theano.tensor if symbolic else np
-        S = S if S is not None else 1e-9*tt_.eye(m.size)
+
+        kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
+        kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', True)
+        kwargs['whiten_outputs'] = kwargs.get('whiten_outputs', True)
+        if S is None:
+            kwargs['return_samples'] = kwargs.get('return_samples', True)
+        kwargs['deterministic'] = kwargs.get('deterministic', False)
+
         # get the output of the source policy
-        mu, Su, Cu = self.source_policy.evaluate(m, S, t, symbolic)
+        ret_u = self.source_policy.evaluate(m, S, t, symbolic, **kwargs)
 
         if self.adjustment_model.trained:
             # initialize the inputs to the policy adjustment function
@@ -276,32 +285,45 @@ class AdjustedPolicy:
             adj_input_S = S
 
             if self.use_control_input:
-                adj_input_m = tt_.concatenate([adj_input_m, mu])
-                # fill input convariance matrix
-                q = adj_input_S.dot(Cu)
-                Sxu_up = tt_.concatenate([adj_input_S, q], axis=1)
-                Sxu_lo = tt_.concatenate([q.T, Su], axis=1)
-                adj_input_S = tt_.concatenate([Sxu_up, Sxu_lo], axis=0)
+                if S is not None:
+                    mu, Su, Cu = ret_u
+                    # fill input convariance matrix
+                    q = adj_input_S.dot(Cu)
+                    Sxu_up = tt_.concatenate([adj_input_S, q], axis=1)
+                    Sxu_lo = tt_.concatenate([q.T, Su], axis=1)
+                    adj_input_S = tt_.concatenate([Sxu_up, Sxu_lo], axis=0)
+                else:
+                    mu, snu = ret_u
+                    if m.ndim <= 1:
+                        mu = mu.flatten()
+                adj_input_m = tt_.concatenate([adj_input_m, mu], axis=-1)
 
             if symbolic:
-                madj, Sadj, Cadj = self.adjustment_model.predict_symbolic(
-                    adj_input_m, adj_input_S)
+                ret_adj = self.adjustment_model.predict_symbolic(
+                    adj_input_m, adj_input_S, **kwargs)
             else:
-                madj, Sadj, Cadj = self.adjustment_model.predict(
-                    adj_input_m, adj_input_S)
+                ret_adj = self.adjustment_model.predict(
+                    adj_input_m, adj_input_S, **kwargs)
 
             # compute the adjusted control distribution
-            mu = mu + madj
-            Sxu_adj = adj_input_S.dot(Cadj)
-            Su_adj = Sxu_adj[m.size:]
-            Su = Su + Sadj + Su_adj + Su_adj.T
             if S is not None:
+                madj, Sadj, Cadj = ret_adj
+                mu = mu + madj
+                Sxu_adj = adj_input_S.dot(Cadj)
+                Su_adj = Sxu_adj[m.size:]
+                Su = Su + Sadj + Su_adj + Su_adj.T
                 if symbolic:
                     Cu = Cu + tt_.slinalg.solve(S, Sxu_adj[:m.size])
                 else:
                     Cu = Cu + np.linalg.pinv(S).dot(Sxu_adj[:m.size])
+                ret_u = mu, Su, Cu
+            else:
+                madj, snadj = ret_adj
+                mu = mu + madj
+                snu = snu + snadj
+                ret_u = mu, snu
 
-        return mu, Su, Cu
+        return ret_u
 
     def get_params(self, symbolic=False):
         return self.adjustment_model.get_params(symbolic)
@@ -312,6 +334,14 @@ class AdjustedPolicy:
     def get_all_shared_vars(self):
         return (self.source_policy.get_all_shared_vars()
                 + self.adjustment_model.get_all_shared_vars())
+
+    def get_intermediate_outputs(self):
+        return (self.source_policy.get_intermediate_outputs()
+                + self.adjustment_model.get_intermediate_outputs())
+
+    def update(self, n_samples=None):
+        self.source_policy.update(n_samples)
+        self.adjustment_model.update(n_samples)
 
     def load(self, output_folder=None, output_filename=None):
         self.adjustment_model.load(output_folder, output_filename)
