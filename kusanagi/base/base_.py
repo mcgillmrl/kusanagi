@@ -24,6 +24,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
         p = policy.get_params()
         if len(p) == 0:
             policy.init_params()
+            policy.evaluate(np.zeros(1, policy.D))
 
     # start robot
     utils.print_with_stamp('Starting run', fnname)
