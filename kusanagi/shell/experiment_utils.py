@@ -11,6 +11,7 @@ from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 def plot_rollout(rollout_fn, exp, *args, **kwargs):
     fig = kwargs.get('fig')
     axarr = kwargs.get('axarr')
+    name = kwargs.get('name', 'Rollout')
     n_exp = kwargs.get('n_exp', 0)
     ret = rollout_fn(*args)
     trajectories = m_states = None
@@ -22,7 +23,7 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
         T, dims = m_states.shape
 
     if fig is None or axarr is None:
-        fig, axarr = plt.subplots(dims, sharex=True)
+        fig, axarr = plt.subplots(dims, num=name, sharex=True)
 
     exp_states = np.array(exp.states)
     for d in range(dims):
@@ -44,14 +45,17 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
                 np.arange(T), m_states[:, d],
                 1.96*np.sqrt(s_states[:, d, d]), color='steelblue', alpha=0.3)
 
+        # plot experience
+        exp_i = np.array(exp.states[-1])[:, d]
+        T_exp = len(exp_i)
         total_exp = len(exp_states)
         for i in range(n_exp):
             axarr[d].plot(
-                 np.arange(T-1), exp_states[total_exp - n_exp + i][1:T, d],
+                 np.arange(T_exp), exp_states[total_exp - n_exp + i][:, d],
                  color='orange', alpha=0.3)
-        # plot experience
         axarr[d].plot(
-            np.arange(T-1), np.array(exp.states[-1])[:T, d], color='red')
+            np.arange(T_exp), exp_i, color='red')
+        axarr[d].figure.canvas.draw()
 
     plt.show(False)
     plt.waitforbuttonpress(0.5)
