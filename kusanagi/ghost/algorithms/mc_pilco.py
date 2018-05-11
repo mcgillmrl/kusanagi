@@ -178,7 +178,7 @@ def rollout(x0, H, gamma0,
     return [accum_cost, costs, trajectories], rollout_updts
 
 
-def get_loss(pol, dyn, cost, angle_dims=[], n_samples=50,
+def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=False,
              time_varying_cost=False, resample_dyn=False, crn=True,
