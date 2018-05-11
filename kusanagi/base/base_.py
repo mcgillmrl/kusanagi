@@ -24,7 +24,8 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
         p = policy.get_params()
         if len(p) == 0:
             policy.init_params()
-            policy.evaluate(np.zeros(1, policy.D))
+        # making sure we initialize the policy before resetting the plant
+        policy.evaluate(np.zeros((policy.D,)))
 
     # start robot
     utils.print_with_stamp('Starting run', fnname)
