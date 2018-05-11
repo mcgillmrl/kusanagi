@@ -123,7 +123,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = dict(
             hidden_dims=[200]*2,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             build_fn=regression.mlp)
         pol = control.NNPolicy(
             dyn.E, network_spec=pol_spec, **params['policy'])
@@ -140,7 +140,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             build_fn=regression.dropout_mlp)
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
@@ -156,7 +156,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             build_fn=regression.mlp)
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
@@ -165,7 +165,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = dict(
             hidden_dims=[200]*2,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             build_fn=regression.mlp)
         pol = control.NNPolicy(
             dyn.E, network_spec=pol_spec, **params['policy'])
@@ -184,7 +184,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             build_fn=regression.dropout_mlp)
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
@@ -200,7 +200,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             build_fn=regression.dropout_mlp)
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
@@ -209,7 +209,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         pol_spec = dict(
             hidden_dims=[200]*2,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             build_fn=regression.mlp)
         pol = control.NNPolicy(
             dyn.E, network_spec=pol_spec, **params['policy'])
@@ -225,7 +225,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=0.1, p_input=0.1,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseDropoutLayer,
             build_fn=regression.dropout_mlp)
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
@@ -235,7 +235,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseDropoutLayer,
             build_fn=regression.dropout_mlp)
         pol = control.NNPolicy(
@@ -252,7 +252,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=True, p_input=True,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
             build_fn=regression.dropout_mlp)
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
@@ -262,7 +262,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseDropoutLayer,
             build_fn=regression.dropout_mlp)
         pol = control.NNPolicy(
@@ -284,7 +284,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=0.1, p_input=0.01,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             dropout_class=regression.layers.DenseConcreteDropoutLayer,
             name=dyn.name)
         dyn.build_network(dyn_spec)
@@ -297,7 +297,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             hidden_dims=[200]*2,
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
-            W_init=lasagne.init.GlorotNormal(),
+            W_init=lasagne.init.GlorotNormal(gain='relu'),
             output_nonlinearity=pol.sat_func,
             dropout_class=regression.layers.DenseDropoutLayer,
             name=pol.name)
