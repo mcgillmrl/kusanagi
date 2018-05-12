@@ -1,18 +1,15 @@
 # pylint: disable=C0103
-import os
-import sys
-from datetime import datetime
-
 import math
-import time
-import zipfile
-
+import os
 import random
-import numpy as np
+import sys
+import itertools
+import time
 import csv
+import zipfile
 import theano
-from theano import tensor as tt, ifelse
-from theano.gof import Variable
+import numpy as np
+
 # These lines are necessary for plot_and_save to work on server side without
 # a GUI.
 # import matplotlib as mpl
@@ -21,8 +18,11 @@ from theano.gof import Variable
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib import pyplot as plt
 from functools import reduce
+from datetime import datetime
+from enum import IntEnum
 
-
+from theano import tensor as tt, ifelse
+from theano.gof import Variable
 def maha(X1, X2=None, M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
     D = []
@@ -818,6 +818,25 @@ def save_snapshot_zip(snapshot_header='snapshot', archived_files=[], with_timest
     myzip.close()
     print_with_stamp('Saved snapshot to %s.zip'%(snapshot_filename), 'Utils')
 
+
+def increment_filename(path):
+    fn, extension = os.path.splitext(path)
+    n = 1
+    yield fn + extension
+    for n in itertools.count(start=1, step=1):
+        yield '%s%d%s' % (fn, n, extension)
+
+
+def unique_path(path):
+    for unique_path in increment_filename(path):
+        if not os.path.isfile(unique_path):
+            return unique_path
+
+class ImitationLossType(IntEnum):
+    NONE = 0
+    KLQP = 1
+    KLPQ = 2
+    KLSYM = 3
 
 def start_bokeh_server(apps):
     from bokeh.server.server import Server
