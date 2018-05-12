@@ -23,6 +23,8 @@ from enum import IntEnum
 
 from theano import tensor as tt, ifelse
 from theano.gof import Variable
+
+
 def maha(X1, X2=None, M=None, all_pairs=True):
     ''' Returns the squared Mahalanobis distance'''
     D = []
@@ -827,9 +829,13 @@ def increment_filename(path):
         yield '%s%d%s' % (fn, n, extension)
 
 
+def check_empty(path):
+    return [f for f in os.listdir(path) if f not in ['.', '..']] == []
+
+
 def unique_path(path):
     for unique_path in increment_filename(path):
-        if not os.path.isfile(unique_path):
+        if not os.path.isfile(unique_path) or check_empty(unique_path):
             return unique_path
 
 class ImitationLossType(IntEnum):
