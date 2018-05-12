@@ -46,7 +46,10 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
                 1.96*np.sqrt(s_states[:, d, d]), color='steelblue', alpha=0.3)
 
         # plot experience
-        exp_i = np.array(exp.states[-1])[:, d]
+        if n_exp == 0:
+            exp_i = np.array(exp.states[-1])[:, d]
+        else:
+            exp_i = np.array(exp.states[-n_exp:])[:, :, d].mean(0)
         T_exp = len(exp_i)
         total_exp = len(exp_states)
         for i in range(n_exp):
