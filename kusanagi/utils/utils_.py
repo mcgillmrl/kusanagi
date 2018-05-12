@@ -835,7 +835,7 @@ def check_empty(path):
 
 def unique_path(path):
     for unique_path in increment_filename(path):
-        if not os.path.isfile(unique_path) or check_empty(unique_path):
+        if not os.path.isdir(unique_path) or check_empty(unique_path):
             return unique_path
 
 class ImitationLossType(IntEnum):
