@@ -2,10 +2,14 @@
 import theano
 import numpy as np
 import theano.tensor as tt
+
+from functools import partial
+
 from theano.tensor.nlinalg import matrix_inverse, trace
 from theano.tensor.slinalg import (cholesky,
                                    solve_lower_triangular)
 from theano.tensor.nlinalg import det
+
 from kusanagi import utils
 from kusanagi.ghost import regression
 
@@ -142,19 +146,19 @@ def mmd_cost(mx, Sx, target_samples, kernel=None):
     if kernel is None:
         tstd = y.std(0)
         kernel = partial(regression.cov.SEard,
-                         tt.concatenate([0.1*tstd, tt.ones(1)])
+                         tt.concatenate([0.1*tstd, tt.ones(1)]))
     if Sx is not None:
         # generate random samples from input (assuming gaussian
         # distributed inputs)
         # standard uniform samples (one sample per network sample)
-        z_std = self.m_rng.normal((self.n_samples, self.D))
+        z_std = m_rng.normal(target_samples.shape)
 
         # scale and center particles
         Lx = tt.slinalg.cholesky(Sx)
         x = mx + z_std.dot(Lx.T)
     else:
         x = mx[None, :] if mx.ndim == 1 else mx
-    
+
     Kxx = kernel(x, x)
     Kxy = kernel(x, y)
     Kyy = kernel(y, y)
