@@ -157,9 +157,9 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
 
 def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
                          params=None, loss_kwargs={}, polopt_kwargs={},
-                         extra_inps=[], step_cb=None, minimize_cb=None,
-                         learning_iteration_cb=None, max_dataset_size=0,
-                         render=False, debug_plot=0):
+                         extra_inps=[], extra_opt_params=[], step_cb=None,
+                         minimize_cb=None, learning_iteration_cb=None,
+                         max_dataset_size=0, render=False, debug_plot=0):
     # setup experiment
     exp_objs = exp_setup(params)
     p0, pol, dyn, exp, polopt, learner, params = exp_objs
@@ -234,7 +234,7 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
 
     # set objective of policy optimizer
     inps += extra_inps
-    polopt.set_objective(loss, pol.get_params(symbolic=True),
+    polopt.set_objective(loss, pol.get_params(symbolic=True)+extra_opt_params,
                          inps, updts, outs, **polopt_kwargs)
 
     # initial call so that the user gets the state before
