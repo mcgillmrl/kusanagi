@@ -7,6 +7,7 @@ from theano.tensor.slinalg import (cholesky,
                                    solve_lower_triangular)
 from theano.tensor.nlinalg import det
 from kusanagi import utils
+from kusanagi.ghost import regression
 
 
 def linear_loss(mx, Sx, target, Q, absolute=True, *args, **kwargs):
@@ -127,6 +128,38 @@ def gaussian_kl_loss(mx, Sx, mt, St):
         kl = tt.log(det(St)) - tt.log(det(Sx))
         kl += trace(Stinv.dot(delta.T.dot(delta) + Sx - St))
         return 0.5*kl
+
+
+def mmd_cost(mx, Sx, target_samples, kernel=None):
+    '''
+        computes the Maximum Mean Discrepancy metric between the distribution
+        defined by mx, Sx and the target samples. If Sx is None, mx is assumed
+        to be an aray of samples. The kernel used for the MMD is set to a squared
+        exponential kernel with fixed bandwidths fixed to 10 percent of the stardard
+        deviation of each dimension
+    '''
+    y = target_samples
+    if kernel is None:
+        tstd = y.std(0)
+        kernel = partial(regression.cov.SEard,
+                         tt.concatenate([0.1*tstd, tt.ones(1)])
+    if Sx is not None:
+        # generate random samples from input (assuming gaussian
+        # distributed inputs)
+        # standard uniform samples (one sample per network sample)
+        z_std = self.m_rng.normal((self.n_samples, self.D))
+
+        # scale and center particles
+        Lx = tt.slinalg.cholesky(Sx)
+        x = mx + z_std.dot(Lx.T)
+    else:
+        x = mx[None, :] if mx.ndim == 1 else mx
+    
+    Kxx = kernel(x, x)
+    Kxy = kernel(x, y)
+    Kyy = kernel(y, y)
+
+    return Kxx.mean() - 2*Kxy.mean() - Kyy.mean()
 
 
 def convert_angle_dimensions(mx, Sx, angle_dims=[]):

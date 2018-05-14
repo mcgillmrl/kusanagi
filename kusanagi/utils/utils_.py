@@ -843,6 +843,7 @@ class ImitationLossType(IntEnum):
     KLQP = 1
     KLPQ = 2
     KLSYM = 3
+    MMD = 4
 
 def start_bokeh_server(apps):
     from bokeh.server.server import Server
