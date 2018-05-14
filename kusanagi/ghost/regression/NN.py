@@ -255,13 +255,16 @@ class BNN(BaseRegressor):
         if name is None:
             name = self.name
         if network_spec is None:
-            idims = self.D
-            odims = self.E*2 if self.heteroscedastic else self.E
-            network_spec = dropout_mlp(
-                idims, odims, hidden_dims=[200]*4,
-                p=0.5, p_input=0.0,
-                nonlinearities=nonlinearities.rectify,
-                dropout_class=layers.DenseLogNormalDropoutLayer)
+            if self.network_spec is None:
+                idims = self.D
+                odims = self.E*2 if self.heteroscedastic else self.E
+                network_spec = dropout_mlp(
+                    idims, odims, hidden_dims=[200]*4,
+                    p=0.5, p_input=0.0,
+                    nonlinearities=nonlinearities.rectify,
+                    dropout_class=layers.DenseLogNormalDropoutLayer)
+            else:
+                network_spec = self.network_spec
         utils.print_with_stamp('Building network', self.name)
         self.network_spec = network_spec
 
@@ -310,6 +313,7 @@ class BNN(BaseRegressor):
             params = lasagne.layers.get_all_params(network, trainable=True)
             self.set_params(dict([(p.name, p) for p in params]))
             self.network = network
+        self.update()
 
     def get_loss(self):
         ''' initializes the loss function for training '''
