@@ -1,13 +1,10 @@
-import lasagne
 import numpy as np
 import theano
 import theano.tensor as tt
 
 from kusanagi import utils
 
-randint = lasagne.random.get_rng().randint(1, 2147462579)
-m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
-s_rng = theano.tensor.shared_randomstreams.RandomStreams(randint)
+m_rng = utils.get_mrng()
 
 
 def propagate_particles(latent_x, measured_x, pol, dyn, angle_dims=[],

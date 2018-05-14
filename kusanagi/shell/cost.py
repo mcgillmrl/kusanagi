@@ -13,7 +13,6 @@ from theano.tensor.nlinalg import det
 from kusanagi import utils
 from kusanagi.ghost import regression
 
-
 def linear_loss(mx, Sx, target, Q, absolute=True, *args, **kwargs):
     '''
         Linear penalty function c(x) = Q.dot(|x-target|)
@@ -151,6 +150,7 @@ def mmd_cost(mx, Sx, target_samples, kernel=None):
         # generate random samples from input (assuming gaussian
         # distributed inputs)
         # standard uniform samples (one sample per network sample)
+        m_rng = utils.get_mrng()
         z_std = m_rng.normal(target_samples.shape)
 
         # scale and center particles

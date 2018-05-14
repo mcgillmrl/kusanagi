@@ -1,14 +1,15 @@
 # pylint: disable=C0103
+import csv
+import itertools
+import lasagne
 import math
+import numpy as np
 import os
 import random
-import sys
-import itertools
-import time
-import csv
-import zipfile
 import theano
-import numpy as np
+import time
+import sys
+import zipfile
 
 # These lines are necessary for plot_and_save to work on server side without
 # a GUI.
@@ -23,6 +24,18 @@ from enum import IntEnum
 
 from theano import tensor as tt, ifelse
 from theano.gof import Variable
+
+randint = lasagne.random.get_rng().randint(1, 2147462579)
+m_rng = theano.sandbox.rng_mrg.MRG_RandomStreams(randint)
+s_rng = theano.tensor.shared_randomstreams.RandomStreams(randint)
+
+
+def get_mrng():
+    return m_rng
+
+
+def get_srng():
+    return s_rng
 
 
 def maha(X1, X2=None, M=None, all_pairs=True):
@@ -780,7 +793,6 @@ def sync_output_filename(output_filename, obj_filename, suffix):
 def unzip_snapshot(zip_filepath, extract_path = ''):
   if not zip_filepath.lower().endswith('.zip'):
     zip_filepath += '.zip'
-    
   with zipfile.ZipFile(zip_filepath, 'r') as myzip:
     myzip.extractall(extract_path)
     print_with_stamp('Extracted %s to %s'%(zip_filepath, os.path.abspath(extract_path)), 'Utils')

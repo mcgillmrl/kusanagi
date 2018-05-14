@@ -118,7 +118,7 @@ class BNN(BaseRegressor):
         samples = np.array(n_samples).astype('int32')
         samples_name = "%s>n_samples" % (self.name)
         self.n_samples = theano.shared(samples, name=samples_name)
-        self.m_rng = RandomStreams(get_rng().randint(1, 2147462579))
+        
 
         self.X = None
         self.Y = None
@@ -407,7 +407,7 @@ class BNN(BaseRegressor):
             # generate random samples from input (assuming gaussian
             # distributed inputs)
             # standard uniform samples (one sample per network sample)
-            z_std = self.m_rng.normal((self.n_samples, self.D))
+            z_std = utils.get_mrng().normal((self.n_samples, self.D))
 
             # scale and center particles
             Lx = tt.slinalg.cholesky(Sx)
