@@ -102,7 +102,7 @@ def setup_pilco_experiment(params, pol=None, dyn=None):
     # (can also be a class)
     learner = algorithms.pilco
 
-    return p0, pol, dyn, exp, polopt, learner, params
+    return p0, pol, dyn, exp, polopt, learner
 
 
 def setup_mc_pilco_experiment(params, pol=None, dyn=None):
@@ -152,7 +152,7 @@ def setup_mc_pilco_experiment(params, pol=None, dyn=None):
     # (can also be a class)
     learner = algorithms.mc_pilco
 
-    return p0, pol, dyn, exp, polopt, learner, params
+    return p0, pol, dyn, exp, polopt, learner
 
 
 def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
@@ -162,7 +162,7 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
                          max_dataset_size=0, render=False, debug_plot=0):
     # setup experiment
     exp_objs = exp_setup(params)
-    p0, pol, dyn, exp, polopt, learner, params = exp_objs
+    p0, pol, dyn, exp, polopt, learner = exp_objs
     n_rnd = params.get('n_rnd', 1)
     n_init = params.get('n_init', 0)
     if n_rnd == 0:
