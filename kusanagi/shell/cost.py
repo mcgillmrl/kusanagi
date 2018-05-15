@@ -13,6 +13,7 @@ from theano.tensor.nlinalg import det
 from kusanagi import utils
 from kusanagi.ghost import regression
 
+
 def linear_loss(mx, Sx, target, Q, absolute=True, *args, **kwargs):
     '''
         Linear penalty function c(x) = Q.dot(|x-target|)
@@ -133,7 +134,7 @@ def gaussian_kl_loss(mx, Sx, mt, St):
         return 0.5*kl
 
 
-def mmd_cost(mx, Sx, target_samples, kernel=None):
+def mmd_loss(mx, Sx, target_samples, kernel=None):
     '''
         computes the Maximum Mean Discrepancy metric between the distribution
         defined by mx, Sx and the target samples. If Sx is None, mx is assumed
