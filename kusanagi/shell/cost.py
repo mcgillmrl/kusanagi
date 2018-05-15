@@ -138,15 +138,17 @@ def mmd_loss(mx, Sx, target_samples, kernel=None):
     '''
         computes the Maximum Mean Discrepancy metric between the distribution
         defined by mx, Sx and the target samples. If Sx is None, mx is assumed
-        to be an aray of samples. The kernel used for the MMD is set to a squared
-        exponential kernel with fixed bandwidths fixed to 10 percent of the stardard
-        deviation of each dimension
+        to be an aray of samples. The kernel used for the MMD is set to a
+        mixture of squared exponential kernel with fixed bandwidths
     '''
     y = target_samples
     if kernel is None:
-        tstd = y.std(0)
-        kernel = partial(regression.cov.SEard,
-                         tt.concatenate([0.1*tstd, tt.ones(1)]))
+        hyps = [tt.concatenate([(10.0**i)*tt.ones([y.shape[-1]]), tt.ones(1)])
+                for i in range(-2, 2)]
+        covs = [regression.cov.SEard for i in range(len(hyps))]
+        kernel = partial(
+            regression.cov.Sum,
+            hyps, covs)
     if Sx is not None:
         # generate random samples from input (assuming gaussian
         # distributed inputs)
