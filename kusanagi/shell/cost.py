@@ -164,7 +164,7 @@ def mmd_loss(mx, Sx, target_samples, kernel=None):
     Kxy = kernel(x, y)
     Kyy = kernel(y, y)
 
-    return Kxx.mean() - 2*Kxy.mean() - Kyy.mean()
+    return Kxx.mean() - 2*Kxy.mean() + Kyy.mean()
 
 
 def convert_angle_dimensions(mx, Sx, angle_dims=[]):
