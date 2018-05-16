@@ -143,8 +143,8 @@ def mmd_loss(mx, Sx, target_samples, kernel=None):
     '''
     y = target_samples
     if kernel is None:
-        hyps = [tt.concatenate([(10.0**i)*tt.ones([y.shape[-1]]), tt.ones(1)])
-                for i in range(-2, 2)]
+        hyps = [tt.concatenate([(2.0**i)*tt.ones([y.shape[-1]]), tt.ones(1)/5.0])
+                for i in range(5)]
         covs = [regression.cov.SEard for i in range(len(hyps))]
         kernel = partial(
             regression.cov.Sum,
@@ -162,11 +162,13 @@ def mmd_loss(mx, Sx, target_samples, kernel=None):
     else:
         x = mx[None, :] if mx.ndim == 1 else mx
 
+    M = x.shape[0].astype(theano.config.floatX)
+    N = x.shape[0].astype(theano.config.floatX)
     Kxx = kernel(x, x)
     Kxy = kernel(x, y)
     Kyy = kernel(y, y)
 
-    return Kxx.mean() - 2*Kxy.mean() + Kyy.mean()
+    return Kxx.sum()/(M*(M-1)) - 2*Kxy.mean()/(M*N) + Kyy.mean()/(N*(N-1))
 
 
 def convert_angle_dimensions(mx, Sx, angle_dims=[]):
