@@ -65,7 +65,7 @@ def rollout(x0, H, gamma0,
         tv_cost = cost
 
     # define internal scan computations
-    def step_rollout(t_next, z1, z2, z2_prev, cumm_cost, x, sn, gamma, *args):
+    def step_rollout(t_next, z1, z2, z2_prev, x, sn, gamma, *args):
         '''
             Single step of rollout.
         '''
@@ -80,7 +80,6 @@ def rollout(x0, H, gamma0,
             x, xn, pol, dyn, angle_dims, **kwargs)
 
         def eval_cost(t, xn, mxn=None, Sxn=None):
-            c = tv_cost(t, xn, None)
             # moment-matching for cost
             if mm_cost:
                 # compute input moments
@@ -91,13 +90,12 @@ def rollout(x0, H, gamma0,
                            - tt.outer(mxn, mxn))
                 # propagate gaussian through cost (should be implemented in
                 # cost func)
-                mc = tv_cost(t, mxn, Sxn)
-                if isinstance(mc, list) or isinstance(mc, tuple):
-                    mc = mc[0]
-            # no moment-matching
+                c = tv_cost(t, mxn, Sxn)
+                if isinstance(c, list) or isinstance(c, tuple):
+                    c = c[0]
             else:
-                mc = c.sum()/n
-            return mc, c
+                c = tv_cost(t, xn, None)
+            return c
 
         # if resampling (moment-matching for state)
         if mm_state:
@@ -109,20 +107,19 @@ def rollout(x0, H, gamma0,
             if noisy_cost_input:
                 xn_next += z2*sn_next
                 #  get cost of applying action:
-                mc_next, c_next = eval_cost(t_next, xn_next)
+                c_next = eval_cost(t_next, xn_next)
             else:
-                mc_next, c_next = eval_cost(t_next, xn_next, mx_next, Sx_next)
+                c_next = eval_cost(t_next, xn_next, mx_next, Sx_next)
         # no moment-matching for state
         else:
             # noisy state measurement for cost
             xn_next = x_next + z2*sn_next if noisy_cost_input else x_next
             #  get cost of applying action:
-            mc_next, c_next = eval_cost(t_next, xn_next)
+            c_next = eval_cost(t_next, xn_next)
 
         c_next = gamma*c_next
-        mc_next = gamma*mc_next
-        cumm_cost += mc_next
-        return [c_next, cumm_cost, x_next, sn_next, gamma*gamma0]
+
+        return [c_next, x_next, sn_next, gamma*gamma0]
 
     # these are the shared variables that will be used in the scan graph.
     # we need to pass them as non_sequences here
@@ -134,7 +131,6 @@ def rollout(x0, H, gamma0,
 
     # loop over the planning horizon
     mode = theano.compile.mode.get_mode('FAST_RUN')
-    accum_cost = tt.constant(0, dtype=x0.dtype)
     costs, trajectories = [], [x0[None, :, :]]
     # if split_H > 1, this results in truncated BPTT
     H_ = tt.ceil(H*1.0/split_H).astype('int32')
@@ -147,16 +143,14 @@ def rollout(x0, H, gamma0,
                                         z[0, start_idx:end_idx],
                                         z[1, start_idx:end_idx],
                                         z[1, -end_idx:-start_idx]],
-            outputs_info=[None, accum_cost, x0,
-                          1e-4*tt.ones_like(x0), gamma0],
+            outputs_info=[None, x0, 1e-4*tt.ones_like(x0), gamma0],
             non_sequences=nseq, strict=True, allow_gc=False,
             truncate_gradient=truncate_gradient,
             name="mc_pilco>rollout_scan_%d" % i,
             mode=mode)
 
         rollout_output, rollout_updts = output
-        costs_i, accum_cost, trajectories_i = rollout_output[:3]
-        accum_cost = accum_cost[-1]
+        costs_i, trajectories_i = rollout_output[:2]
         costs.append(costs_i)
         trajectories.append(trajectories_i)
         x0 = trajectories_i[-1, :, :]
@@ -172,7 +166,7 @@ def rollout(x0, H, gamma0,
     # first axis; batch, second axis: time step
     trajectories = trajectories.transpose(1, 0, 2)
 
-    return [accum_cost, costs, trajectories], rollout_updts
+    return [costs, trajectories], rollout_updts
 
 
 def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
@@ -272,12 +266,11 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
                             time_varying_cost=time_varying_cost,
                             extra_shared=extra_shared, **kwargs)
 
-    accum_cost, costs, trajectories = r_outs
+    costs, trajectories = r_outs
 
     # loss is E_{dyns}((1/H)*sum c(x_t))
     #          = (1/H)*sum E_{x_t}(c(x_t))
-    # loss = mean_costs.mean() if average else mean_costs.sum()
-    loss = accum_cost/H if average else accum_cost
+    loss = costs.mean() if average else costs.sum(-1).mean()
 
     inps = [mx0, Sx0, H, gamma]
     updates += updts
