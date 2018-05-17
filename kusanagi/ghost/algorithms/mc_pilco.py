@@ -8,7 +8,7 @@ m_rng = utils.get_mrng()
 
 
 def propagate_particles(latent_x, measured_x, pol, dyn, angle_dims=[],
-                        iid_per_eval=False, **kwargs):
+                        iid_per_eval=False, deltas=True, **kwargs):
     ''' Given a set of input states, this function returns predictions for
         the next states. This is done by 1) evaluating the current pol
         2) using the dynamics model to estimate the next state. If x has
@@ -33,17 +33,16 @@ def propagate_particles(latent_x, measured_x, pol, dyn, angle_dims=[],
                                          return_samples=True)
 
     # compute the successor states
-    x_next = latent_x + delta_x
+    x_next = latent_x + delta_x if deltas else delta_x
 
     return x_next, sn_x
 
 
 def rollout(x0, H, gamma0,
             pol, dyn, cost,
-            angle_dims=[],
             z=None, mm_state=True, mm_cost=True,
             noisy_policy_input=True, noisy_cost_input=True,
-            time_varying_cost=False,
+            time_varying_cost=False, grad_clip=None,
             truncate_gradient=-1, extra_shared=[],
             split_H=1, **kwargs):
     ''' Given some initial state particles x0, and a prediction horizon H
@@ -77,7 +76,7 @@ def rollout(x0, H, gamma0,
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
-            x, xn, pol, dyn, angle_dims, **kwargs)
+            x, xn, pol, dyn, **kwargs)
 
         def eval_cost(t, xn, mxn=None, Sxn=None):
             # moment-matching for cost
@@ -118,6 +117,10 @@ def rollout(x0, H, gamma0,
             c_next = eval_cost(t_next, xn_next)
 
         c_next = gamma*c_next
+
+        if grad_clip:
+            x_next = theano.gradient.grad_clip(
+                x_next, -grad_clip, grad_clip)
 
         return [c_next, x_next, sn_next, gamma*gamma0]
 
@@ -173,7 +176,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=False,
              time_varying_cost=False, resample_dyn=False, crn=True,
-             average=True, truncate_gradient=-1, split_H=1,
+             average=True, grad_clip=None, truncate_gradient=-1, split_H=1,
              extra_shared=[], extra_updts_init=None,
              **kwargs):
     '''
@@ -190,6 +193,18 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
         @param cost
         @param angle_dims angle dimensions that should be converted to complex
                           representation
+        @param n_samples number of samples for Monte Carlo integration (batch size)
+        @param intermediate_outs whether to also return the per-timestep costs and
+                                 rolled out trajectories
+        @param mm_state whether to resample state particles, at each time step, from a moment matched 
+                        Gaussian distribution
+        @param mm_cost whether to push the moment matched state distribution through the cost function
+        @noisy_policy_input whether to corrupt the state particles, with the dynamics model measurement noise,
+                            before passing them as input to the policy
+        @noisy_cost_input whether to corrupt the state particles, with the dynamics model measurement noise,
+                          before passing them as input to the cost function
+        @time_varying_cost whether the cost function requires a time index. If True, the cost function will be called
+                           as cost(t, x); i.e. the first argument will be the timestep index t.
         @param crn wheter to use common random numbers.
         @return Returns a tuple of (outs, inps, updts). These correspond to the
                 output variables, input variables and updates dictionary, if
@@ -254,7 +269,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma,
                             pol, dyn, cost,
-                            angle_dims,
+                            angle_dims=angle_dims,
                             z=z,
                             mm_state=mm_state,
                             iid_per_eval=resample_dyn,
