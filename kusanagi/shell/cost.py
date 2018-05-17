@@ -24,7 +24,7 @@ def linear_loss(mx, Sx, target, Q, absolute=True, *args, **kwargs):
             mx = mx[None, :]
         delta = mx-target
         if absolute:
-            delta = tt.abs(delta)
+            delta = abs(delta)
         cost = (delta).dot(Q)
         return cost
     else:
@@ -90,6 +90,28 @@ def quadratic_saturating_loss(mx, Sx, target, Q, *args, **kwargs):
             -delta.dot(S2).dot(delta))/tt.sqrt(det(Ip2SxQ)) - m_cost**2
 
         return 1.0 + m_cost, s_cost
+
+
+def huber_loss(mx, Sx, target, Q, width=1.0, *args, **kwargs):
+    '''
+        Huber loss
+    '''
+    if Sx is None:
+        # deterministic case
+        if mx.ndim == 1:
+            mx = mx[None, :]
+        delta = mx-target
+        Q = tt.constant(Q) if isinstance(Q, np.ndarray) else Q
+        deltaQ = delta.dot(Q)
+        abs_deltaQ = abs(deltaQ)
+        cost = tt.switch(
+            abs_deltaQ <= width,
+            0.5*deltaQ**2,
+            width*(abs_deltaQ - width/2)).sum(-1)
+        return cost
+    else:
+        # stochastic case (moment matching)
+        raise NotImplementedError
 
 
 def empirical_gaussian_params(x):
@@ -219,7 +241,7 @@ def distance_based_cost(mx, Sx, target, Q,
         # total cost is the sum of costs with different widths
         # TODO this can be vecotrized
         for c in cw:
-            cost_c = loss_func(mx, None, target, Q/c**2, *args, **kwargs)
+            cost_c = loss_func(mx, None, target, Q/(c**2), *args, **kwargs)
             cost.append(cost_c)
         return sum(cost)/len(cw)
     else:
