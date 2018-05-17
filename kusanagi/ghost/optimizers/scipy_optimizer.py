@@ -69,6 +69,7 @@ class ScipyOptimizer(object):
         if grads is None or len(grads) == 0:
             utils.print_with_stamp('Building computation graph for gradients',
                                    self.name)
+            grads = theano.grad(loss, params)
 
         utils.print_with_stamp('Compiling function for loss', self.name)
 
