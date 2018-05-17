@@ -45,7 +45,8 @@ class ScipyOptimizer(object):
             if method not in self.alt_min_methods:
                 self.alt_min_methods.append(method)
 
-    def set_objective(self, loss, params, inputs=None, updts=None, grads=None,
+    def set_objective(self, loss, params, inputs=None, updts=None,
+                      outputs=[], grads=None,
                       compilation_mode=None, **kwargs):
         '''
             Changes the objective function to be optimized
@@ -65,12 +66,12 @@ class ScipyOptimizer(object):
         if updts is not None:
             updts = OrderedUpdates(updts)
 
-        if grads is None:
+        if grads is None or len(grads) == 0:
             utils.print_with_stamp('Building computation graph for gradients',
                                    self.name)
-            grads = theano.grad(loss, params)
 
         utils.print_with_stamp('Compiling function for loss', self.name)
+
         self.loss_fn = theano.function(
             inputs, loss, updates=updts, allow_input_downcast=True,
             mode=compilation_mode)
