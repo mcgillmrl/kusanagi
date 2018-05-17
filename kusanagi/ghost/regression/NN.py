@@ -5,8 +5,6 @@ import lasagne
 import numpy as np
 
 from lasagne.layers import InputLayer, DenseLayer
-from lasagne.random import get_rng
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 from kusanagi import utils
 from kusanagi.ghost.regression import layers
@@ -86,13 +84,16 @@ class BNN(BaseRegressor):
     ''' Bayesian neural net regressor '''
     def __init__(self, idims, odims, n_samples=100,
                  heteroscedastic=True, name='BNN',
-                 filename=None, network_spec=None, **kwargs):
+                 filename=None, network=None, network_spec=None,
+                 likelihood=objectives.gaussian_log_likelihood,
+                 **kwargs):
         self.D = idims
         self.E = odims
         self.name = name
         self.should_recompile = False
         self.trained = False
         self.heteroscedastic = heteroscedastic
+        self.likelihood = likelihood
 
         sn = (np.ones((self.E,))*1e-3).astype(floatX)
         sn = np.log(np.exp(sn)-1)
@@ -100,7 +101,7 @@ class BNN(BaseRegressor):
         eps = np.finfo(np.__dict__[floatX]).eps
         self.sn = tt.nnet.softplus(self.unconstrained_sn) + eps
 
-        self.network = None
+        self.network = network
         if type(network_spec) is list:
             self.network_spec = network_spec
         elif type(network_spec) is dict:
@@ -346,7 +347,7 @@ class BNN(BaseRegressor):
         # compute negative log likelihood
         # note that if we have sn_std be a 1xD vector, broadcasting
         # rules apply
-        lml = objectives.gaussian_log_likelihood(
+        lml = self.likelihood(
             train_targets, train_predictions, sn)
 
         # compute regularization term
