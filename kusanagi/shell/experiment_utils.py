@@ -9,8 +9,8 @@ from kusanagi.base import apply_controller, train_dynamics, ExperienceDataset
 
 
 def plot_rollout(rollout_fn, exp, *args, **kwargs):
-    fig = kwargs.get('fig')
-    axarr = kwargs.get('axarr')
+    fig = kwargs.get('fig', None)
+    axarr = kwargs.get('axarr', None)
     name = kwargs.get('name', 'Rollout')
     n_exp = kwargs.get('n_exp', 0)
     ret = rollout_fn(*args)
@@ -23,6 +23,7 @@ def plot_rollout(rollout_fn, exp, *args, **kwargs):
         T, dims = m_states.shape
 
     if fig is None or axarr is None:
+        utils.print_with_stamp("Creating fig and axes", "plot_rollout")
         fig, axarr = plt.subplots(dims, num=name, sharex=True)
 
     exp_states = np.array(exp.states)
@@ -173,6 +174,7 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
     H = params.get('min_steps', 100)
     gamma = params.get('discount', 1.0)
     angle_dims = params.get('angle_dims', [])
+    minimize_cb_state = [0, None, None]
 
     # init callbacks
     # callback executed after every call to env.step
@@ -189,6 +191,22 @@ def run_pilco_experiment(env, cost, exp_setup=setup_mc_pilco_experiment,
                 dyn.update()
             if hasattr(pol, 'update'):
                 pol.update()
+        if debug_plot > 1:
+            counter, progress_fig, progress_axarr = minimize_cb_state
+            if counter % 100 == 0:
+                p0 = params['state0_dist']
+                m0, S0 = p0.mean, p0.cov
+                progress_fig, progress_axarr = plot_rollout(
+                    rollout_fn, exp, m0, S0, H, gamma,
+                    fig=progress_fig, axarr=progress_axarr,
+                    n_exp=min(10, exp.n_episodes()),
+                    name='Rollout during optimization')
+                plt.waitforbuttonpress(0.01)
+            counter += 1
+            minimize_cb_state[0] = counter
+            minimize_cb_state[1] = progress_fig
+            minimize_cb_state[2] = progress_axarr
+
         if callable(minimize_cb):
             minimize_cb(*args, **kwargs)
 
