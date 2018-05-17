@@ -20,8 +20,8 @@ def SEard(hyp, X1, X2=None, all_pairs=True):
         K = tt.tile(sf2, (n,))
         return K
 
-    ls = hyp[:idims]
-    D = utils.maha(X1, X2, tt.diag(1.0/ls),
+    ls2 = hyp[:idims]**2
+    D = utils.maha(X1, X2, tt.diag(1.0/ls2),
                    all_pairs=all_pairs)
     K = sf2*tt.exp(-0.5*D)
     return K
