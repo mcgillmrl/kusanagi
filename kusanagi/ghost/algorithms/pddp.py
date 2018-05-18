@@ -63,7 +63,7 @@ def propagate_belief(mx, Sx, u, dynmodel, D, angle_dims=None):
 
     #  predict the change in state given current state-action
     # C_deltax = inv (Sxu) dot Sxu_deltax
-    m_deltax, S_deltax, C_deltax = dynmodel.predict_symbolic(mxu, Sxu)
+    m_deltax, S_deltax, C_deltax = dynmodel.predict(mxu, Sxu)
 
     # compute the successor state distribution
     mx_next = mx + m_deltax

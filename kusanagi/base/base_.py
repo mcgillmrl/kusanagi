@@ -25,7 +25,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
         if len(p) == 0:
             policy.init_params()
         # making sure we initialize the policy before resetting the plant
-        policy.evaluate(np.zeros((policy.D,)))
+        policy(np.zeros((policy.D,)))
 
     # start robot
     utils.print_with_stamp('Starting run', fnname)
@@ -46,7 +46,7 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
         x_t_ = preprocess(x_t) if callable(preprocess) else x_t
 
         #  get command from policy
-        u_t = policy.evaluate(x_t_, t=t)[0].flatten()
+        u_t = policy(x_t_, t=t)[0].flatten()
 
         # apply control and step the env
         x_next, c_t, done, info = env.step(u_t)

@@ -6,7 +6,7 @@ from theano import shared as S
 from theano.tensor.nlinalg import matrix_dot
 from theano.tensor.slinalg import (solve_lower_triangular,
                                    solve_upper_triangular,
-                                   Cholesky)
+                                   cholesky)
 
 from kusanagi import utils
 from kusanagi.ghost.regression.GP import GP, GP_UI
@@ -73,7 +73,7 @@ class SSGP(GP):
         phi_f_dotY = tt.batched_dot(phi_f, self.Y.T)
 
         def nlml(A, phidotY, EyeM):
-            Lmm = Cholesky()(A)
+            Lmm = cholesky(A)
             rhs = tt.concatenate([EyeM, phidotY[:, None]], axis=1)
             sol = solve_upper_triangular(
                 Lmm.T, solve_lower_triangular(Lmm, rhs))
@@ -202,7 +202,7 @@ class SSGP(GP):
         self.resample_ss(100)
         super(SSGP, self).train()
 
-    def predict_symbolic(self, mx, Sx):
+    def predict(self, mx, Sx):
         odims = self.E
         idims = self.D
 
@@ -241,7 +241,7 @@ class SSGP_UI(SSGP, GP_UI):
                       odims=odims, n_inducing=n_inducing,
                       **kwargs)
 
-    def predict_symbolic(self, mx, Sx, unroll_scan=False):
+    def predict(self, mx, Sx, unroll_scan=False):
         idims = self.D
         odims = self.E
 

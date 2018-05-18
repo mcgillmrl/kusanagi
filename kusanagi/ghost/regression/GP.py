@@ -296,7 +296,7 @@ class GP(BaseRegressor):
         self.state_changed = True  # for saving
         return loss.sum(), inps, updts
 
-    def predict_symbolic(self, mx, Sx):
+    def predict(self, mx, Sx):
         idims = self.D
 
         # compute the mean and variance for each output dimension
@@ -369,7 +369,7 @@ class GP_UI(GP):
             X_dataset, Y_dataset, name=name, idims=idims, odims=odims,
             **kwargs)
 
-    def predict_symbolic(self, mx, Sx, unroll_scan=False):
+    def predict(self, mx, Sx, unroll_scan=False):
         idims = self.D
         odims = self.E
 
@@ -464,7 +464,7 @@ class RBFGP(GP_UI):
         self.register(['sat_func'])
         self.register(['iK', 'beta', 'L'])
 
-    def predict_symbolic(self, mx, Sx=None, unroll_scan=False):
+    def predict(self, mx, Sx=None, unroll_scan=False):
         idims = self.D
         odims = self.E
 

@@ -110,14 +110,10 @@ class RBFPolicy(RBFGP):
         super(RBFGP, self).get_loss(cache_intermediate=False)
 
         # init the prediction function
-        self.evaluate(np.zeros((self.D, )))
+        self.__call__(np.zeros((self.D, )))
 
-    def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
-        if symbolic:
-            ret = self.predict_symbolic(m, s)
-        else:
-            ret = self.predict(m, s)
-        return ret
+    def __call__(self, m, s=None, t=None, **kwargs):
+        return super(RBFPolicy, self).__call__(m, s, **kwargs)
 
 
 # random controller
@@ -129,7 +125,7 @@ class RandPolicy:
         self.random_walk = random_walk
         self.last_u = None
 
-    def evaluate(self, m, s=None, t=None, symbolic=False):
+    def __call__(self, m, s=None, t=None):
         scale = self.maxU - self.minU
         bias = self.minU
         if self.random_walk:
@@ -149,6 +145,10 @@ class RandPolicy:
         U = len(self.maxU)
         D = m.shape[0]
         return ret, np.zeros((U, U)), np.zeros((D, U))
+
+    def predict(self, m, s=None, t=None):
+        # TODO use theano to return symbolic random variables
+        return None, None, None
 
 
 # linear time varying policy
@@ -198,8 +198,8 @@ class LocalLinearPolicy(Loadable):
 
         # set a meaningful filename
         self.filename = self.name+'_'+str(len(self.m0))+'_'+str(len(self.maxU))
-
-    def evaluate(self, m, s=None, t=None, symbolic=False):
+    
+    def predict(self, m, s=None, t=None):
         D = m.shape[0]
         if t is not None:
             self.t = t
@@ -207,31 +207,24 @@ class LocalLinearPolicy(Loadable):
 
         u, z, I, L = self.u_nominal, self.z_nominal, self.I_, self.L_
 
-        if symbolic:
-            tt_ = theano.tensor
-        else:
-            tt_ = np
-            u, z = u.get_value(), z.get_value(),
-            I, L = I.get_value(), L.get_value()
-
         if s is None:
-            s = tt_.zeros((D, D))
+            s = np.zeros((D, D))
 
         # construct flattened state covariance vector
         z_t = tt_.concatenate([m.flatten(), s[self.triu_indices]])
         # compute control
         u_t = u[t] + I[t] + L[t].dot(z_t - z[t])
-        # add random noise if requested (only for non symbolic)
-        if not symbolic and self.noise and self.noise > 0:
-            u_t += self.noise*tt_.random.randn(*u_t.shape)
 
         # limit the controller output
-        u_t = tt_.maximum(u_t, -self.maxU)
-        u_t = tt_.minimum(u_t, self.maxU)
+        #u_t = tt.clip(u_t, -self.maxU,  self.maxU)
 
         U = u_t.shape[0]
         self.t += 1
         return u_t, tt_.zeros((U, U)), tt_.zeros((D, U))
+
+    def __call__(self, m, s=None, t=None):
+        # TODO implement this
+        raise NotImplementedError
 
     def get_params(self, symbolic=False, t=None):
         params = [self.u_nominal, self.z_nominal, self.I, self.L]
@@ -266,9 +259,7 @@ class AdjustedPolicy:
         self.source_policy.init_params()
         self.adjustment_model.init_params()
 
-    def evaluate(self, m, S=None, t=None, symbolic=False, **kwargs):
-        tt_ = theano.tensor if symbolic else np
-
+    def predict(self, m, S=None, t=None, **kwargs):
         kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
         kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', True)
         kwargs['whiten_outputs'] = kwargs.get('whiten_outputs', True)
@@ -277,7 +268,7 @@ class AdjustedPolicy:
         kwargs['deterministic'] = kwargs.get('deterministic', False)
 
         # get the output of the source policy
-        ret_u = self.source_policy.evaluate(m, S, t, symbolic, **kwargs)
+        ret_u = self.source_policy(m, S, t, symbolic, **kwargs)
 
         if self.adjustment_model.trained:
             # initialize the inputs to the policy adjustment function
@@ -299,10 +290,10 @@ class AdjustedPolicy:
                 adj_input_m = tt_.concatenate([adj_input_m, mu], axis=-1)
 
             if symbolic:
-                ret_adj = self.adjustment_model.predict_symbolic(
+                ret_adj = self.adjustment_model.predict(
                     adj_input_m, adj_input_S, **kwargs)
             else:
-                ret_adj = self.adjustment_model.predict(
+                ret_adj = self.adjustment_model(
                     adj_input_m, adj_input_S, **kwargs)
 
             # compute the adjusted control distribution

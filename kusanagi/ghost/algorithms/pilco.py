@@ -36,7 +36,7 @@ def propagate_belief(mx, Sx, policy, dynmodel, angle_dims=None):
     mxa, Sxa, Ca = utils.gTrig2(mx, Sx, angle_dims)
 
     # compute distribution of control signal
-    mu, Su, Cu = policy.evaluate(mxa, Sxa, symbolic=True)
+    mu, Su, Cu = policy.predict(mxa, Sxa)
 
     # compute state control joint distribution
     mxu = tt.concatenate([mxa, mu])
@@ -51,7 +51,7 @@ def propagate_belief(mx, Sx, policy, dynmodel, angle_dims=None):
 
     #  predict the change in state given current state-action
     # C_deltax = inv (Sxu) dot Sxu_deltax
-    m_deltax, S_deltax, C_deltax = dynmodel.predict_symbolic(mxu, Sxu)
+    m_deltax, S_deltax, C_deltax = dynmodel.predict(mxu, Sxu)
 
     # compute the successor state distribution
     mx_next = mx + m_deltax

@@ -32,7 +32,7 @@ class NNPolicy(BNN):
         super(NNPolicy, self).__init__(self.D, self.E, name=name,
                                        filename=filename, **kwargs)
 
-    def predict_symbolic(self, mx, Sx=None, **kwargs):
+    def predict(self, mx, Sx=None, **kwargs):
         if self.network_spec is None:
             self.network_spec = dropout_mlp(
                 input_dims=self.D,
@@ -69,7 +69,7 @@ class NNPolicy(BNN):
         return_samples = kwargs.get('return_samples', True)
         kwargs['return_samples'] = True
 
-        y, sn = super(NNPolicy, self).predict_symbolic(x, None, **kwargs)
+        y, sn = super(NNPolicy, self).predict(x, None, **kwargs)
         if callable(self.sat_func):
             y = self.sat_func(y)
 
@@ -100,7 +100,7 @@ class NNPolicy(BNN):
             kwargs['return_samples'] = kwargs.get('return_samples', True)
         kwargs['deterministic'] = kwargs.get('deterministic', False)
         if symbolic:
-            ret = self.predict_symbolic(m, s, **kwargs)
-        else:
             ret = self.predict(m, s, **kwargs)
+        else:
+            ret = self.__call__(m, s, **kwargs)
         return ret

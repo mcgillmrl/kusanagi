@@ -8,12 +8,13 @@ from theano.tensor.nlinalg import matrix_dot, det
 from theano.tensor.slinalg import (solve_lower_triangular,
                                    solve_upper_triangular,
                                    solve,
-                                   Cholesky)
+                                   cholesky)
 
 from kusanagi import utils
 from kusanagi.ghost.regression import cov
 from kusanagi.ghost.regression.GP import GP, GP_UI
 from scipy.cluster.vq import kmeans
+floatX = theano.config.floatX
 
 
 class SPGP(GP):
@@ -79,7 +80,8 @@ class SPGP(GP):
     def get_loss(self, cache_intermediate=True):
         if self.N < self.n_inducing:
             # initialize the training loss function of the GP class
-            return super(SPGP, self).get_loss(cache_intermediate=cache_intermediate)
+            return super(SPGP, self).get_loss(
+                cache_intermediate=cache_intermediate)
         else:
             utils.print_with_stamp('Building FITC loss', self.name)
             self.should_recompile = False
@@ -102,27 +104,29 @@ class SPGP(GP):
                 ridge = 1e-6
                 Kmm = kernel_func(X_sp) + ridge*EyeM
                 Kmn = kernel_func(X_sp, X)
-                Lmm = Cholesky()(Kmm)
+                Lmm = cholesky(Kmm)
                 rhs = tt.concatenate([EyeM, Kmn], axis=1)
                 sol = solve_lower_triangular(Lmm, rhs)
                 iKmm = solve_upper_triangular(Lmm.T, sol[:, :EyeM.shape[0]])
-                Lmn  = sol[:, EyeM.shape[0]:]
-                diagQnn =  (Lmn**2).sum(0)
+                Lmn = sol[:, EyeM.shape[0]:]
+                diagQnn = (Lmn**2).sum(0)
 
                 # Gamma = diag(Knn - Qnn) + sn2*I
                 Gamma = sf2 + sn2 - diagQnn
                 Gamma_inv = 1.0/Gamma
 
-                # these operations are done to avoid inverting K_sp = (Qnn+Gamma)
+                # these operations are done to avoid inverting Qnn+Gamma)
                 sqrtGamma_inv = tt.sqrt(Gamma_inv)
                 Lmn_ = Lmn*sqrtGamma_inv                      # Kmn_*Gamma^-.5
                 Yi = Y*(sqrtGamma_inv)                        # Gamma^-.5* Y
-                Bmm = tt.eye(Kmm.shape[0]) + (Lmn_).dot(Lmn_.T)     # I + Lmn * Gamma^-1 * Lnm
-                Amm = Cholesky()(Bmm)
+                # I + Lmn * Gamma^-1 * Lnm
+                Bmm = tt.eye(Kmm.shape[0]) + (Lmn_).dot(Lmn_.T)
+                Amm = cholesky(Bmm)
                 LAmm = Lmm.dot(Amm)
                 Kmn_dotYi = Kmn.dot(Yi*(sqrtGamma_inv))
                 rhs = tt.concatenate([EyeM, Kmn_dotYi[:, None]], axis=1)
-                sol = solve_upper_triangular(LAmm.T, solve_lower_triangular(LAmm, rhs))
+                sol = solve_upper_triangular(
+                    LAmm.T, solve_lower_triangular(LAmm, rhs))
                 iBmm = sol[:, :-1]
                 beta_sp = sol[:, -1]
 
@@ -148,27 +152,34 @@ class SPGP(GP):
                 # recompute them
                 # initialize shared variables
                 kk = self.n_inducing
-                self.iKmm = S(np.tile(np.eye(kk), (odims, 1, 1)),
-                              name="%s>iKmm" % (self.name))
-                self.Lmm = S(np.tile(np.eye(kk), (odims, 1, 1)),
-                             name="%s>Lmm" % (self.name))
-                self.Amm = S(np.tile(np.eye(kk), (odims, 1, 1)),
-                             name="%s>Amm" % (self.name))
-                self.iBmm = S(np.tile(np.eye(kk), (odims, 1, 1)),
-                              name="%s>iBmm" % (self.name))
-                self.beta_sp = S(np.ones((self.E, kk)),
-                                 name="%s>beta_sp" % (self.name))
+                self.iKmm = S(
+                    np.tile(np.eye(kk).astype(floatX), (odims, 1, 1)),
+                    name="%s>iKmm" % (self.name))
+                self.Lmm = S(
+                    np.tile(np.eye(kk).astype(floatX), (odims, 1, 1)),
+                    name="%s>Lmm" % (self.name))
+                self.Amm = S(
+                    np.tile(np.eye(kk).astype(floatX), (odims, 1, 1)),
+                    name="%s>Amm" % (self.name))
+                self.iBmm = S(
+                    np.tile(np.eye(kk).astype(floatX), (odims, 1, 1)),
+                    name="%s>iBmm" % (self.name))
+                self.beta_sp = S(
+                    np.ones((self.E, kk)).astype(floatX),
+                    name="%s>beta_sp" % (self.name))
                 updts = [(self.iKmm, iKmm), (self.Lmm, Lmm), (self.Amm, Amm),
                          (self.iBmm, iBmm), (self.beta_sp, beta_sp)]
             else:
-                self.iKmm, self.Lmm, self.Amm, self.iBmm, self.beta_sp = iKmm, Lmm, Amm, iBmm, beta_sp
+                self.iKmm, self.Lmm, self.Amm = iKmm, Lmm, Amm
+                self.iBmm, self.beta_sp = iBmm, beta_sp
                 updts = None
 
             # we add some penalty to avoid having parameters that are too large
             if self.snr_penalty is not None:
                 penalty_params = {'log_snr': np.log(1000),
                                   'log_ls': np.log(100),
-                                  'log_std': tt.log(self.X_sp.std(0)*(N/(N-1.0))),
+                                  'log_std': tt.log(
+                                      self.X_sp.std(0)*(N/(N-1.0))),
                                   'p': 30}
                 loss_sp += self.snr_penalty(self.hyp, **penalty_params)
 
@@ -176,32 +187,35 @@ class SPGP(GP):
             self.state_changed = True  # for saving
             return loss_sp.sum(), inps, updts
 
-    def predict_symbolic(self, mx, Sx):
+    def predict(self, mx, Sx=None, *args, **kwargs):
+        if Sx is None:
+            Sx = tt.eye(mx.shape[-1])*1e-2
         if self.N < self.n_inducing:
             # stick with the full GP
-            return super(SPGP, self).predict_symbolic(mx, Sx)
+            return super(SPGP, self).predict(mx, Sx)
 
         idims = self.D
         odims = self.E
 
         # compute the mean and variance for each output dimension
-        def predict_odim(Lmm, Amm, beta_sp, hyp, X_sp, mx):
+        def predict_odim(Lmm, Amm, beta_sp, hyp, X_sp, x):
             hyps = (hyp[:idims+1], hyp[idims+1])
             kernel_func = partial(cov.Sum, hyps, self.covs)
 
-            k = kernel_func(mx[None, :], X_sp).flatten()
+            k = kernel_func(x, X_sp).flatten()
             mean = k.dot(beta_sp)
             kL = solve_lower_triangular(Lmm, k)
             kA = solve_lower_triangular(Amm, Lmm.T.dot(k))
-            variance = kernel_func(mx[None, :], all_pairs=False)
+            variance = kernel_func(x, all_pairs=False)
             variance += -(kL.dot(kL) + kA.dot(kA))
             variance = tt.largest(variance, 0.0) + 1e-3
 
             return mean, variance
+        x = mx[None, :] if mx.ndim == 1 else mx
         seq = [self.Lmm, self.Amm, self.beta_sp, self.hyp]
-        nseq = [self.X_sp, mx]
+        nseq = [self.X_sp, x]
         (M, S), updts = theano.scan(
-            fn=predict_odim, sequences=seq, non_sequences=nseq,allow_gc=False)
+            fn=predict_odim, sequences=seq, non_sequences=nseq, allow_gc=False)
 
         # reshape output variables
         M = M.flatten()
@@ -226,10 +240,10 @@ class SPGP_UI(SPGP, GP_UI):
                       odims=odims, n_inducing=n_inducing,
                       **kwargs)
 
-    def predict_symbolic(self, mx, Sx):
+    def predict(self, mx, Sx, *args, **kwargs):
         if self.N < self.n_inducing:
             # stick with the full GP
-            return GP_UI.predict_symbolic(self, mx, Sx)
+            return GP_UI.predict(self, mx, Sx)
 
         idims = self.D
         odims = self.E
@@ -249,8 +263,8 @@ class SPGP_UI(SPGP, GP_UI):
         B = (iLdotSx[:, :, None, :]*iL[:, None, :, :]).sum(-1) + tt.eye(idims)
         t = tt.stack([solve(B[i].T, inp[i].T).T for i in range(odims)])
         c = sf2/tt.sqrt(tt.stack([det(B[i]) for i in range(odims)]))
-        l = tt.exp(-0.5*tt.sum(inp*t, 2))
-        lb = l*self.beta_sp
+        l_ = tt.exp(-0.5*tt.sum(inp*t, 2))
+        lb = l_*self.beta_sp
         M = tt.sum(lb, 1)*c
 
         # input output covariance

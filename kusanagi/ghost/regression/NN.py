@@ -336,7 +336,7 @@ class BNN(BaseRegressor):
         train_targets = tt.matrix('%s>train_targets' % (self.name))
 
         # evaluate nework output for batch
-        train_predictions, sn = self.predict_symbolic(
+        train_predictions, sn = self.predict(
             train_inputs, None, deterministic=False,
             iid_per_eval=True, return_samples=True)
 
@@ -389,7 +389,7 @@ class BNN(BaseRegressor):
                 layer_updates += l.get_updates()
         return layer_updates
 
-    def predict_symbolic(self, mx, Sx=None, deterministic=False,
+    def predict(self, mx, Sx=None, deterministic=False,
                          iid_per_eval=False, return_samples=False,
                          whiten_inputs=True, whiten_outputs=True):
         ''' returns symbolic expressions for the evaluations of this objects
@@ -474,7 +474,7 @@ class BNN(BaseRegressor):
         if not hasattr(self, 'update_fn') or self.update_fn is None:
             # get prediction with non deterministic samples
             mx = tt.zeros((self.n_samples, self.D))
-            self.predict_symbolic(mx, iid_per_eval=False)
+            self.predict(mx, iid_per_eval=False)
 
             # create a function to update the masks manually. Here the dropout
             # masks should be shared variables

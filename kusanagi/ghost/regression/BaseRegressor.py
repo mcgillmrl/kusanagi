@@ -171,7 +171,7 @@ class BaseRegressor(Loadable):
     def init_predict(self, input_covariance=False, input_ndim=1,
                      *args, **kwargs):
         ''' Compiles a prediction function for the operation specified in
-        self.predict_symbolic'''
+        self.predict'''
         # input variables
         mx = tt.TensorType(floatX, (False,)*input_ndim)('mx')
         Sx = tt.matrix('Sx') if input_covariance else None
@@ -182,7 +182,7 @@ class BaseRegressor(Loadable):
         # get prediction
         utils.print_with_stamp(
             'Initialising expression graph for prediction', self.name)
-        output_vars = self.predict_symbolic(mx, Sx, *args, **kwargs)
+        output_vars = self.predict(mx, Sx, *args, **kwargs)
 
         # outputs
         if not any([isinstance(output_vars, cl) for cl in [tuple, list]]):
@@ -209,7 +209,7 @@ class BaseRegressor(Loadable):
     def get_updates(self):
         return theano.updates.OrderedUpdates()
 
-    def predict(self, mx, Sx=None, *args, **kwargs):
+    def __call__(self, mx, Sx=None, *args, **kwargs):
         # check if we need to compile the prediction functions
         if Sx is None:
             if not hasattr(self, 'predict_fn') or self.predict_fn is None:
