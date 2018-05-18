@@ -33,24 +33,12 @@ class NNPolicy(BNN):
                                        filename=filename, **kwargs)
 
     def predict(self, mx, Sx=None, **kwargs):
-        if self.network_spec is None:
-            self.network_spec = dropout_mlp(
-                input_dims=self.D,
-                output_dims=self.E,
-                hidden_dims=[50]*2,
-                p=0.1, p_input=0.0,
-                nonlinearities=lasagne.nonlinearities.rectify,
-                output_nonlinearity=lasagne.nonlinearities.linear,
-                dropout_class=layers.DenseDropoutLayer,
-                name=self.name)
-
-        if self.network is None:
-            params = self.network_params\
-                     if self.network_params is not None\
-                     else {}
-            self.build_network(self.network_spec,
-                               params=params,
-                               name=self.name)
+        # by default, sample internal params (e.g. dropout masks)
+        # at every evaluation
+        kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
+        kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', True)
+        kwargs['whiten_outputs'] = kwargs.get('whiten_outputs', True)
+        kwargs['deterministic'] = kwargs.get('deterministic', False)
 
         if Sx is not None:
             # generate random samples from input (assuming gaussian
@@ -90,17 +78,5 @@ class NNPolicy(BNN):
                 C = tt.zeros((self.D, self.E))
             return [M, S, C]
 
-    def evaluate(self, m, s=None, t=None, symbolic=False, **kwargs):
-        # by default, sample internal params (e.g. dropout masks)
-        # at every evaluation
-        kwargs['iid_per_eval'] = kwargs.get('iid_per_eval', True)
-        kwargs['whiten_inputs'] = kwargs.get('whiten_inputs', True)
-        kwargs['whiten_outputs'] = kwargs.get('whiten_outputs', True)
-        if s is None:
-            kwargs['return_samples'] = kwargs.get('return_samples', True)
-        kwargs['deterministic'] = kwargs.get('deterministic', False)
-        if symbolic:
-            ret = self.predict(m, s, **kwargs)
-        else:
-            ret = self.__call__(m, s, **kwargs)
-        return ret
+    def __call__(self, m, s=None, t=None, **kwargs):
+        return super(NNPolicy, self).__call__(m, s, **kwargs)
