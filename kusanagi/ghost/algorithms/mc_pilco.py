@@ -147,7 +147,7 @@ def rollout(x0, H, gamma0,
                                         z[1, -end_idx:-start_idx]],
             outputs_info=[None, x0, 1e-4*tt.ones_like(x0), gamma0],
             non_sequences=nseq, strict=True, allow_gc=False,
-            truncate_gradient=truncate_gradient,
+            truncate_gradient=H_-truncate_gradient,
             name="mc_pilco>rollout_scan_%d" % i,
             mode=mode)
 
@@ -156,7 +156,7 @@ def rollout(x0, H, gamma0,
         costs.append(costs_i)
         trajectories.append(trajectories_i)
         x0 = trajectories_i[-1, :, :]
-        # x0 = theano.gradient.disconnected_grad(x0)
+        x0 = theano.gradient.disconnected_grad(x0)
 
     costs = tt.concatenate(costs)
     trajectories = tt.concatenate(trajectories)
@@ -175,7 +175,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=False,
              time_varying_cost=False, resample_dyn=False, crn=True,
-             average=True, grad_clip=None, truncate_gradient=-1, split_H=1,
+             average=True, grad_clip=1.0, truncate_gradient=-1, split_H=1,
              extra_shared=[], extra_updts_init=None,
              **kwargs):
     '''
