@@ -1,9 +1,8 @@
-import lasagne
 import numpy as np
 import theano
 import theano.tensor as tt
 
-from kusanagi.ghost.regression import BNN, mlp, dropout_mlp, layers
+from kusanagi.ghost.regression import BNN
 from kusanagi.ghost.control.saturation import sfunc, tanhSat as sat
 from functools import partial
 
