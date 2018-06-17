@@ -220,11 +220,12 @@ class ExperienceDataset(Loadable):
 
             # append costs if requested
             if return_costs:
-                costs = np.array(self.costs[epi])[:, None]
+                costs = np.array(self.costs[epi])
                 ocosts = join(
                     [costs[i:H-(output_steps-i-1), :]
                      for i in range(output_steps)],
                     axis=1)
+
                 tgt = np.concatenate([tgt, ocosts[1:, :]], axis=-1)
 
             inputs.append(inp)
@@ -232,3 +233,10 @@ class ExperienceDataset(Loadable):
 
         ret = np.concatenate(inputs), np.concatenate(targets)
         return ret
+
+        def sample_initial_state(self, n_samples=1):
+            # collect initial states
+            x0 = [ep[0] for ep in self.states]
+            # sample indices
+            idx = np.random.choice(range(len(x0)), n_samples)
+            return np.array(x0)[idx]
