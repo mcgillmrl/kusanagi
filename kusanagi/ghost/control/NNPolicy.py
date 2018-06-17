@@ -67,12 +67,14 @@ class NNPolicy(BNN):
             # empirical mean
             M = y.mean(axis=0)
             # empirical covariance
-            S = y.T.dot(y)/n - tt.outer(M, M)
+            deltay = y - M
+            S = deltay.T.dot(deltay)/(n-1)
             # noise
             S += tt.diag((sn**2).mean(axis=0))
             # empirical input output covariance
             if Sx is not None:
-                C = x.T.dot(y)/n - tt.outer(mx, M)
+                deltax = x - x.mean(0)
+                C = deltax.T.dot(deltay)/(n-1)
             else:
                 C = tt.zeros((self.D, self.E))
             return [M, S, C]

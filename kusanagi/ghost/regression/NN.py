@@ -119,7 +119,6 @@ class BNN(BaseRegressor):
         samples = np.array(n_samples).astype('int32')
         samples_name = "%s>n_samples" % (self.name)
         self.n_samples = theano.shared(samples, name=samples_name)
-        
 
         self.X = None
         self.Y = None
@@ -390,8 +389,8 @@ class BNN(BaseRegressor):
         return layer_updates
 
     def predict(self, mx, Sx=None, deterministic=False,
-                         iid_per_eval=False, return_samples=False,
-                         whiten_inputs=True, whiten_outputs=True):
+                iid_per_eval=False, return_samples=False,
+                whiten_inputs=True, whiten_outputs=True, **kwargs):
         ''' returns symbolic expressions for the evaluations of this objects
         neural network. If Sx is specified, the output will correspond to the
         mean, covariance and input-output covariance of the network
@@ -444,12 +443,14 @@ class BNN(BaseRegressor):
             # empirical mean
             M = y.mean(axis=0)
             # empirical covariance
-            S = y.T.dot(y)/(n-1) - tt.outer(M, M)
+            deltay = y - M
+            S = deltay.T.dot(deltay)/(n-1)
             # noise
             S += tt.diag((sn**2).mean(axis=0))
             # empirical input output covariance
             if Sx is not None:
-                C = x.T.dot(y)/(n-1) - tt.outer(mx, M)
+                deltax = x - x.mean(0)
+                C = deltax.T.dot(deltay)/(n-1)
             else:
                 C = tt.zeros((self.D, self.E))
             return [M, S, C]

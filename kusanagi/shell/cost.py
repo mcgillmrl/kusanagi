@@ -121,7 +121,8 @@ def empirical_gaussian_params(x):
     n = x.shape[0]
     n = n.astype(theano.config.floatX)
     mx = x.mean(0)
-    Sx = x.T.dot(x)/n - tt.outer(mx, mx)
+    deltax = x - mx
+    Sx = deltax.T.dot(deltax)/(n-1)
     return mx, Sx
 
 

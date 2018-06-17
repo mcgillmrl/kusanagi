@@ -84,8 +84,8 @@ def rollout(x0, H, gamma0,
                 if mxn is None:
                     mxn = xn.mean(0)
                 if Sxn is None:
-                    Sxn = (xn.T.dot(xn)/(n-1)
-                           - tt.outer(mxn, mxn))
+                    delta = xn - mxn
+                    Sxn = delta.T.dot(delta)/(n-1)
                 # propagate gaussian through cost (should be implemented in
                 # cost func)
                 c = tv_cost(t, mxn, Sxn)
@@ -98,7 +98,8 @@ def rollout(x0, H, gamma0,
         # if resampling (moment-matching for state)
         if mm_state:
             mx_next = x_next.mean(0)
-            Sx_next = x_next.T.dot(x_next)/n - tt.outer(mx_next, mx_next)
+            delta = x_next - mx_next
+            Sx_next = delta.T.dot(delta)/(n-1)
             x_next = mx_next + z1.dot(tt.slinalg.cholesky(Sx_next).T)
             # noisy state measurement for cost
             xn_next = x_next
