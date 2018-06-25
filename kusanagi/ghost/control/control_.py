@@ -125,7 +125,7 @@ class RandPolicy:
         self.random_walk = random_walk
         self.last_u = None
 
-    def __call__(self, m, s=None, t=None):
+    def __call__(self, m, s=None, t=None, **kwargs):
         scale = self.maxU - self.minU
         bias = self.minU
         if self.random_walk:
