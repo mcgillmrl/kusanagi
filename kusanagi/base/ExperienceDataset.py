@@ -226,7 +226,7 @@ class ExperienceDataset(Loadable):
                      for i in range(output_steps)],
                     axis=1)
 
-                tgt = np.concatenate([tgt, ocosts[1:, :]], axis=-1)
+                tgt = np.concatenate([tgt, ocosts[:-1, :]], axis=-1)
 
             inputs.append(inp)
             targets.append(tgt)
