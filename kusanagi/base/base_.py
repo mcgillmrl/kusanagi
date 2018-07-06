@@ -4,7 +4,7 @@ import numpy as np
 
 
 def preprocess_angles(x_t, angle_dims=[]):
-    x_t_ = utils.gTrig_np(x_t[None, :], angle_dims).flatten()
+    x_t_ = utils.gTrig_np(x_t[None, :], angle_dims)
     return x_t_
 
 
@@ -46,7 +46,11 @@ def apply_controller(env, policy, max_steps, preprocess=None, callback=None):
         x_t_ = preprocess(x_t) if callable(preprocess) else x_t
 
         #  get command from policy
-        u_t = policy(x_t_, t=t)[0].flatten()
+        u_t = policy(x_t_, t=t)
+        if isinstance(u_t, list) or isinstance(u_t, tuple):
+            u_t = u_t[0].flatten()
+        else:
+            u_t = u_t.flatten()
 
         # apply control and step the env
         x_next, c_t, done, info = env.step(u_t)
