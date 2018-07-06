@@ -234,9 +234,9 @@ class ExperienceDataset(Loadable):
         ret = np.concatenate(inputs), np.concatenate(targets)
         return ret
 
-    def sample_initial_state(self, n_samples=1):
+    def sample_states(self, n_samples=1, timestep=0):
         # collect initial states
-        x0 = [ep[0] for ep in self.states]
+        x0 = [ep[timestep] for ep in self.states]
         # sample indices
         idx = np.random.choice(range(len(x0)), n_samples)
         return np.array(x0)[idx]
