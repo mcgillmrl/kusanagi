@@ -296,7 +296,7 @@ class GP(BaseRegressor):
         self.state_changed = True  # for saving
         return loss.sum(), inps, updts
 
-    def predict(self, mx, Sx):
+    def predict(self, mx, Sx, **kwargs):
         idims = self.D
 
         # compute the mean and variance for each output dimension
@@ -369,7 +369,7 @@ class GP_UI(GP):
             X_dataset, Y_dataset, name=name, idims=idims, odims=odims,
             **kwargs)
 
-    def predict(self, mx, Sx, unroll_scan=False):
+    def predict(self, mx, Sx, unroll_scan=False, **kwargs):
         idims = self.D
         odims = self.E
 
@@ -464,11 +464,13 @@ class RBFGP(GP_UI):
         self.register(['sat_func'])
         self.register(['iK', 'beta', 'L'])
 
-    def predict(self, mx, Sx=None, unroll_scan=False):
+    def predict(self, mx, Sx=None, unroll_scan=False, **kwargs):
         idims = self.D
         odims = self.E
 
         # initialize some variables
+        if self.sn is None:
+            self.sn = self.hyp[:, -1]
         sf2 = self.hyp[:, idims]**2
         eyeE = tt.tile(tt.eye(idims), (odims, 1, 1))
         lscales = self.hyp[:, :idims]
@@ -492,7 +494,7 @@ class RBFGP(GP_UI):
                 # saturate the output
                 M = self.sat_func(M)
 
-            return M
+            return M, tt.tile(self.sn, (M.shape[0], 1))
 
         # centralize inputs
         zeta = self.X - mx

@@ -128,7 +128,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 3:
-        # mc PILCO with RBF controller and dropout mlp dynamics
+        # mc PILCO with RBF controller and binary dropout mlp dynamics
         scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
@@ -137,16 +137,16 @@ def get_scenario(experiment_id, *args, **kwargs):
         # init dyn to use dropout
         dyn_spec = dict(
             hidden_dims=[200]*2,
-            p=True, p_input=True,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            dropout_class=regression.layers.DenseLogNormalDropoutLayer,
+            dropout_class=regression.layers.DenseDropoutLayer,
             build_fn=regression.dropout_mlp)
         dyn = regression.BNN(
             network_spec=dyn_spec, **params['dynamics_model'])
 
     elif experiment_id == 4:
-        # mc PILCO with NN controller and dropout mlp dynamics
+        # mc PILCO with NN controller and binary dropout mlp dynamics
         scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
@@ -157,8 +157,8 @@ def get_scenario(experiment_id, *args, **kwargs):
             p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
-            dropout_class=regression.layers.DenseLogNormalDropoutLayer,
-            build_fn=regression.mlp)
+            dropout_class=regression.layers.DenseDropoutLayer,
+            build_fn=regression.dropout_mlp)
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
         # init policy
@@ -182,7 +182,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # are dummy variables to enable dropout (not actual dropout probs)
         dyn_spec = dict(
             hidden_dims=[200]*2,
-            p=True, p_input=True,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
@@ -190,7 +190,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         dyn = regression.BNN(network_spec=dyn_spec, **params['dynamics_model'])
 
     elif experiment_id == 6:
-        # mc PILCO with NN controller and dropout mlp dynamics
+        # mc PILCO with NN controller and log normal dropout dynamics
         scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
@@ -198,7 +198,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # init dyn to use dropout
         dyn_spec = dict(
             hidden_dims=[200]*2,
-            p=True, p_input=True,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
@@ -215,7 +215,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             dyn.E, network_spec=pol_spec, **params['policy'])
 
     elif experiment_id == 7:
-        # mc PILCO with dropout controller and dropout mlp dynamics
+        # mc PILCO with dropout controller and binary dropout mlp dynamics
         scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
@@ -223,7 +223,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # init dyn to use dropout
         dyn_spec = dict(
             hidden_dims=[200]*2,
-            p=0.1, p_input=0.1,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseDropoutLayer,
@@ -250,7 +250,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # init dyn to use dropout
         dyn_spec = dict(
             hidden_dims=[200]*2,
-            p=True, p_input=True,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
@@ -269,7 +269,7 @@ def get_scenario(experiment_id, *args, **kwargs):
                                **params['policy'])
 
     elif experiment_id == 9:
-        # mc PILCO with dropout controller and log-normal dropout dynamics
+        # mc PILCO with dropout controller and concrete dropout dynamics
         scenario_params = experiment2_params(*args, **kwargs)
         learner_setup = experiment_utils.setup_mc_pilco_experiment
         params = scenario_params[0]
@@ -282,7 +282,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.1, p_input=0.01,
+            p=0.1, p_input=0.0,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseConcreteDropoutLayer,
