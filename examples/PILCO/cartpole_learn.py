@@ -182,7 +182,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # are dummy variables to enable dropout (not actual dropout probs)
         dyn_spec = dict(
             hidden_dims=[200]*2,
-            p=0.1, p_input=0.0,
+            p=0.1, p_input=0.1,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
@@ -198,7 +198,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # init dyn to use dropout
         dyn_spec = dict(
             hidden_dims=[200]*2,
-            p=0.1, p_input=0.0,
+            p=0.1, p_input=0.1,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
@@ -250,7 +250,7 @@ def get_scenario(experiment_id, *args, **kwargs):
         # init dyn to use dropout
         dyn_spec = dict(
             hidden_dims=[200]*2,
-            p=0.1, p_input=0.0,
+            p=0.1, p_input=0.1,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseLogNormalDropoutLayer,
@@ -282,7 +282,7 @@ def get_scenario(experiment_id, *args, **kwargs):
             input_dims=dyn.D,
             output_dims=odims,
             hidden_dims=[200]*2,
-            p=0.1, p_input=0.0,
+            p=0.1, p_input=0.1,
             nonlinearities=regression.nonlinearities.rectify,
             W_init=lasagne.init.GlorotNormal(),
             dropout_class=regression.layers.DenseConcreteDropoutLayer,

@@ -1,12 +1,29 @@
 import argparse
+import dill
 import os
+import pickle as pkl
 
+from functools import partial
+
+import kusanagi
 from kusanagi.base import ExperienceDataset
 from kusanagi.ghost import control
 from kusanagi.shell import experiment_utils
 from kusanagi import utils
-import dill
-import pickle as pkl
+
+
+def recursive_getattr(obj, attr):
+    val = getattr(obj, attr, None)
+    if val is None:
+        attr1, attr_next = attr.split('.')
+        next_mod = getattr(obj, attr1)
+        #print next_mod
+        if attr == attr1 or next_mod is None:
+            raise AttributeError('Can\'t find %s in module %s' % (obj, attr))
+        else:
+            return recursive_getattr(next_mod, attr_next)
+    else:
+        return val
 
 
 if __name__ == '__main__':
@@ -21,8 +38,11 @@ if __name__ == '__main__':
         '-k', '--kwarg', nargs=2, action='append', default=[],
         help='additional arguments for the experiment [name value]')
     parser.add_argument(
-        '-s', '--setup_func', type=str, default='setup_cartpole_experiment',
-        help='environment setup func, from kusanagi.shell.experiment_utils')
+        '-e', '--env', type=str, default='cartpole.Cartpole',
+        help='environment from kusanagi.shell')
+    parser.add_argument(
+        '-c', '--cost', type=str, default='cartpole.cartpole_loss',
+        help='cost funciton from kusanagi.shell')   
     parser.add_argument('-p', '--policy_class', type=str,
                         default='NNPolicy',
                         help='Policy class (in kusanagi.ghost.control)')
@@ -36,7 +56,8 @@ if __name__ == '__main__':
     config_path = os.path.join(odir, 'initial_config.dill')
     exp_path = os.path.join(odir, 'experience_%d' % (last_iteration))
     pol_path = os.path.join(odir, 'policy_%d' % (last_iteration))
-    setup_func = getattr(experiment_utils, args.setup_func)
+    env_class = recursive_getattr(kusanagi.shell, args.env)
+    cost_func = recursive_getattr(kusanagi.shell, args.cost)
     policy_class = getattr(control, args.policy_class)
 
     with open(config_path, 'rb') as f:
@@ -46,11 +67,16 @@ if __name__ == '__main__':
     p0 = params['state0_dist']
     exp = ExperienceDataset(filename=exp_path)
     if args.policy_class == 'NNPolicy':
-        pol = policy_class(p0.mean.size, filename=pol_path)
+        pol = policy_class(p0.mean.size, filename=pol_path, **params['policy'])
     else:
-        pol = policy_class(filename=pol_path)
+        pol = policy_class(filename=pol_path, **params['policy'])
 
-    env, cost, params = setup_func(params)
+    # init cost model
+    cost = partial(cost_func, **params['cost'])
+    # init environment
+    env = env_class(loss_func=cost, **params['plant'])
+
+    # evaluate policy
     results = experiment_utils.evaluate_policy(
         env, pol, exp, params, n_trials, render=args.render)
 
