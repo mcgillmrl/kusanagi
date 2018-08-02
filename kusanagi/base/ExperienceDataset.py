@@ -37,7 +37,8 @@ class ExperienceDataset(Loadable):
     def load(self, output_folder=None, output_filename=None):
         ''' Loads the state from file, and initializes additional variables'''
         # load state
-        ret = super(ExperienceDataset, self).load(output_folder, output_filename)
+        ret = super(ExperienceDataset, self).load(
+            output_folder, output_filename)
 
         # if the policy parameters were saved as shared variables
         for i in range(len(self.policy_parameters)):

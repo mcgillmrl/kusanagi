@@ -489,7 +489,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
     def __init__(self, incoming, num_units, W=init.GlorotUniform(),
                  b=init.Constant(0.), nonlinearity=nonlinearities.rectify,
                  num_leading_axes=1, logit_posterior_mean=None,
-                 logit_posterior_std=None, interval=[-6.0, 0.1],
+                 logit_posterior_std=None, interval=[-4.0, 0.0],
                  shared_axes=(), noise_samples=None,
                  **kwargs):
         super(DenseLogNormalDropoutLayer, self).__init__(
@@ -506,7 +506,7 @@ class DenseLogNormalDropoutLayer(DenseDropoutLayer):
         logit_posterior_std = self.logit_posterior_std
         a, b = self.interval
         uniform_std = np.sqrt(((b-a)**2)/12.0)
-        s_interval = [1e-4, uniform_std]
+        s_interval = [1e-2, uniform_std]
         s_min, s_max = np.array(s_interval).astype(floatX).tolist()
         self.s_interval = [s_min, s_max]
 
