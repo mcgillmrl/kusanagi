@@ -320,7 +320,7 @@ if __name__ == '__main__':
         '-o', '--output_folder', type=str, default=utils.get_output_dir(),
         help='where to save the results of the experiment')
     parser.add_argument(
-        '-r', '--render', type=bool, default=False,
+        '-r', '--render', action='store_true',
         help='whether to call env.render')
     parser.add_argument(
         '-d', '--debug_plot', type=int, default=0,
