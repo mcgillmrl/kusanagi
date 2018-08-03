@@ -9,6 +9,6 @@ OPTIMZER_OPTS="-k max_evals 1000 -k learning_rate 1e-4 -k polyak_averaging None 
 #python examples/PILCO/double_cartpole_learn.py -e 3 -n dcp_mcpilco_dropoutd_rbfp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
 #python examples/PILCO/double_cartpole_learn.py -e 5 -n dcp_mcpilco_lndropoutd_rbfp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
 python examples/PILCO/double_cartpole_learn.py -e 8 -n dcp_mcpilco_lndropoutd_dropoutp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
-#python examples/PILCO/double_cartpole_learn.py -e 7 -n dcp_mcpilco_dropoutd_dropoutp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
-#python examples/PILCO/double_cartpole_learn.py -e 6 -n dcp_mcpilco_lndropoutd_mlpp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
-#python examples/PILCO/double_cartpole_learn.py -e 4 -n dcp_mcpilco_dropoutd_mlpp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
+python examples/PILCO/double_cartpole_learn.py -e 7 -n dcp_mcpilco_dropoutd_dropoutp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
+python examples/PILCO/double_cartpole_learn.py -e 6 -n dcp_mcpilco_lndropoutd_mlpp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
+python examples/PILCO/double_cartpole_learn.py -e 4 -n dcp_mcpilco_dropoutd_mlpp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}

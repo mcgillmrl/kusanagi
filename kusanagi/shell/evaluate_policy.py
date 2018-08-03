@@ -28,12 +28,12 @@ def recursive_getattr(obj, attr):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset_folder', type=str,
-                        default=utils.get_output_dir(),
-                        help='where to load the results of the experiment')
-    parser.add_argument('-r', '--render', type=bool,
-                        default=False,
-                        help='whether to call env.render')
+    parser.add_argument(
+        '-d', '--dataset_folder', type=str, default=utils.get_output_dir(),
+        help='where to load the results of the experiment')
+    parser.add_argument(
+        '-r', '--render', action='store_true',
+        help='whether to call env.render')
     parser.add_argument(
         '-k', '--kwarg', nargs=2, action='append', default=[],
         help='additional arguments for the experiment [name value]')
@@ -43,9 +43,12 @@ if __name__ == '__main__':
     parser.add_argument(
         '-c', '--cost', type=str, default='cartpole.cartpole_loss',
         help='cost funciton from kusanagi.shell')   
-    parser.add_argument('-p', '--policy_class', type=str,
-                        default='NNPolicy',
-                        help='Policy class (in kusanagi.ghost.control)')
+    parser.add_argument(
+        '-p', '--policy_class', type=str, default='NNPolicy',
+        help='Policy class (in kusanagi.ghost.control)')
+    parser.add_argument(
+        '-f', '--force', action='store_true'
+    )
 
     args = parser.parse_args()
 
@@ -83,6 +86,7 @@ if __name__ == '__main__':
     # dump results to file
     results_path = os.path.join(
         odir, 'results_%d_%d' % (last_iteration, n_trials))
-    with open(results_path, 'wb+') as f:
-        utils.print_with_stamp('Dumping results to [%s]' % (results_path))
-        pkl.dump(results, f, 2)
+    if (not os.path.isfile(results_path)) or args.force:
+        with open(results_path, 'wb+') as f:
+            utils.print_with_stamp('Dumping results to [%s]' % (results_path))
+            pkl.dump(results, f, 2)

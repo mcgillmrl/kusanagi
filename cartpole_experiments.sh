@@ -16,11 +16,11 @@ python examples/PILCO/cartpole_learn.py -e 8 -n mcpilco_lndropoutd_dropoutp ${OP
 python examples/PILCO/cartpole_learn.py -e 9 -n mcpilco_cdropoutd_dropoutp ${OPTS} ${EXPERIMENT_OPTS} ${MCPILCO_OPTS} ${OPTIMZER_OPTS}
 
 EVAL_OPTS = '-e cartpole.Cartpole -c cartpole.cartpole_loss -k n_trials 20 -k last_iteration 50'
-python kusanagi/shell/evaluate_policy.py -d ${ODIR}/pilco_ssgp_rbfp_1 -p RBFPolicy
-python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_dropoutd_rbfp_3 -p RBFPolicy
-python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_dropoutd_mlpp_4 -p RBFPolicy
-python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_lndropoutd_rbfp_5 -p NNPolicy
-python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_lndropoutd_mlpp_6 -p NNPolicy
-python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_dropoutd_dropoutp_7 -p NNPolicy
-python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_lndropoutd_dropoutp_8 -p NNPolicy
-python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_cdropoutd_dropoutp_9 -p NNPolicy
+python kusanagi/shell/evaluate_policy.py -d ${ODIR}/pilco_ssgp_rbfp_1 -p RBFPolicy $EVAL_OPTS
+python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_dropoutd_rbfp_3 -p RBFPolicy $EVAL_OPTS
+python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_dropoutd_mlpp_4 -p RBFPolicy $EVAL_OPTS
+python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_lndropoutd_rbfp_5 -p NNPolicy $EVAL_OPTS
+python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_lndropoutd_mlpp_6 -p NNPolicy $EVAL_OPTS
+python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_dropoutd_dropoutp_7 -p NNPolicy $EVAL_OPTS
+python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_lndropoutd_dropoutp_8 -p NNPolicy $EVAL_OPTS
+python kusanagi/shell/evaluate_policy.py -d ${ODIR}/mcpilco_cdropoutd_dropoutp_9 -p NNPolicy $EVAL_OPTS
