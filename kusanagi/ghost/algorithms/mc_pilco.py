@@ -176,8 +176,8 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=False,
              time_varying_cost=False, resample_dyn=False, crn=True,
-             average=True, minmax=False, grad_clip=1.0, truncate_gradient=-1, split_H=1,
-             extra_shared=[], extra_updts_init=None,
+             average=True, minmax=False, grad_clip=1.0, truncate_gradient=-1,
+             split_H=1, extra_shared=[], extra_updts_init=None,
              **kwargs):
     '''
         Constructs the computation graph for the value function according to
@@ -193,18 +193,23 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
         @param cost
         @param angle_dims angle dimensions that should be converted to complex
                           representation
-        @param n_samples number of samples for Monte Carlo integration (batch size)
-        @param intermediate_outs whether to also return the per-timestep costs and
-                                 rolled out trajectories
-        @param mm_state whether to resample state particles, at each time step, from a moment matched 
-                        Gaussian distribution
-        @param mm_cost whether to push the moment matched state distribution through the cost function
-        @noisy_policy_input whether to corrupt the state particles, with the dynamics model measurement noise,
-                            before passing them as input to the policy
-        @noisy_cost_input whether to corrupt the state particles, with the dynamics model measurement noise,
-                          before passing them as input to the cost function
-        @time_varying_cost whether the cost function requires a time index. If True, the cost function will be called
-                           as cost(t, x); i.e. the first argument will be the timestep index t.
+        @param n_samples number of samples for Monte Carlo integration
+        @param intermediate_outs whether to also return the per-timestep costs
+                                 and rolled out trajectories
+        @param mm_state whether to resample state particles, at each time step,
+                  from a moment matched Gaussian distribution
+        @param mm_cost whether to push the moment matched state distribution
+                       through the cost function
+        @noisy_policy_input whether to corrupt the state particles, with the
+                            dynamics model measurement noise, before passing
+                            them as input to the policy
+        @noisy_cost_input whether to corrupt the state particles, with the
+                          dynamics model measurement noise, before passing them
+                          as input to the cost function
+        @time_varying_cost whether the cost function requires a time index.
+                           If True, the cost function will be called as
+                           cost(t, x); i.e. the first argument will be the
+                           timestep index t.
         @param crn wheter to use common random numbers.
         @return Returns a tuple of (outs, inps, updts). These correspond to the
                 output variables, input variables and updates dictionary, if
@@ -282,12 +287,13 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
                             extra_shared=extra_shared, **kwargs)
 
     costs, trajectories = r_outs
-    if minmax:
-        temperature = 1e-2
+    if minmax and not mm_cost:
+        temperature = 1.0
         scosts = costs.mean(-1, keepdims=True) if average else costs.sum(-1, keepdims=True)
         #weights = theano.gradient.disconnected_grad(tt.nnet.softmax(costs.T/temperature).T)
-        weights = tt.nnet.softmax(costs.T/temperature).T
-        wcosts = scosts*weights
+        weights = tt.nnet.softmax(scosts.T/temperature).T
+        wcosts = costs*weights
+        #loss = wcosts.sum()
         loss = wcosts.sum(0).mean() if average else wcosts.sum(0).sum()
     else:
         # loss is E_{dyns}((1/H)*sum c(x_t))
