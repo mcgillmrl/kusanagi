@@ -298,21 +298,20 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
                             extra_shared=extra_shared, **kwargs)
 
     costs, trajectories = r_outs
+    acc_costs = costs.mean(-1, keepdims=True) if average\
+        else costs.sum(-1, keepdims=True)
     if minmax and not mm_cost:
-        temperature = 1.0
+        temp = acc_costs.std() + 1e-3
         utils.print_with_stamp(
-            "Using softmax loss with temperature %d" % (temperature),
-            'mc_pilco.rollout')
-        scosts = costs.mean(-1, keepdims=True) if average\
-            else costs.sum(-1, keepdims=True)
-        weights = tt.nnet.softmax(scosts.T/temperature).T
-        # weights = theano.gradient.disconnected_grad(weights)
+            "Using softmax loss", 'mc_pilco.rollout')
+        weights = tt.nnet.softmax((acc_costs - acc_costs.mean(0)).T/temp).T
+        weights = theano.gradient.disconnected_grad(weights)
         wcosts = costs*weights
         loss = wcosts.sum(0).mean() if average else wcosts.sum(0).sum()
     else:
         # loss is E_{dyns}((1/H)*sum c(x_t))
         #          = (1/H)*sum E_{x_t}(c(x_t))
-        loss = costs.mean() if average else costs.sum(-1).mean()
+        loss = acc_costs.mean()
 
     inps = [mx0, Sx0, H, gamma]
     updates += updts
