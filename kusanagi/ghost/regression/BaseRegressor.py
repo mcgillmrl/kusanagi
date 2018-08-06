@@ -87,20 +87,23 @@ class BaseRegressor(Loadable):
         ''' Returns the parameters of this regressor (theano shared variables).
         '''
         if ignore_fixed:
-            params = [self.__dict__[pname]
-                      for pname in self.param_names
-                      if (pname in self.__dict__ and self.__dict__[pname]
-                      and pname not in self.fixed_params)]
-        else:
-            params = [self.__dict__[pname]
+            params = [(self.__dict__[pname], pname)
                       for pname in self.param_names
                       if (pname in self.__dict__
-                      and self.__dict__[pname])]
+                          and self.__dict__[pname]
+                          and pname not in self.fixed_params)]
+        else:
+            params = [(self.__dict__[pname], pname)
+                      for pname in self.param_names
+                      if (pname in self.__dict__
+                          and self.__dict__[pname])]
 
         if not symbolic:
-            params = [p.get_value() for p in params]
+            params = [(p.get_value(), name) for p, name in params]
         if as_dict:
-            params = dict(list(zip(self.param_names, params)))
+            params = dict(params)
+        else:
+            params = [p for p, name in params]
         return params
     
     def remove_params(self, names):
