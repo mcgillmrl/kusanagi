@@ -271,13 +271,16 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
     Lx0 = tt.slinalg.cholesky(Sx0)
     x0 = mx0 + z0.dot(Lx0.T)
 
-    # try to normalize policy inputs (output is implicitly normalized)
-    Xm = dyn.Xm[:pol.D]
-    iXs = dyn.iXs[:pol.D, :pol.D]
-    pol.set_params(dict(Xm=Xm.eval(), iXs=iXs.eval()), trainable=False)
-    # ensure we're always using the same scaling as the dynamics model
-    updates[pol.Xm] = Xm
-    updates[pol.iXs] = iXs
+    if pol.Xm is None:
+        # try to normalize policy inputs (output is implicitly normalized)
+        Xm = dyn.Xm[:pol.D]
+        Xc = tt.cov(dyn.X[:, :pol.D]-Xm, rowvar=False, ddof=1)
+        iXs = tt.slinalg.cholesky(tt.nlinalg.matrix_inverse(Xc))
+        pol.set_params(dict(Xm=Xm.eval(), iXs=iXs.eval()), trainable=False)
+
+        # ensure we're always using the same scaling as the dynamics model
+        updates[pol.Xm] = Xm
+        updates[pol.iXs] = iXs
 
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma,
