@@ -47,7 +47,7 @@ class BaseRegressor(Loadable):
     def init_params(self, **kwargs):
         pass
 
-    def set_params(self, params, trainable=False):
+    def set_params(self, params, trainable=True):
         ''' Adds a a new parameter to the class instance. Every parameter will
         be stored as a Theano shared variable. This function exists so that we
         do not end up with different compiled functions referencing different
@@ -63,6 +63,8 @@ class BaseRegressor(Loadable):
                 self.__dict__[pname] = p
                 if pname not in self.param_names:
                     self.param_names.append(pname)
+                    if not trainable:
+                        self.fixed_params.append(pname)
             # if the parameter that was passed here is NOT a shared variable
             else:
                 # create shared variable if it doesn't exist
@@ -73,6 +75,8 @@ class BaseRegressor(Loadable):
                     self.__dict__[pname] = p
                     if pname not in self.param_names:
                         self.param_names.append(pname)
+                        if not trainable:
+                            self.fixed_params.append(pname)
                 # otherwise, update the value of the shared variable
                 else:
                     p = self.__dict__[pname]

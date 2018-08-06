@@ -176,7 +176,7 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
              intermediate_outs=False, mm_state=True, mm_cost=True,
              noisy_policy_input=True, noisy_cost_input=False,
              time_varying_cost=False, resample_dyn=False, crn=True,
-             average=True, minmax=False, grad_clip=1.0, truncate_gradient=-1,
+             average=True, minmax=False, grad_clip=None, truncate_gradient=-1,
              split_H=1, extra_shared=[], extra_updts_init=None,
              **kwargs):
     '''
@@ -271,6 +271,14 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
     Lx0 = tt.slinalg.cholesky(Sx0)
     x0 = mx0 + z0.dot(Lx0.T)
 
+    # try to normalize policy inputs (output is implicitly normalized)
+    Xm = dyn.Xm[:pol.D]
+    iXs = dyn.iXs[:pol.D, :pol.D]
+    pol.set_params(dict(Xm=Xm.eval(), iXs=iXs.eval()), trainable=False)
+    # ensure we're always using the same scaling as the dynamics model
+    updates[pol.Xm] = Xm
+    updates[pol.iXs] = iXs
+
     # get rollout output
     r_outs, updts = rollout(x0, H, gamma,
                             pol, dyn, cost,
@@ -289,11 +297,14 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
     costs, trajectories = r_outs
     if minmax and not mm_cost:
         temperature = 1.0
-        scosts = costs.mean(-1, keepdims=True) if average else costs.sum(-1, keepdims=True)
-        #weights = theano.gradient.disconnected_grad(tt.nnet.softmax(costs.T/temperature).T)
+        utils.print_with_stamp(
+            "Using softmax loss with temperature %d" % (temperature),
+            'mc_pilco.rollout')
+        scosts = costs.mean(-1, keepdims=True) if average\
+            else costs.sum(-1, keepdims=True)
         weights = tt.nnet.softmax(scosts.T/temperature).T
+        # weights = theano.gradient.disconnected_grad(weights)
         wcosts = costs*weights
-        #loss = wcosts.sum()
         loss = wcosts.sum(0).mean() if average else wcosts.sum(0).sum()
     else:
         # loss is E_{dyns}((1/H)*sum c(x_t))

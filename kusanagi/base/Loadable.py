@@ -34,7 +34,8 @@ class Loadable(object):
 
         for attr_name in list(self.__dict__.keys()):
             value = self.__dict__[attr_name]
-            if any([isinstance(value, type_) for type_ in self.registered_types]):
+            if any([isinstance(value, type_)
+                    for type_ in self.registered_types]):
                 state[attr_name] = value
 
         return state
