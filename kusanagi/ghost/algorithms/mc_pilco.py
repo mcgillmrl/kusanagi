@@ -301,13 +301,16 @@ def get_loss(pol, dyn, cost, angle_dims=[], n_samples=100,
     acc_costs = costs.mean(-1, keepdims=True) if average\
         else costs.sum(-1, keepdims=True)
     if minmax and not mm_cost:
-        temp = acc_costs.std() + 1e-3
+        temp = acc_costs.std()
         utils.print_with_stamp(
             "Using softmax loss", 'mc_pilco.rollout')
         weights = tt.nnet.softmax((acc_costs - acc_costs.mean(0)).T/temp).T
-        weights = theano.gradient.disconnected_grad(weights)
-        wcosts = costs*weights
+        weights_ = theano.gradient.disconnected_grad(weights)
+        wcosts = costs*weights_
         loss = wcosts.sum(0).mean() if average else wcosts.sum(0).sum()
+        entropy = -(weights*tt.log(weights)).sum()
+        reg_weight = -1e-3
+        loss += reg_weight*entropy
     else:
         # loss is E_{dyns}((1/H)*sum c(x_t))
         #          = (1/H)*sum E_{x_t}(c(x_t))
