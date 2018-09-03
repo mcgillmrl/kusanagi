@@ -65,18 +65,18 @@ class Plant(gym.Env):
 
     def stop(self):
         print_with_stamp('Stopping robot', self.name)
-        # self._close()
+        # self.close()
 
-    def _step(self, action):
-        msg = "You need to implement self._step in your Plant subclass."
+    def step(self, action):
+        msg = "You need to implement self.step in your Plant subclass."
         raise NotImplementedError(msg)
 
-    def _reset(self):
-        msg = "You need to implement self._reset in your Plant subclass."
+    def reset(self):
+        msg = "You need to implement self.reset in your Plant subclass."
         raise NotImplementedError(msg)
 
     def set_render_func(self, render_func):
-        self._render = types.MethodType(render_func, self)
+        self.render = types.MethodType(render_func, self)
 
 
 class ODEPlant(Plant):
@@ -103,7 +103,7 @@ class ODEPlant(Plant):
         # get time from solver
         self.t = self.solver.t
 
-    def _step(self, action):
+    def step(self, action):
         self.apply_control(action)
         dt = self.dt
         t1 = self.solver.t + dt

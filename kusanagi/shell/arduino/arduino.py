@@ -31,7 +31,7 @@ class SerialPlant(plant.Plant):
         self.state_indices = state_indices
         self.U_scaling = 1.0/np.array(maxU)
         self.t = -1
-        self._reset(wait_for_user=False)
+        self.reset(wait_for_user=False)
 
     def apply_control(self, u):
         if not self.serial.isOpen():
@@ -52,7 +52,7 @@ class SerialPlant(plant.Plant):
         cmd = self.cmds['APPLY_CONTROL']+','+u_string+";"
         self.serial.write(cmd.encode())
 
-    def _step(self, action):
+    def step(self, action):
         self.apply_control(action)
         if not self.serial.isOpen():
             self.serial.open()
@@ -101,7 +101,7 @@ class SerialPlant(plant.Plant):
         else:
             return res[:-1], res[-1]
 
-    def _reset(self, wait_for_user=True):
+    def reset(self, wait_for_user=True):
         if wait_for_user:
             msg = 'Please reset your plant to its initial state and hit Enter'
             utils.print_with_stamp(msg, self.name)

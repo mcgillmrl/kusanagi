@@ -159,18 +159,18 @@ class Cartpole(plant.ODEPlant):
 
         return dz
 
-    def _reset(self):
+    def reset(self):
         state0 = self.state0_dist()
         self.set_state(state0)
         return self.state
 
-    def _render(self, mode='human', close=False):
+    def render(self, mode='human', close=False):
         if self.renderer is None:
             self.renderer = CartpoleDraw(self, name=self.name)
             self.renderer.init_ui()
         self.renderer.update(*self.get_state(noisy=False))
 
-    def _close(self):
+    def close(self):
         if self.renderer is not None:
             self.renderer.close()
 
