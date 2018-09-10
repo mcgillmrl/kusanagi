@@ -30,10 +30,10 @@ def propagate_particles(latent_x, measured_x, pol, dyn, angle_dims=[],
     # predict the change in state given current state-control for each particle
     delta_x, sn_x = dyn.predict(
         xu, iid_per_eval=iid_per_eval, return_samples=True)
+    sn_x = theano.gradient.disconnected_grad(sn_x)
 
     # compute the successor states
     x_next = latent_x + delta_x if deltas else delta_x
-
     return x_next, sn_x
 
 
@@ -41,7 +41,7 @@ def rollout(x0, H, gamma0,
             pol, dyn, cost,
             z=None, mm_state=True, mm_cost=True,
             noisy_policy_input=True, noisy_cost_input=True,
-            time_varying_cost=False, grad_clip=None,
+            time_varying_cost=False, grad_clip=None, infer_noise_mm=False,
             truncate_gradient=-1, extra_shared=[],
             split_H=1, **kwargs):
     ''' Given some initial state particles x0, and a prediction horizon H
@@ -71,7 +71,7 @@ def rollout(x0, H, gamma0,
         n = n.astype(theano.config.floatX)
 
         # noisy state measruement for control
-        xn = x + z2_prev*(sn) if noisy_policy_input else x
+        xn = x + z2_prev*sn if noisy_policy_input else x
 
         # get next state distribution
         x_next, sn_next = propagate_particles(
@@ -100,7 +100,15 @@ def rollout(x0, H, gamma0,
             mx_next = x_next.mean(0)
             delta = x_next - mx_next
             Sx_next = delta.T.dot(delta)/(n-1)
-            x_next = mx_next + z1.dot(tt.slinalg.cholesky(Sx_next).T)
+            L = tt.slinalg.cholesky(Sx_next)
+            if infer_noise_mm:
+                # we will compute a z1 that keeps the same mean and variance
+                # after resampling. We do this by standardizing the particles
+                # and shuffling them.
+                idxs = tt.argsort(z1[:, 0], 0)[::-1]  # random ordering
+                z1 = tt.slinalg.solve_lower_triangular(L, delta.T).T
+                z1 = theano.gradient.disconnected_grad(z1)[idxs]
+            x_next = mx_next + z1.dot(L.T)
             # noisy state measurement for cost
             xn_next = x_next
             if noisy_cost_input:
